@@ -30,3 +30,6 @@ go.work
 .DS_Store
 Thumbs.db
 
+TLA+_FEATURE_ANALYSIS_private.md
+SPECTRE_VS_QUINT_private.md
+DEVELOPMENT_PLAN_private.md

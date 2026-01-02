@@ -154,7 +154,11 @@ temporal eventuallyReachesTen {
 
 ## Documentation
 
-See [SPEC.md](./SPEC.md) for the complete language specification.
+- **[SPEC.md](./SPEC.md)** - Complete language specification
+- **[USAGE.md](./USAGE.md)** - CLI usage guide and examples
+- **[INSTALL.md](./INSTALL.md)** - Detailed installation instructions
+- **[PACKAGING.md](./PACKAGING.md)** - Packaging and distribution guide
+- **[README_DEV.md](./README_DEV.md)** - Development setup and workflow
 
 ## Examples
 
@@ -313,7 +317,32 @@ Type errors in examples/counter.spec:
 
 ## Contributing
 
-(To be implemented)
+We welcome contributions! Please see [README_DEV.md](./README_DEV.md) for development setup and workflow.
+
+### Development Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/spectre-lang/spectre.git
+   cd spectre
+   ```
+
+2. Build from source:
+   ```bash
+   go build -o spectre ./cmd/spectre
+   ```
+
+3. Run tests:
+   ```bash
+   go test ./...
+   ```
+
+4. Test with examples:
+   ```bash
+   ./spectre parse examples/counter.spec
+   ```
+
+See [README_DEV.md](./README_DEV.md) for detailed development instructions.
 
 ## License
 
