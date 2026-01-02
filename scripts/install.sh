@@ -95,9 +95,19 @@ fi
 # Install
 echo ""
 echo "Installing to ${INSTALL_DIR}..."
-sudo mkdir -p "${INSTALL_DIR}"
-sudo cp spectre "${INSTALL_DIR}/spectre"
-sudo chmod +x "${INSTALL_DIR}/spectre"
+
+# Check if running as root (no sudo needed) or need sudo
+if [ "$EUID" -eq 0 ]; then
+    # Running as root, no sudo needed
+    mkdir -p "${INSTALL_DIR}"
+    cp spectre "${INSTALL_DIR}/spectre"
+    chmod +x "${INSTALL_DIR}/spectre"
+else
+    # Not root, use sudo
+    sudo mkdir -p "${INSTALL_DIR}"
+    sudo cp spectre "${INSTALL_DIR}/spectre"
+    sudo chmod +x "${INSTALL_DIR}/spectre"
+fi
 
 # Verify installation
 echo ""
