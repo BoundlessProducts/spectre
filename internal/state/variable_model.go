@@ -3,7 +3,7 @@ package state
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // VariableModel represents the model of all state variables in a specification

@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"github.com/spectre-lang/spectre/internal/lexer"
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/internal/lexer"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // parseModuleDecl parses a module declaration or module instance

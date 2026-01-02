@@ -3,9 +3,9 @@ package exec
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/internal/eval"
-	"github.com/spectre-lang/spectre/internal/state"
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/internal/eval"
+	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // StateInitializer generates initial states from init/oneOf declarations

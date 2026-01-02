@@ -3,8 +3,8 @@ package explore
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/internal/exec"
-	"github.com/spectre-lang/spectre/internal/state"
+	"github.com/akkeshavan/spectre/internal/exec"
+	"github.com/akkeshavan/spectre/internal/state"
 )
 
 // Explorer explores the state space of a Spectre specification

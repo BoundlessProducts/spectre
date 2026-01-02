@@ -3,8 +3,8 @@ package eval
 import (
 	"testing"
 
-	"github.com/spectre-lang/spectre/internal/state"
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 func TestPurityCheckerValidFunction(t *testing.T) {

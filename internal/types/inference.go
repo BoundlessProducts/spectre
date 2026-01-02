@@ -1,7 +1,7 @@
 package types
 
 import (
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // InferType attempts to infer the type of an expression

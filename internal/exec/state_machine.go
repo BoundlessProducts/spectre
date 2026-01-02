@@ -3,8 +3,8 @@ package exec
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/internal/state"
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // StateMachine represents a complete state machine executor

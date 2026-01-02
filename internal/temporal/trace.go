@@ -1,7 +1,7 @@
 package temporal
 
 import (
-	"github.com/spectre-lang/spectre/internal/state"
+	"github.com/akkeshavan/spectre/internal/state"
 )
 
 // Trace represents an execution trace (sequence of states)

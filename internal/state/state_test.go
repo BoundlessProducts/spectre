@@ -3,7 +3,7 @@ package state
 import (
 	"testing"
 
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 func TestNewState(t *testing.T) {

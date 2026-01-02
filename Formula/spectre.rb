@@ -9,8 +9,10 @@ class Spectre < Formula
   depends_on "go" => :build
 
   def install
-    system "go", "build", "-o", "spectre", "./cmd/spectre"
-    bin.install "spectre"
+    cd buildpath do
+      system "go", "build", "-o", "spectre", "./cmd/spectre"
+      bin.install "spectre"
+    end
   end
 
   test do

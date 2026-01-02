@@ -3,7 +3,7 @@ package state
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // State represents a state in the state machine

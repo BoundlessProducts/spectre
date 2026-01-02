@@ -3,10 +3,10 @@ package eval
 import (
 	"testing"
 
-	"github.com/spectre-lang/spectre/internal/lexer"
-	"github.com/spectre-lang/spectre/internal/parser"
-	"github.com/spectre-lang/spectre/internal/state"
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/internal/lexer"
+	"github.com/akkeshavan/spectre/internal/parser"
+	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // parseExpressionForTest is a helper to parse expressions for testing

@@ -3,8 +3,8 @@ package temporal
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/internal/exec"
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/internal/exec"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // FairnessChecker checks fairness conditions (WF and SF) over execution traces

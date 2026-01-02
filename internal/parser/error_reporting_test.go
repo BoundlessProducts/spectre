@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spectre-lang/spectre/internal/lexer"
+	"github.com/akkeshavan/spectre/internal/lexer"
 )
 
 func TestErrorReportingWithPositions(t *testing.T) {

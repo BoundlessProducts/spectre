@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spectre-lang/spectre/internal/state"
+	"github.com/akkeshavan/spectre/internal/state"
 )
 
 // Note: strings package is used for string building

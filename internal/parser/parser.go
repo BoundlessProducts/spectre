@@ -3,8 +3,8 @@ package parser
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/internal/lexer"
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/internal/lexer"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // Parser represents the parser

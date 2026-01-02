@@ -3,7 +3,7 @@ package errors
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // ErrorContext captures context information for errors

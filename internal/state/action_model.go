@@ -3,7 +3,7 @@ package state
 import (
 	"fmt"
 
-	"github.com/spectre-lang/spectre/pkg/ast"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 // ActionModel represents the model of all actions in a specification

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spectre-lang/spectre/internal/state"
+	"github.com/akkeshavan/spectre/internal/state"
 )
 
 func TestFormatCounterexample(t *testing.T) {

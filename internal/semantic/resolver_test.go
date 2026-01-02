@@ -3,8 +3,8 @@ package semantic
 import (
 	"testing"
 
-	"github.com/spectre-lang/spectre/internal/lexer"
-	"github.com/spectre-lang/spectre/internal/parser"
+	"github.com/akkeshavan/spectre/internal/lexer"
+	"github.com/akkeshavan/spectre/internal/parser"
 )
 
 func TestResolveSimpleVariable(t *testing.T) {

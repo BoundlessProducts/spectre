@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/spectre-lang/spectre/internal/state"
+	"github.com/akkeshavan/spectre/internal/state"
 )
 
 // StateHasher provides efficient state hashing for comparison and deduplication
