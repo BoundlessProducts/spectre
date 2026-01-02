@@ -1,8 +1,9 @@
 class Spectre < Formula
   desc "A programmer-friendly specification language inspired by TLA+ and Quint"
-  homepage "https://github.com/spectre-lang/spectre"
-  url "https://github.com/spectre-lang/spectre/archive/v0.1.0.tar.gz"
-  sha256 ""
+  homepage "https://github.com/akkeshavan/spectre"
+  url "https://github.com/akkeshavan/spectre.git",
+      branch: "main"
+  version "0.1.0"
   license "MIT"
 
   depends_on "go" => :build
