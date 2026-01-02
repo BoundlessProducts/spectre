@@ -153,6 +153,7 @@ spectre typecheck counter.spec
 spectre verify counter.spec
 ```
 
+
 **Linux (Installation Script):**
 
 The examples are installed to the system share directory:
