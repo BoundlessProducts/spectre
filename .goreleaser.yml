@@ -1,0 +1,82 @@
+# GoReleaser configuration for building releases
+# Install with: brew install goreleaser
+
+project_name: spectre
+
+builds:
+  - id: spectre
+    binary: spectre
+    main: ./cmd/spectre
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - id: default
+    builds:
+      - spectre
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - examples/*.spec
+
+brews:
+  - tap:
+      owner: spectre-lang
+      name: homebrew-spectre
+    homepage: https://github.com/spectre-lang/spectre
+    description: A programmer-friendly specification language inspired by TLA+ and Quint
+    license: MIT
+
+nfpms:
+  - id: deb
+    package_name: spectre
+    maintainer: Spectre Team
+    description: A programmer-friendly specification language inspired by TLA+ and Quint
+    license: MIT
+    formats:
+      - deb
+    files:
+      README.md: /usr/share/doc/spectre/README.md
+      LICENSE: /usr/share/doc/spectre/LICENSE
+
+  - id: rpm
+    package_name: spectre
+    maintainer: Spectre Team
+    description: A programmer-friendly specification language inspired by TLA+ and Quint
+    license: MIT
+    formats:
+      - rpm
+    files:
+      README.md: /usr/share/doc/spectre/README.md
+      LICENSE: /usr/share/doc/spectre/LICENSE
+
+snapcrafts:
+  - name: spectre
+    summary: A programmer-friendly specification language
+    description: |
+      Spectre is a specification language inspired by TLA+ and Quint,
+      designed for Java and TypeScript developers.
+    grade: stable
+    confinement: strict
+    apps:
+      spectre:
+        command: spectre
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
