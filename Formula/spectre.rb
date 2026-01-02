@@ -12,6 +12,8 @@ class Spectre < Formula
     cd buildpath do
       system "go", "build", "-o", "spectre", "./cmd/spectre"
       bin.install "spectre"
+      # Install example files
+      (share/"spectre/examples").install Dir["examples/*.spec"]
     end
   end
 

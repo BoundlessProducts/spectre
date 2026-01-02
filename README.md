@@ -147,12 +147,41 @@ spectre --version
 
 Should output: `spectre version 0.1.0`
 
+### Finding Example Files
+
+After installation, example files are included:
+
+**macOS (Homebrew):**
+```bash
+# Examples location:
+$(brew --prefix)/share/spectre/examples/
+
+# Try an example:
+spectre parse $(brew --prefix)/share/spectre/examples/counter.spec
+```
+
+**Linux:**
+```bash
+# Examples location:
+/usr/local/share/spectre/examples/
+
+# Try an example:
+spectre parse /usr/local/share/spectre/examples/counter.spec
+```
+
 ### Usage
 
 The Spectre CLI provides three main commands:
 
 **Parse** - Check syntax:
 ```bash
+# Using installed examples (macOS):
+spectre parse $(brew --prefix)/share/spectre/examples/counter.spec
+
+# Using installed examples (Linux):
+spectre parse /usr/local/share/spectre/examples/counter.spec
+
+# Or if you cloned the repository:
 spectre parse examples/counter.spec
 ```
 

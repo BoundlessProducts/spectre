@@ -128,6 +128,72 @@ Or download from: https://golang.org/dl/
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
+### Finding Example Files After Installation
+
+When you install Spectre using Homebrew (macOS) or the installation script (Linux), **example files are automatically included** with the installation and placed in standard system directories.
+
+**macOS (Homebrew Installation):**
+
+The examples are installed to the Homebrew share directory:
+- **Location**: `/opt/homebrew/share/spectre/examples/` (Apple Silicon) or `/usr/local/share/spectre/examples/` (Intel)
+- **Using Homebrew prefix**: `$(brew --prefix)/share/spectre/examples/`
+
+```bash
+# List all available examples:
+ls $(brew --prefix)/share/spectre/examples/
+
+# Copy examples to a working directory (recommended):
+mkdir -p ~/my-spectre-examples
+cp $(brew --prefix)/share/spectre/examples/*.spec ~/my-spectre-examples/
+cd ~/my-spectre-examples
+
+# Now test the examples:
+spectre parse counter.spec
+spectre typecheck counter.spec
+spectre verify counter.spec
+```
+
+**Linux (Installation Script):**
+
+The examples are installed to the system share directory:
+- **Location**: `/usr/local/share/spectre/examples/`
+
+```bash
+# List all available examples:
+ls /usr/local/share/spectre/examples/
+
+# Copy examples to a working directory (recommended):
+mkdir -p ~/my-spectre-examples
+cp /usr/local/share/spectre/examples/*.spec ~/my-spectre-examples/
+cd ~/my-spectre-examples
+
+# Now test the examples:
+spectre parse counter.spec
+spectre typecheck counter.spec
+spectre verify counter.spec
+```
+
+> **⚠️ Important**: The examples are installed in system directories. **Before testing or modifying examples, copy them to a new directory** (e.g., `~/my-spectre-examples/` or `./test-examples/`). This prevents accidental modification of system files and allows you to experiment freely.
+>
+> **Example:**
+> ```bash
+> # macOS
+> mkdir -p ~/my-spectre-examples
+> cp $(brew --prefix)/share/spectre/examples/*.spec ~/my-spectre-examples/
+> cd ~/my-spectre-examples
+> spectre parse counter.spec
+>
+> # Linux
+> mkdir -p ~/my-spectre-examples
+> cp /usr/local/share/spectre/examples/*.spec ~/my-spectre-examples/
+> cd ~/my-spectre-examples
+> spectre parse counter.spec
+> ```
+
+**Note**: 
+- If you installed to a custom location using `INSTALL_DIR` or `SHARE_DIR` environment variables, adjust the paths accordingly.
+- The examples directory contains all the example `.spec` files from the repository, so you don't need to clone the repository just to access examples.
+
 ### Your First Specification
 
 Let's start with a simple counter example:
@@ -159,6 +225,20 @@ spectre parse counter.spec
 spectre typecheck counter.spec
 spectre verify counter.spec
 ```
+
+**Or use the installed example files:**
+
+The examples are automatically installed with Spectre and available in the appropriate directories:
+
+```bash
+# macOS (Homebrew installation)
+spectre parse $(brew --prefix)/share/spectre/examples/counter.spec
+
+# Linux (installation script)
+spectre parse /usr/local/share/spectre/examples/counter.spec
+```
+
+> **⚠️ Important**: Before testing or modifying examples, **copy them to a new directory** first. The examples are in system directories and should not be modified directly. See the [Finding Example Files After Installation](#finding-example-files-after-installation) section above for instructions on copying examples to a working directory.
 
 ### Understanding the Example
 

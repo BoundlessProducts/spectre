@@ -6,6 +6,7 @@ set -e
 
 VERSION="0.1.0"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+SHARE_DIR="${SHARE_DIR:-/usr/local/share/spectre}"
 REPO_URL="https://github.com/akkeshavan/spectre.git"
 BRANCH="${BRANCH:-main}"
 MIN_GO_VERSION="1.19"
@@ -92,9 +93,9 @@ if [ ! -f "./spectre" ]; then
     exit 1
 fi
 
-# Install
+# Install binary
 echo ""
-echo "Installing to ${INSTALL_DIR}..."
+echo "Installing binary to ${INSTALL_DIR}..."
 
 # Check if running as root (no sudo needed) or need sudo
 if [ "$EUID" -eq 0 ]; then
@@ -107,6 +108,20 @@ else
     sudo mkdir -p "${INSTALL_DIR}"
     sudo cp spectre "${INSTALL_DIR}/spectre"
     sudo chmod +x "${INSTALL_DIR}/spectre"
+fi
+
+# Install examples
+echo ""
+echo "Installing examples to ${SHARE_DIR}/examples/..."
+
+if [ "$EUID" -eq 0 ]; then
+    # Running as root, no sudo needed
+    mkdir -p "${SHARE_DIR}/examples"
+    cp examples/*.spec "${SHARE_DIR}/examples/" 2>/dev/null || echo "Warning: No example files found"
+else
+    # Not root, use sudo
+    sudo mkdir -p "${SHARE_DIR}/examples"
+    sudo cp examples/*.spec "${SHARE_DIR}/examples/" 2>/dev/null || echo "Warning: No example files found"
 fi
 
 # Verify installation
@@ -127,4 +142,7 @@ fi
 
 echo ""
 echo "Installation complete!"
+echo ""
+echo "Examples are available at: ${SHARE_DIR}/examples/"
+echo "You can try: spectre parse ${SHARE_DIR}/examples/counter.spec"
 
