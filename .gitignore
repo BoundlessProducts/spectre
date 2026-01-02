@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-spectre
+/spectre
 cmd/spectre/spectre
 
 # Test binary, built with `go test -c`
