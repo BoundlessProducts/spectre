@@ -68,21 +68,60 @@ Traditional formal specification languages like TLA+ can be intimidating for dev
 Install Spectre using your preferred method:
 
 **macOS (Homebrew):**
+
+**Prerequisites**: Go 1.19 or later must be installed (Homebrew will build Spectre from source).
+
+If Go is not installed, install it first:
+```bash
+brew install go
+```
+
+Since the Homebrew formula is in the main repository (not a separate `homebrew-spectre` repo), use the full GitHub URL:
+
 ```bash
 brew tap akkeshavan/spectre https://github.com/akkeshavan/spectre.git
 brew install spectre
 ```
 
-Alternatively, if you have a separate `homebrew-spectre` repository:
+**Note**: The installation builds from source, so Go is required. Homebrew will automatically install Go as a dependency if it's not already installed, but it's recommended to install Go first to ensure you have the correct version.
+
+**Note**: If you later create a separate `homebrew-spectre` repository, you can simplify to:
 ```bash
 brew tap akkeshavan/spectre
 brew install spectre
 ```
 
 **Linux:**
+
+**Prerequisites**: Go 1.19 or later must be installed (the script builds Spectre from source).
+
+The install script downloads the source code and builds Spectre locally:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/install.sh | bash
 ```
+
+The script will:
+- Check for Go 1.19+ installation (with helpful error messages if not found)
+- Check for Git installation
+- Clone the repository from GitHub
+- Build Spectre from source using Go
+- Install to `/usr/local/bin` (or custom `INSTALL_DIR`)
+
+**If Go is not installed**, the script will provide installation instructions. You can install Go with:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install golang-go
+
+# Fedora/RHEL/CentOS
+sudo dnf install golang
+```
+
+Or download from: https://golang.org/dl/
+
+**Note**: The script automatically detects if it's running as root (e.g., in Docker containers) and skips `sudo` commands. On regular Linux systems, it will use `sudo` for installation.
 
 **Windows:**  
 ```powershell

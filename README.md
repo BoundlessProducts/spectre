@@ -1,3 +1,7 @@
+# IMPORTANT: This is still under construction. It has been made public only to test installations etc. No PRs  WILL BE ENTERTAINED. 
+
+
+
 # Spectre Language
 
 A programmer-friendly specification language inspired by TLA+ and Quint, designed for Java and TypeScript developers.
@@ -21,29 +25,76 @@ A programmer-friendly specification language inspired by TLA+ and Quint, designe
 
 #### macOS (Homebrew)
 
-```bash
-# Add the tap (once)
-brew tap spectre-lang/spectre
+**Prerequisites**: Go 1.19 or later must be installed (Homebrew will build Spectre from source).
 
-# Install
+If Go is not installed, install it first:
+```bash
+brew install go
+```
+
+Since the Homebrew formula is in the main repository (not a separate `homebrew-spectre` repo), use the full GitHub URL:
+
+```bash
+# Add the tap (using full GitHub URL since formula is in main repo)
+brew tap akkeshavan/spectre https://github.com/akkeshavan/spectre.git
+
+# Install (this will build from source, so Go is required)
 brew install spectre
 ```
 
-Or install from source:
+**Note**: Homebrew will automatically install Go as a dependency if it's not already installed, but it's recommended to install Go first to ensure you have the correct version.
+
+**Note**: If you later create a separate `homebrew-spectre` repository, you can simplify to:
 ```bash
-brew install --build-from-source Formula/spectre.rb
+brew tap akkeshavan/spectre
+brew install spectre
+```
+
+**Alternative: Build from source**
+```bash
+git clone https://github.com/akkeshavan/spectre.git
+cd spectre
+go build -o spectre ./cmd/spectre
+sudo mv spectre /usr/local/bin/
 ```
 
 #### Linux
 
-**Using the install script:**
+**Using the install script (builds from source):**
+
+**Prerequisites**: Go 1.19 or later must be installed (the script builds Spectre from source).
+
+The install script downloads the source code and builds Spectre locally:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/spectre-lang/spectre/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/install.sh | bash
 ```
+
+The script will:
+- Check for Go 1.19+ installation (with helpful error messages if not found)
+- Check for Git installation
+- Clone the repository from GitHub
+- Build Spectre from source using Go
+- Install to `/usr/local/bin` (or custom `INSTALL_DIR`)
+
+**If Go is not installed**, the script will provide installation instructions. You can install Go with:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install golang-go
+
+# Fedora/RHEL/CentOS
+sudo dnf install golang
+```
+
+Or download from: https://golang.org/dl/
+
+**Note**: The script automatically detects if it's running as root (e.g., in Docker containers) and skips `sudo` commands. On regular Linux systems, it will use `sudo` for installation.
 
 **Or build from source:**
 ```bash
-git clone https://github.com/spectre-lang/spectre.git
+git clone https://github.com/akkeshavan/spectre.git
 cd spectre
 go build -o spectre ./cmd/spectre
 sudo mv spectre /usr/local/bin/
@@ -77,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
 **Or build from source:**
 ```powershell
-git clone https://github.com/spectre-lang/spectre.git
+git clone https://github.com/akkeshavan/spectre.git
 cd spectre
 go build -o spectre.exe ./cmd/spectre
 # Add to PATH manually or use install.ps1
@@ -323,7 +374,7 @@ We welcome contributions! Please see [README_DEV.md](./README_DEV.md) for develo
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/spectre-lang/spectre.git
+   git clone https://github.com/akkeshavan/spectre.git
    cd spectre
    ```
 

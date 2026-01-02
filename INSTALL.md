@@ -4,25 +4,42 @@ This guide provides detailed installation instructions for Spectre on macOS, Lin
 
 ## Prerequisites
 
-- **Go 1.19 or later** (for building from source)
+- **Go 1.19 or later** (required for Homebrew installation and building from source)
 - **Git** (for cloning the repository)
 
 ## macOS
 
 ### Option 1: Homebrew (Recommended)
 
-```bash
-# Add the tap
-brew tap spectre-lang/spectre
+**Prerequisites**: Go 1.19 or later must be installed (Homebrew will build Spectre from source).
 
-# Install
+If Go is not installed, install it first:
+```bash
+brew install go
+```
+
+Since the Homebrew formula is in the main repository (not a separate `homebrew-spectre` repo), use the full GitHub URL:
+
+```bash
+# Add the tap (using full GitHub URL since formula is in main repo)
+brew tap akkeshavan/spectre https://github.com/akkeshavan/spectre.git
+
+# Install (this will build from source, so Go is required)
+brew install spectre
+```
+
+**Note**: Homebrew will automatically install Go as a dependency if it's not already installed, but it's recommended to install Go first to ensure you have the correct version.
+
+**Note**: If you later create a separate `homebrew-spectre` repository, you can simplify to:
+```bash
+brew tap akkeshavan/spectre
 brew install spectre
 ```
 
 ### Option 2: Build from Source
 
 ```bash
-git clone https://github.com/spectre-lang/spectre.git
+git clone https://github.com/akkeshavan/spectre.git
 cd spectre
 go build -o spectre ./cmd/spectre
 sudo mv spectre /usr/local/bin/
@@ -38,15 +55,33 @@ brew uninstall spectre
 
 ### Option 1: Install Script (Recommended)
 
+**Prerequisites**: Go 1.19 or later must be installed (the script builds Spectre from source).
+
+The install script downloads the source code and builds Spectre locally:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/spectre-lang/spectre/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/install.sh | bash
 ```
 
 The script will:
-- Check for Go installation
-- Clone the repository
-- Build Spectre
+- Check for Go 1.19+ installation (with helpful error messages if not found)
+- Check for Git installation
+- Clone the repository from GitHub
+- Build Spectre from source using Go
 - Install to `/usr/local/bin` (or custom `INSTALL_DIR`)
+
+**If Go is not installed**, the script will provide installation instructions. You can install Go with:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install golang-go
+
+# Fedora/RHEL/CentOS
+sudo dnf install golang
+```
+
+Or download from: https://golang.org/dl/
 
 ### Option 2: Package Managers
 
@@ -54,7 +89,7 @@ The script will:
 
 ```bash
 # Download the .deb package from releases
-wget https://github.com/spectre-lang/spectre/releases/download/v0.1.0/spectre_0.1.0_linux_amd64.deb
+wget https://github.com/akkeshavan/spectre/releases/download/v0.1.0/spectre_0.1.0_linux_amd64.deb
 sudo dpkg -i spectre_0.1.0_linux_amd64.deb
 ```
 
@@ -62,7 +97,7 @@ sudo dpkg -i spectre_0.1.0_linux_amd64.deb
 
 ```bash
 # Download the .rpm package from releases
-wget https://github.com/spectre-lang/spectre/releases/download/v0.1.0/spectre_0.1.0_linux_amd64.rpm
+wget https://github.com/akkeshavan/spectre/releases/download/v0.1.0/spectre_0.1.0_linux_amd64.rpm
 sudo rpm -i spectre_0.1.0_linux_amd64.rpm
 ```
 
@@ -75,7 +110,7 @@ sudo snap install spectre
 ### Option 3: Build from Source
 
 ```bash
-git clone https://github.com/spectre-lang/spectre.git
+git clone https://github.com/akkeshavan/spectre.git
 cd spectre
 go build -o spectre ./cmd/spectre
 sudo mv spectre /usr/local/bin/
@@ -85,7 +120,7 @@ sudo mv spectre /usr/local/bin/
 
 **Using install script:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/spectre-lang/spectre/main/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/uninstall.sh | bash
 ```
 
 **Manual:**
@@ -113,7 +148,7 @@ The script will:
 ### Option 2: Build from Source
 
 ```powershell
-git clone https://github.com/spectre-lang/spectre.git
+git clone https://github.com/akkeshavan/spectre.git
 cd spectre
 go build -o spectre.exe ./cmd/spectre
 # Manually add to PATH or use install.ps1
@@ -215,7 +250,7 @@ Download installer from https://golang.org/dl/
 For all platforms:
 
 ```bash
-git clone https://github.com/spectre-lang/spectre.git
+git clone https://github.com/akkeshavan/spectre.git
 cd spectre
 go build -o spectre ./cmd/spectre
 ```

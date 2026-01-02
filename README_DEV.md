@@ -29,7 +29,9 @@ spectre/
 │   ├── install.sh       # Linux installation script
 │   ├── install.ps1      # Windows installation script
 │   ├── uninstall.sh     # Linux uninstall script
-│   └── uninstall.ps1    # Windows uninstall script
+│   ├── uninstall.ps1    # Windows uninstall script
+│   ├── test-linux-install.sh        # Test Linux install with Docker
+│   └── test-linux-install-local.sh   # Test Linux install script locally
 ├── Formula/             # Homebrew formula
 │   └── spectre.rb       # Homebrew formula for macOS
 ├── Makefile             # Build automation
@@ -149,6 +151,69 @@ brew install --build-from-source Formula/spectre.rb
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
+
+## Testing Installation Scripts
+
+### Testing Linux Installation Script on macOS
+
+#### Method 1: Using Docker (Recommended)
+
+Test the Linux installation script in a real Linux environment:
+
+```bash
+# Test on Ubuntu (default)
+./scripts/test-linux-install.sh
+
+# Test on different distributions
+./scripts/test-linux-install.sh ubuntu
+./scripts/test-linux-install.sh fedora
+./scripts/test-linux-install.sh debian
+```
+
+**Prerequisites**: Docker Desktop must be installed and running.
+
+#### Method 2: Local Script Validation
+
+Test the script syntax and logic without running it:
+
+```bash
+./scripts/test-linux-install-local.sh
+```
+
+This checks:
+- Script syntax
+- Required variables
+- Error handling
+- Go version check logic
+
+#### Method 3: Manual Docker Test
+
+You can also manually test in a Docker container:
+
+```bash
+# Start an Ubuntu container
+docker run --rm -it ubuntu:latest bash
+
+# Inside the container:
+apt-get update
+apt-get install -y git curl
+curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/install.sh | bash
+spectre --version
+```
+
+#### Method 4: Test Specific Scenarios
+
+Test error cases (missing Go, wrong version, etc.):
+
+```bash
+# Test without Go installed (should show helpful error)
+docker run --rm -it ubuntu:latest bash -c "
+  apt-get update -qq && apt-get install -y -qq git curl
+  curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/install.sh | bash
+"
+```
+
+---
 
 ## Makefile Targets
 
