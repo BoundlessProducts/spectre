@@ -122,8 +122,8 @@ sudo snap install spectre
 #### Windows
 
 **Using PowerShell script:**
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+``` 
+TODO
 ```
 
 **Or build from source:**
