@@ -9,7 +9,8 @@ import (
 const (
 	_ int = iota
 	LOWEST
-	EQUALS      // == !=
+	LOGICAL     // && || (lowest precedence for logical operators)
+	EQUALS      // == != = (equality/comparison)
 	LESSGREATER // < > <= >=
 	SUM         // + -
 	PRODUCT     // * /
@@ -31,8 +32,8 @@ var precedences = map[lexer.TokenType]int{
 	lexer.MINUS:  SUM,
 	lexer.ASTERISK: PRODUCT,
 	lexer.SLASH:  PRODUCT,
-	lexer.AND:    EQUALS, // Logical AND has same precedence as ==
-	lexer.OR:     EQUALS, // Logical OR has same precedence as ==
+	lexer.AND:    LOGICAL, // Logical AND has lower precedence than equality
+	lexer.OR:     LOGICAL, // Logical OR has lower precedence than equality
 	lexer.LPAREN: CALL,
 	lexer.LBRACKET: INDEX,
 	lexer.DOT:    CALL, // Method calls have same precedence as function calls
@@ -330,8 +331,8 @@ func (p *Parser) parseGroupedOrLambda() ast.Expr {
 
 	// Check if it looks like lambda parameters (identifier optionally with type)
 	// A lambda must have: (param) => or (param1, param2) => or (param: Type) =>
-	// Quick check: if next token after IDENT is = (assignment), it's definitely not a lambda
-	if p.curTokenIs(lexer.IDENT) && !p.peekTokenIs(lexer.ASSIGN) {
+	// Quick check: if next token after IDENT is = (assignment) or == (equality), it's definitely not a lambda
+	if p.curTokenIs(lexer.IDENT) && !p.peekTokenIs(lexer.ASSIGN) && !p.peekTokenIs(lexer.EQ) {
 		// Could be a lambda - try to parse as lambda parameters
 		// We check if we can parse parameters and then see ) followed by =>
 		params, isLambda := p.tryParseLambdaParams()
@@ -383,9 +384,9 @@ func (p *Parser) tryParseLambdaParams() ([]ast.Parameter, bool) {
 	var params []ast.Parameter
 	
 	for p.curTokenIs(lexer.IDENT) {
-		// Check if next token is = (assignment) - this means it's not a lambda parameter
-		if p.peekTokenIs(lexer.ASSIGN) {
-			// This is an assignment expression, not a lambda
+		// Check if next token is = (assignment) or == (equality) - this means it's not a lambda parameter
+		if p.peekTokenIs(lexer.ASSIGN) || p.peekTokenIs(lexer.EQ) {
+			// This is an assignment or equality expression, not a lambda
 			return nil, false
 		}
 		

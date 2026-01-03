@@ -86,6 +86,22 @@ func (c *Checker) CheckExpression(expr ast.Expr) Type {
 		return c.checkSetLiteral(e)
 	case *ast.ListLiteral:
 		return c.checkListLiteral(e)
+	case *ast.AlwaysExpr:
+		// Type-check the inner expression - temporal expressions evaluate to bool
+		c.CheckExpression(e.Expr)
+		return &Primitive{Kind: Bool}
+	case *ast.EventuallyExpr:
+		// Type-check the inner expression - temporal expressions evaluate to bool
+		c.CheckExpression(e.Expr)
+		return &Primitive{Kind: Bool}
+	case *ast.UntilExpr:
+		// Type-check both expressions - temporal expressions evaluate to bool
+		c.CheckExpression(e.Left)
+		c.CheckExpression(e.Right)
+		return &Primitive{Kind: Bool}
+	case *ast.WFExpr, *ast.SFExpr, *ast.LeadsToExpr:
+		// These are handled during verification, return bool as placeholder
+		return &Primitive{Kind: Bool}
 	default:
 		c.addError(expr.Pos(), "unsupported expression type: %T", expr)
 		return nil
@@ -226,6 +242,12 @@ func (c *Checker) checkIdent(ident *ast.Ident) Type {
 
 	// Check if it's a constant
 	if typ, found := c.env.LookupConstant(name); found {
+		return typ
+	}
+
+	// Check if it's a type name (e.g., enum ProcessState)
+	// This allows enum value access like ProcessState.Idle
+	if typ, found := c.env.LookupType(name); found {
 		return typ
 	}
 
@@ -466,6 +488,25 @@ func (c *Checker) checkSelectorExpr(expr *ast.SelectorExpr) Type {
 			return nil
 		}
 		return fieldType
+	}
+
+	// Check if it's an enum type - enum values like ProcessState.Idle
+	if enum, ok := xType.(*Enum); ok {
+		// Check if the selector is a valid enum value
+		found := false
+		for _, val := range enum.Values {
+			if val == expr.Sel {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.addError(expr.Pos(), "enum value %s not found in enum %s",
+				expr.Sel, enum.Name)
+			return nil
+		}
+		// Enum value access returns the enum type itself
+		return enum
 	}
 
 	// For other types (like method calls), we'll handle them later

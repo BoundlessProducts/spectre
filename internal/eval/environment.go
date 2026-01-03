@@ -8,12 +8,19 @@ import (
 )
 
 // Environment represents the evaluation environment for pure functions
-// It manages variable bindings, function definitions, and constants
+// It manages variable bindings, function definitions, constants, and enum types
 type Environment struct {
 	parent     *Environment
 	variables  map[string]state.Value // Variable name -> value
 	functions  map[string]*FunctionDef // Function name -> function definition
 	constants  map[string]state.Value // Constant name -> value
+	enumTypes  map[string]*EnumTypeDef // Enum type name -> enum type definition
+}
+
+// EnumTypeDef represents an enum type definition in the evaluation environment
+type EnumTypeDef struct {
+	Name   string
+	Values []string
 }
 
 // FunctionDef represents a function definition in the evaluation environment
@@ -30,6 +37,7 @@ func NewEnvironment() *Environment {
 		variables: make(map[string]state.Value),
 		functions: make(map[string]*FunctionDef),
 		constants: make(map[string]state.Value),
+		enumTypes: make(map[string]*EnumTypeDef),
 	}
 }
 
@@ -40,6 +48,7 @@ func NewChildEnvironment(parent *Environment) *Environment {
 		variables: make(map[string]state.Value),
 		functions: make(map[string]*FunctionDef),
 		constants: make(map[string]state.Value),
+		enumTypes: make(map[string]*EnumTypeDef),
 	}
 }
 
@@ -124,5 +133,21 @@ func (e *Environment) HasFunction(name string) bool {
 func (e *Environment) HasConstant(name string) bool {
 	_, exists := e.GetConstant(name)
 	return exists
+}
+
+// SetEnumType sets an enum type definition in the environment
+func (e *Environment) SetEnumType(name string, enumDef *EnumTypeDef) {
+	e.enumTypes[name] = enumDef
+}
+
+// GetEnumType gets an enum type definition, searching parent environments if not found
+func (e *Environment) GetEnumType(name string) (*EnumTypeDef, bool) {
+	if enumDef, exists := e.enumTypes[name]; exists {
+		return enumDef, true
+	}
+	if e.parent != nil {
+		return e.parent.GetEnumType(name)
+	}
+	return nil, false
 }
 

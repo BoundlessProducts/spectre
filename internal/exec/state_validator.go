@@ -12,16 +12,20 @@ import (
 type StateValidator struct {
 	constraintModel *state.ConstraintModel
 	evaluator       *eval.Evaluator
+	file            *ast.File // Keep reference to file for enum type registration
 }
 
 // NewStateValidator creates a new state validator
-func NewStateValidator(constraintModel *state.ConstraintModel) *StateValidator {
+func NewStateValidator(constraintModel *state.ConstraintModel, file *ast.File) *StateValidator {
 	env := eval.NewEnvironment()
+	// Register enum types
+	eval.RegisterEnumTypes(env, file)
 	evaluator := eval.NewEvaluator(env)
 
 	return &StateValidator{
 		constraintModel: constraintModel,
 		evaluator:       evaluator,
+		file:            file,
 	}
 }
 
@@ -31,6 +35,8 @@ func (sv *StateValidator) ValidateState(s *state.State) ([]*ValidationError, err
 
 	// Create environment with state variables
 	env := eval.NewEnvironment()
+	// Register enum types
+	eval.RegisterEnumTypes(env, sv.file)
 	for varName, varValue := range s.Variables {
 		env.SetVariable(varName, varValue)
 	}
@@ -78,6 +84,8 @@ func (sv *StateValidator) ValidatePostconditions(actionName string, currentState
 
 	// Create environment with both current and next state variables
 	env := eval.NewEnvironment()
+	// Register enum types
+	eval.RegisterEnumTypes(env, sv.file)
 
 	// Add current state variables (unprimed)
 	for varName, varValue := range currentState.Variables {

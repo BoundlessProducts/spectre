@@ -32,11 +32,12 @@ action increment {
 	vm := state.NewVariableModel(file)
 	am := state.NewActionModel(file)
 
-	executor := NewActionExecutor(vm, am)
+	cm := state.NewConstraintModel(file, am)
+	executor := NewActionExecutor(vm, am, cm, file)
 
 	// Create initial state
 	ism, _ := state.NewInitialStateModel(file)
-	initializer := NewStateInitializer(vm, ism)
+	initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 	initialStates, _ := initializer.GenerateInitialStates()
 	currentState := initialStates[0]
 
@@ -87,10 +88,11 @@ action add(amount: int) {
 	vm := state.NewVariableModel(file)
 	am := state.NewActionModel(file)
 
-	executor := NewActionExecutor(vm, am)
+	cm := state.NewConstraintModel(file, am)
+	executor := NewActionExecutor(vm, am, cm, file)
 
 	ism, _ := state.NewInitialStateModel(file)
-	initializer := NewStateInitializer(vm, ism)
+	initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 	initialStates, _ := initializer.GenerateInitialStates()
 	currentState := initialStates[0]
 
@@ -138,10 +140,11 @@ action setBoth(a: int, b: int) {
 	vm := state.NewVariableModel(file)
 	am := state.NewActionModel(file)
 
-	executor := NewActionExecutor(vm, am)
+	cm := state.NewConstraintModel(file, am)
+	executor := NewActionExecutor(vm, am, cm, file)
 
 	ism, _ := state.NewInitialStateModel(file)
-	initializer := NewStateInitializer(vm, ism)
+	initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 	initialStates, _ := initializer.GenerateInitialStates()
 	currentState := initialStates[0]
 
@@ -194,10 +197,11 @@ action increment when counter < 10 {
 	vm := state.NewVariableModel(file)
 	am := state.NewActionModel(file)
 
-	executor := NewActionExecutor(vm, am)
+	cm := state.NewConstraintModel(file, am)
+	executor := NewActionExecutor(vm, am, cm, file)
 
 	ism, _ := state.NewInitialStateModel(file)
-	initializer := NewStateInitializer(vm, ism)
+	initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 	initialStates, _ := initializer.GenerateInitialStates()
 	currentState := initialStates[0]
 

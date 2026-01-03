@@ -160,11 +160,18 @@ func runTypecheck(args []string) error {
 		}
 	}
 	
-	// Third pass: add variables, constants, and functions (using the resolver)
+	// Third pass: add enums, variables, constants, and functions (using the resolver)
 	// Create a temporary checker to resolve named types in stored types
 	tempChecker := types.NewChecker(typeEnv)
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
+		case *ast.EnumDecl:
+			// Declare enum as a type
+			enumType := &types.Enum{
+				Name:   d.Name,
+				Values: d.Values,
+			}
+			typeEnv.DeclareType(d.Name, enumType)
 		case *ast.VariableDecl:
 			typ, err := resolveType(d.Type)
 			if err == nil {
@@ -230,8 +237,8 @@ func runTypecheck(args []string) error {
 		case *ast.InvariantDecl:
 			checker.CheckExpression(d.Condition)
 		case *ast.TemporalDecl:
-			// Temporal expressions are checked during verification, not type checking
-			// Skip them here to avoid errors
+			// Type-check temporal expressions - they contain expressions that reference state variables
+			checker.CheckExpression(d.Expression)
 		}
 	}
 
@@ -253,6 +260,18 @@ func runTypecheck(args []string) error {
 
 // runVerify verifies a Spectre specification
 func runVerify(args []string) error {
+	// Check for verbose flag
+	verbose := false
+	filteredArgs := []string{}
+	for _, arg := range args {
+		if arg == "--verbose" || arg == "-v" {
+			verbose = true
+		} else {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+	args = filteredArgs
+	
 	if len(args) == 0 {
 		return fmt.Errorf("no file specified")
 	}
@@ -338,11 +357,18 @@ func runVerify(args []string) error {
 		}
 	}
 	
-	// Third pass: add variables, constants, and functions (using the resolver)
+	// Third pass: add enums, variables, constants, and functions (using the resolver)
 	// Create a temporary checker to resolve named types in stored types
 	tempChecker := types.NewChecker(typeEnv)
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
+		case *ast.EnumDecl:
+			// Declare enum as a type
+			enumType := &types.Enum{
+				Name:   d.Name,
+				Values: d.Values,
+			}
+			typeEnv.DeclareType(d.Name, enumType)
 		case *ast.VariableDecl:
 			typ, err := resolveType(d.Type)
 			if err == nil {
@@ -408,8 +434,8 @@ func runVerify(args []string) error {
 		case *ast.InvariantDecl:
 			checker.CheckExpression(d.Condition)
 		case *ast.TemporalDecl:
-			// Temporal expressions are checked during verification, not type checking
-			// Skip them here to avoid errors
+			// Type-check temporal expressions - they contain expressions that reference state variables
+			checker.CheckExpression(d.Expression)
 		}
 	}
 
@@ -427,6 +453,7 @@ func runVerify(args []string) error {
 	// Create state machine
 	sm, err := exec.NewStateMachine(file)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating state machine in %s: %v\n", filename, err)
 		return fmt.Errorf("error creating state machine: %w", err)
 	}
 
@@ -434,17 +461,44 @@ func runVerify(args []string) error {
 	explorer := explore.NewExplorer(sm)
 	explorer.SetMaxDepth(10)
 	explorer.SetMaxStates(50)
+	explorer.SetVerbose(verbose)
 
 	result, err := explorer.ExploreBFS()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error exploring state space in %s: %v\n", filename, err)
 		return fmt.Errorf("error exploring state space: %w", err)
 	}
 
 	// Report results
-	if len(result.Violations) > 0 {
-		fmt.Fprintf(os.Stderr, "Verification failed: %d violation(s) found\n", len(result.Violations))
+	hasViolations := len(result.Violations) > 0
+	temporalViolations := []*explore.TemporalVerificationResult{}
+	
+	// Verify temporal properties
+	constraintModel := sm.GetConstraintModel()
+	temporalProps := constraintModel.GetTemporalProperties()
+	if len(temporalProps) > 0 {
+		hasher := explore.NewStateHasher()
+		temporalVerifier := explore.NewTemporalVerifier(hasher, file)
+		
+		for _, prop := range temporalProps {
+			verificationResult, err := temporalVerifier.VerifyTemporalProperty(prop, result.TransitionGraph, result.InitialStates)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error verifying temporal property %s: %v\n", prop.Name, err)
+				continue
+			}
+			if !verificationResult.Holds {
+				hasViolations = true
+				temporalViolations = append(temporalViolations, verificationResult)
+			}
+		}
+	}
+	
+	if hasViolations {
+		fmt.Fprintf(os.Stderr, "Verification failed: %d violation(s) found\n", len(result.Violations)+len(temporalViolations))
+		
+		// Report invariant violations
 		for i, violation := range result.Violations {
-			fmt.Fprintf(os.Stderr, "\nViolation %d:\n", i+1)
+			fmt.Fprintf(os.Stderr, "\nViolation %d (Invariant):\n", i+1)
 			fmt.Fprintf(os.Stderr, "  %s\n", violation.Description)
 			if len(violation.Path) > 0 {
 				fmt.Fprintf(os.Stderr, "  Path:\n")
@@ -453,12 +507,45 @@ func runVerify(args []string) error {
 				}
 			}
 		}
-		return fmt.Errorf("verification failed with %d violation(s)", len(result.Violations))
+		
+		// Report temporal property violations
+		for i, violation := range temporalViolations {
+			fmt.Fprintf(os.Stderr, "\nViolation %d (Temporal Property: %s):\n", len(result.Violations)+i+1, violation.PropertyName)
+			fmt.Fprintf(os.Stderr, "  %s\n", violation.Violation.Description)
+			if violation.Violation.Trace != nil && violation.Violation.Trace.Length() > 0 {
+				fmt.Fprintf(os.Stderr, "  Counterexample trace:\n")
+				for j := 0; j < violation.Violation.Trace.Length(); j++ {
+					state := violation.Violation.Trace.GetState(j)
+					action := violation.Violation.Trace.GetAction(j)
+					if action != "" {
+						fmt.Fprintf(os.Stderr, "    %d. %s\n", j+1, action)
+					}
+					if verbose && state != nil {
+						for name, value := range state.Variables {
+							fmt.Fprintf(os.Stderr, "       %s = %s\n", name, value.String())
+						}
+					}
+				}
+			}
+			if len(violation.Violation.Cycles) > 0 {
+				fmt.Fprintf(os.Stderr, "  Blocking cycles: %d\n", len(violation.Violation.Cycles))
+			}
+		}
+		
+		return fmt.Errorf("verification failed with %d violation(s)", len(result.Violations)+len(temporalViolations))
 	}
 
-		fmt.Printf("✓ Verification passed for %s\n", filename)
-		fmt.Printf("  Explored %d states\n", result.StatesExplored)
-		return nil
+	fmt.Printf("✓ Verification passed for %s\n", filename)
+	fmt.Printf("  Explored %d states\n", result.StatesExplored)
+	if len(temporalProps) > 0 {
+		fmt.Printf("  Verified %d temporal propert%s\n", len(temporalProps), func() string {
+			if len(temporalProps) == 1 {
+				return "y"
+			}
+			return "ies"
+		}())
+	}
+	return nil
 	})
 }
 

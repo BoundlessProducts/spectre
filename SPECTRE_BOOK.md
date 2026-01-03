@@ -195,6 +195,228 @@ spectre verify counter.spec
 - If you installed to a custom location using `INSTALL_DIR` or `SHARE_DIR` environment variables, adjust the paths accordingly.
 - The examples directory contains all the example `.spec` files from the repository, so you don't need to clone the repository just to access examples.
 
+---
+
+## Example: Understanding Temporal Property Violations
+
+Before diving into the language details, let's examine a real example that demonstrates how Spectre finds and reports temporal property violations. This will help you understand what temporal verification does and how to fix common issues.
+
+### The Counter Example
+
+The `counter.spec` file demonstrates a common pattern in specifications: a counter that can be incremented, decremented, or reset. Here's the specification:
+
+```spectre
+description "Tracks a numeric counter value"
+var counter: int
+
+description "System starts with counter initialized to zero"
+init {
+  counter = 0
+}
+
+description "Increments the counter by one"
+action increment {
+  counter' = counter + 1
+}
+
+description "Decrements the counter by one, only when counter is positive"
+action decrement {
+  require counter > 0
+  counter' = counter - 1
+}
+
+description "Resets the counter back to zero"
+action reset {
+  counter' = 0
+}
+
+description "Ensures counter never becomes negative"
+invariant nonNegative {
+  counter >= 0
+}
+
+description "Keeps counter within reasonable bounds"
+invariant bounded {
+  counter <= 100
+}
+
+description "Verifies that counter eventually reaches value 10"
+temporal eventuallyReachesTen {
+  eventually (counter = 10)
+}
+
+description "Ensures counter remains non-negative throughout execution"
+temporal alwaysNonNegative {
+  always (counter >= 0)
+}
+
+description "Guarantees progress: if counter is below 10, it will eventually reach 10"
+temporal progress {
+  always (counter < 10 → eventually counter = 10)
+}
+```
+
+### Running Verification
+
+When you run verification on this file:
+
+```bash
+spectre verify counter.spec --verbose
+```
+
+The verifier explores the state space and finds that the `progress` temporal property is **violated**.
+
+### Understanding the Error
+
+**What the property means:**
+
+The `progress` property states:
+```spectre
+always (counter < 10 → eventually counter = 10)
+```
+
+This means: "In every state, if counter is less than 10, then eventually counter must become 10."
+
+**Why it fails:**
+
+The property requires that whenever `counter < 10`, there must be a path where `counter` eventually reaches 10. However, the system allows **infinite paths** where this never happens:
+
+1. **Infinite reset loop**: Starting from `counter = 4`, the system can execute:
+   - `reset` → `counter = 0`
+   - `reset` → `counter = 0` (can repeat forever)
+   - On this path, counter never reaches 10
+
+2. **Oscillation loop**: The system can execute:
+   - `increment` → `counter = 1`
+   - `decrement` → `counter = 0`
+   - `increment` → `counter = 1`
+   - `decrement` → `counter = 0`
+   - (repeats forever, counter stays below 10)
+
+Since the `always` operator requires the property to hold on **all possible execution paths**, and these infinite paths violate the property, verification fails.
+
+**Verification Output:**
+
+```
+Verification failed: 1 violation(s) found
+
+Violation 1 (Temporal Property: progress):
+  Property 'progress' violated in reachable state
+  Counterexample trace:
+    counter = 4
+```
+
+### How to Fix It
+
+There are several ways to fix this specification, depending on your requirements:
+
+#### Option 1: Remove the Problematic Property (Simplest)
+
+If you don't need the strict progress guarantee, simply remove or comment out the `progress` property:
+
+```spectre
+// Removed the 'progress' property because it requires fairness to hold
+// Without fairness constraints, the system allows infinite paths where:
+// 1. reset is executed repeatedly (counter never reaches 10)
+// 2. decrement/increment oscillate (counter oscillates between values < 10)
+```
+
+#### Option 2: Restrict Actions to Prevent Non-Progress Paths
+
+Add conditions to prevent infinite loops. For example, only allow `reset` when counter is above a threshold:
+
+```spectre
+description "Resets the counter back to zero, but only when counter is greater than 10"
+action reset {
+  require counter > 10  // ✅ Only reset after reaching 10
+  counter' = 0
+}
+```
+
+This ensures that once counter reaches 10, it can be reset, but the reset can't prevent reaching 10 in the first place.
+
+#### Option 3: Add Fairness Constraints (Future Enhancement)
+
+In the future, when fairness conditions are fully supported, you could specify:
+
+```spectre
+temporal progress {
+  WF(increment) → always (counter < 10 → eventually counter = 10)
+}
+```
+
+This would mean: "If `increment` has weak fairness (is continuously enabled and eventually executes), then progress holds."
+
+### Key Lessons
+
+1. **Temporal properties check all paths**: The `always` operator requires the property to hold on every possible execution path, not just one.
+
+2. **Infinite paths matter**: Systems without fairness constraints can have infinite execution paths where progress never occurs.
+
+3. **Fix strategies**: You can fix violations by:
+   - Removing or relaxing the property
+   - Restricting actions to prevent non-progress paths
+   - Adding fairness conditions (when supported)
+
+4. **Verification output is helpful**: The verifier tells you exactly which property failed and provides a counterexample trace showing where the violation occurs.
+
+### The Corrected Specification
+
+Here's a corrected version that removes the problematic property:
+
+```spectre
+description "Tracks a numeric counter value"
+var counter: int
+
+description "System starts with counter initialized to zero"
+init {
+  counter = 0
+}
+
+description "Increments the counter by one"
+action increment {
+  counter' = counter + 1
+}
+
+description "Decrements the counter by one, only when counter is positive"
+action decrement {
+  require counter > 0
+  counter' = counter - 1
+}
+
+description "Resets the counter back to zero"
+action reset {
+  counter' = 0
+}
+
+description "Ensures counter never becomes negative"
+invariant nonNegative {
+  counter >= 0
+}
+
+description "Keeps counter within reasonable bounds"
+invariant bounded {
+  counter <= 100
+}
+
+description "Verifies that counter can eventually reach value 10"
+description "This property holds because there exists a path where we only increment"
+temporal eventuallyReachesTen {
+  eventually (counter = 10)
+}
+
+description "Ensures counter remains non-negative throughout execution"
+temporal alwaysNonNegative {
+  always (counter >= 0)
+}
+```
+
+This corrected version verifies successfully because:
+- The `eventuallyReachesTen` property only requires that there **exists** a path where counter reaches 10 (which is true: we can just increment repeatedly).
+- The `alwaysNonNegative` property holds because the `decrement` action has a precondition preventing negative values.
+
+---
+
 ### Your First Specification
 
 Let's start with a simple counter example:

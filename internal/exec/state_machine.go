@@ -34,9 +34,9 @@ func NewStateMachine(file *ast.File) (*StateMachine, error) {
 		initialStateModel: ism,
 		actionModel:       am,
 		constraintModel:   cm,
-		initializer:       NewStateInitializer(vm, ism),
-		executor:          NewActionExecutor(vm, am),
-		validator:         NewStateValidator(cm),
+		initializer:       NewStateInitializer(vm, ism, file),
+		executor:          NewActionExecutor(vm, am, cm, file),
+		validator:         NewStateValidator(cm, file),
 	}, nil
 }
 
@@ -117,5 +117,10 @@ func (sm *StateMachine) GetAvailableActions(currentState *state.State) ([]string
 // ValidateState validates a state against all invariants
 func (sm *StateMachine) ValidateState(s *state.State) ([]*ValidationError, error) {
 	return sm.validator.ValidateState(s)
+}
+
+// GetConstraintModel returns the constraint model
+func (sm *StateMachine) GetConstraintModel() *state.ConstraintModel {
+	return sm.constraintModel
 }
 

@@ -13,18 +13,19 @@ type Explorer struct {
 	hasher       *StateHasher
 	cycleDetector *CycleDetector
 	visited      map[string]bool // State hash -> visited
-	queue        []*StateNode    // Queue for BFS
-	stack        []*StateNode    // Stack for DFS
+	queue        []*ExplorationStateNode    // Queue for BFS
+	stack        []*ExplorationStateNode    // Stack for DFS
 	maxDepth     int             // Maximum exploration depth
 	maxStates    int             // Maximum number of states to explore
 	detectCycles bool            // Whether to detect cycles
+	verbose      bool            // Whether to print verbose exploration details
 }
 
-// StateNode represents a state in the exploration tree
-type StateNode struct {
+// ExplorationStateNode represents a state in the exploration tree (during BFS/DFS)
+type ExplorationStateNode struct {
 	State       *state.State
 	Depth       int
-	Parent      *StateNode
+	Parent      *ExplorationStateNode
 	Action      string // Action that led to this state
 	ActionArgs  []state.Value
 	Path        []*Transition // Path from initial state to this state
@@ -40,12 +41,39 @@ type Transition struct {
 
 // ExplorationResult contains the results of state space exploration
 type ExplorationResult struct {
-	StatesExplored int
-	StatesVisited  int
-	Violations     []*Violation
+	StatesExplored  int
+	StatesVisited   int
+	Violations      []*Violation
 	ReachableStates []*state.State
-	MaxDepth       int
-	Cycles         []*Cycle
+	InitialStates   []*state.State // Initial states from which exploration started
+	MaxDepth        int
+	Cycles          []*Cycle
+	TransitionGraph *TransitionGraph // Complete transition graph including cycles
+}
+
+// TransitionGraph represents the complete state transition graph
+type TransitionGraph struct {
+	States      map[string]*StateNode      // State hash -> StateNode
+	Transitions []*Transition              // All transitions (including cycles)
+	Outgoing    map[string][]*Transition   // State hash -> outgoing transitions
+	Incoming    map[string][]*Transition   // State hash -> incoming transitions
+}
+
+// StateNode represents a node in the transition graph
+type StateNode struct {
+	State     *state.State
+	Hash      string
+	Outgoing  []*Transition
+	Incoming  []*Transition
+	InCycle   bool              // Whether this state is part of a cycle
+	Cycles    []*CycleInfo      // Cycles this state participates in
+}
+
+// CycleInfo represents detailed information about a cycle
+type CycleInfo struct {
+	States      []*state.State // States in the cycle (in order)
+	Transitions []*Transition  // Transitions forming the cycle
+	StartState  *state.State   // Starting state of the cycle
 }
 
 // Cycle represents a cycle found in the state space
@@ -70,8 +98,8 @@ func NewExplorer(stateMachine *exec.StateMachine) *Explorer {
 		hasher:       hasher,
 		cycleDetector: NewCycleDetector(hasher),
 		visited:      make(map[string]bool),
-		queue:        []*StateNode{},
-		stack:        []*StateNode{},
+		queue:        []*ExplorationStateNode{},
+		stack:        []*ExplorationStateNode{},
 		maxDepth:     100,  // Default max depth
 		maxStates:    1000, // Default max states
 		detectCycles: true, // Enable cycle detection by default
@@ -88,10 +116,15 @@ func (e *Explorer) SetMaxStates(max int) {
 	e.maxStates = max
 }
 
+// SetVerbose sets verbose logging mode
+func (e *Explorer) SetVerbose(verbose bool) {
+	e.verbose = verbose
+}
+
 // ExploreBFS explores the state space using Breadth-First Search
 func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 	e.visited = make(map[string]bool)
-	e.queue = []*StateNode{}
+	e.queue = []*ExplorationStateNode{}
 
 	// Get initial states
 	initialStates, err := e.stateMachine.GetInitialStates()
@@ -103,6 +136,7 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 		Violations:      []*Violation{},
 		ReachableStates: []*state.State{},
 		Cycles:          []*Cycle{},
+		TransitionGraph: NewTransitionGraph(),
 	}
 
 	// Add initial states to queue
@@ -111,7 +145,16 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 		if !e.visited[hash] {
 			e.visited[hash] = true
 			result.ReachableStates = append(result.ReachableStates, initState)
-			e.queue = append(e.queue, &StateNode{
+			
+			// Add initial state to transition graph
+			result.TransitionGraph.AddState(initState, hash)
+			
+			// Update cycle detector with initial state
+			if e.detectCycles {
+				e.cycleDetector.PushState(initState)
+			}
+			
+			e.queue = append(e.queue, &ExplorationStateNode{
 				State: initState,
 				Depth: 0,
 				Path:  []*Transition{},
@@ -125,10 +168,21 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 		e.queue = e.queue[1:]
 
 		if current.Depth >= e.maxDepth {
+			if e.verbose {
+				fmt.Printf("[DEPTH LIMIT] Skipping state at depth %d (max: %d)\n", current.Depth, e.maxDepth)
+			}
 			continue
 		}
 
 		result.StatesExplored++
+
+		// Print current state info
+		if e.verbose {
+			fmt.Printf("\n[STATE %d] Exploring state (depth: %d):\n", result.StatesExplored, current.Depth)
+			for name, value := range current.State.Variables {
+				fmt.Printf("  %s = %s\n", name, value.String())
+			}
+		}
 
 		// Validate current state
 		errors, err := e.stateMachine.ValidateState(current.State)
@@ -138,6 +192,9 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 
 		if len(errors) > 0 {
 			// Found invariant violation
+			if e.verbose {
+				fmt.Printf("  [VIOLATION] Found %d invariant violation(s)\n", len(errors))
+			}
 			for _, validationError := range errors {
 				result.Violations = append(result.Violations, &Violation{
 					State:       current.State,
@@ -154,21 +211,52 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 			return nil, fmt.Errorf("error getting available actions: %w", err)
 		}
 
+		if e.verbose {
+			fmt.Printf("  [ACTIONS] Available actions: %v\n", availableActions)
+		}
+
 		// Explore each action
 		for _, actionName := range availableActions {
+			if e.verbose {
+				fmt.Printf("    [TRY] Executing action: %s\n", actionName)
+			}
 			nextState, err := e.stateMachine.ExecuteAction(actionName, current.State, nil)
 			if err != nil {
-				// Action execution failed (e.g., postcondition violation)
+				// Action execution failed - log for debugging but continue
+				if e.verbose {
+					fmt.Printf("      [FAIL] Action %s failed: %v\n", actionName, err)
+				}
+				// This could be due to preconditions not being met (shouldn't happen since
+				// GetAvailableActions filters them), postcondition violations, or invariant violations
 				// Continue with other actions
 				continue
 			}
 
 			hash := e.hasher.HashState(nextState)
 			
-			// Check for cycles if enabled
-			if e.detectCycles {
-				if e.cycleDetector.HasCycle(nextState) {
-					// Found a cycle
+			// Create transition (even if already visited, to build complete graph)
+			transition := &Transition{
+				FromState: current.State,
+				ToState:   nextState,
+				Action:    actionName,
+				Args:      nil,
+			}
+			
+			currentHash := e.hasher.HashState(current.State)
+			
+			// Add to transition graph (even for cycles - we want complete graph)
+			result.TransitionGraph.AddTransition(transition, currentHash, hash)
+			
+			// Only skip exploring if we've already visited this state
+			if e.visited[hash] {
+				if e.verbose {
+					fmt.Printf("      [SKIP] Next state already visited (hash: %s)\n", hash)
+					if e.detectCycles && e.cycleDetector.HasCycle(nextState) {
+						fmt.Printf("        [CYCLE] This would create a cycle (but transition recorded in graph)\n")
+					}
+				}
+				// If cycle detection is enabled and this creates a cycle in the current path, record it
+				if e.detectCycles && e.cycleDetector.HasCycle(nextState) {
 					cyclePath := e.cycleDetector.GetCyclePath(nextState)
 					if len(cyclePath) > 0 {
 						// Build transition path for the cycle
@@ -176,57 +264,51 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 						for i := 0; i < len(current.Path); i++ {
 							transitionPath = append(transitionPath, current.Path[i])
 						}
-						transitionPath = append(transitionPath, &Transition{
-							FromState: current.State,
-							ToState:   nextState,
-							Action:    actionName,
-							Args:      nil,
-						})
+						transitionPath = append(transitionPath, transition)
 						
 						result.Cycles = append(result.Cycles, &Cycle{
 							Path:        transitionPath,
 							Description: fmt.Sprintf("Cycle detected: %d states", len(cyclePath)),
 						})
 					}
-					continue // Don't explore cycles
 				}
+				continue // Already visited, skip exploring further
 			}
 			
-			if !e.visited[hash] {
-				e.visited[hash] = true
-				result.ReachableStates = append(result.ReachableStates, nextState)
-
-				// Create transition
-				transition := &Transition{
-					FromState: current.State,
-					ToState:   nextState,
-					Action:    actionName,
-					Args:      nil,
+			// New state - mark as visited and explore it
+			e.visited[hash] = true
+			result.ReachableStates = append(result.ReachableStates, nextState)
+			
+			if e.verbose {
+				fmt.Printf("      [SUCCESS] Action %s succeeded, next state:\n", actionName)
+				for name, value := range nextState.Variables {
+					fmt.Printf("        %s = %s\n", name, value.String())
 				}
+				fmt.Printf("        Adding to queue for exploration\n")
+			}
 
-				// Create new path
-				newPath := make([]*Transition, len(current.Path))
-				copy(newPath, current.Path)
-				newPath = append(newPath, transition)
+			// Create new path
+			newPath := make([]*Transition, len(current.Path))
+			copy(newPath, current.Path)
+			newPath = append(newPath, transition)
 
-				// Update cycle detector path
-				if e.detectCycles {
-					e.cycleDetector.PushState(nextState)
-				}
+			// Update cycle detector path
+			if e.detectCycles {
+				e.cycleDetector.PushState(nextState)
+			}
 
-				// Add to queue
-				e.queue = append(e.queue, &StateNode{
-					State:      nextState,
-					Depth:      current.Depth + 1,
-					Parent:     current,
-					Action:     actionName,
-					ActionArgs: nil,
-					Path:       newPath,
-				})
+			// Add to queue
+			e.queue = append(e.queue, &ExplorationStateNode{
+				State:      nextState,
+				Depth:      current.Depth + 1,
+				Parent:     current,
+				Action:     actionName,
+				ActionArgs: nil,
+				Path:       newPath,
+			})
 
-				if current.Depth+1 > result.MaxDepth {
-					result.MaxDepth = current.Depth + 1
-				}
+			if current.Depth+1 > result.MaxDepth {
+				result.MaxDepth = current.Depth + 1
 			}
 		}
 	}
@@ -238,7 +320,7 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 // ExploreDFS explores the state space using Depth-First Search
 func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 	e.visited = make(map[string]bool)
-	e.stack = []*StateNode{}
+	e.stack = []*ExplorationStateNode{}
 
 	// Get initial states
 	initialStates, err := e.stateMachine.GetInitialStates()
@@ -249,7 +331,9 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 	result := &ExplorationResult{
 		Violations:      []*Violation{},
 		ReachableStates: []*state.State{},
+		InitialStates:   initialStates, // Store initial states
 		Cycles:          []*Cycle{},
+		TransitionGraph: NewTransitionGraph(),
 	}
 
 	// Add initial states to stack
@@ -258,7 +342,16 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 		if !e.visited[hash] {
 			e.visited[hash] = true
 			result.ReachableStates = append(result.ReachableStates, initState)
-			e.stack = append(e.stack, &StateNode{
+			
+			// Add initial state to transition graph
+			result.TransitionGraph.AddState(initState, hash)
+			
+			// Update cycle detector with initial state
+			if e.detectCycles {
+				e.cycleDetector.PushState(initState)
+			}
+			
+			e.stack = append(e.stack, &ExplorationStateNode{
 				State: initState,
 				Depth: 0,
 				Path:  []*Transition{},
@@ -362,7 +455,7 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 				}
 
 				// Push to stack
-				e.stack = append(e.stack, &StateNode{
+				e.stack = append(e.stack, &ExplorationStateNode{
 					State:      nextState,
 					Depth:      current.Depth + 1,
 					Parent:     current,

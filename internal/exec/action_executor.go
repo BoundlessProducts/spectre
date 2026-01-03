@@ -10,20 +10,26 @@ import (
 
 // ActionExecutor executes actions to generate next states
 type ActionExecutor struct {
-	variableModel *state.VariableModel
-	actionModel   *state.ActionModel
-	evaluator     *eval.Evaluator
+	variableModel   *state.VariableModel
+	actionModel     *state.ActionModel
+	constraintModel *state.ConstraintModel
+	evaluator       *eval.Evaluator
+	file            *ast.File // Keep reference to file for enum type registration
 }
 
 // NewActionExecutor creates a new action executor
-func NewActionExecutor(variableModel *state.VariableModel, actionModel *state.ActionModel) *ActionExecutor {
+func NewActionExecutor(variableModel *state.VariableModel, actionModel *state.ActionModel, constraintModel *state.ConstraintModel, file *ast.File) *ActionExecutor {
 	env := eval.NewEnvironment()
+	// Register enum types
+	eval.RegisterEnumTypes(env, file)
 	evaluator := eval.NewEvaluator(env)
 
 	return &ActionExecutor{
-		variableModel: variableModel,
-		actionModel:   actionModel,
-		evaluator:     evaluator,
+		variableModel:   variableModel,
+		actionModel:     actionModel,
+		constraintModel: constraintModel,
+		evaluator:       evaluator,
+		file:            file,
 	}
 }
 
@@ -40,6 +46,8 @@ func (ae *ActionExecutor) ExecuteAction(actionName string, currentState *state.S
 
 	// Create an environment with current state values and action parameters
 	env := eval.NewEnvironment()
+	// Register enum types
+	eval.RegisterEnumTypes(env, ae.file)
 
 	// Add current state variables to environment
 	for varName, varValue := range currentState.Variables {
@@ -84,6 +92,16 @@ func (ae *ActionExecutor) ExecuteAction(actionName string, currentState *state.S
 				if err != nil {
 					return nil, fmt.Errorf("error evaluating expression in action %s: %w", actionName, err)
 				}
+
+			case *ast.RequireStmt:
+				// Require statements are preconditions - already checked in CanExecute
+				// Skip them during execution
+				continue
+
+			case *ast.EnsureStmt:
+				// Ensure statements are postconditions - checked in ValidatePostconditions
+				// Skip them during execution
+				continue
 
 			default:
 				return nil, fmt.Errorf("unsupported statement type in action body: %T", stmt)
@@ -139,6 +157,8 @@ func (ae *ActionExecutor) CanExecute(actionName string, currentState *state.Stat
 
 	// Create environment with current state values
 	env := eval.NewEnvironment()
+	// Register enum types
+	eval.RegisterEnumTypes(env, ae.file)
 	for varName, varValue := range currentState.Variables {
 		env.SetVariable(varName, varValue)
 	}
@@ -166,6 +186,24 @@ func (ae *ActionExecutor) CanExecute(actionName string, currentState *state.Stat
 			}
 		} else {
 			return false, fmt.Errorf("guard must evaluate to boolean")
+		}
+	}
+
+	// Check require preconditions (if any)
+	preconditions := ae.constraintModel.GetPreconditions(actionName)
+	for _, precondition := range preconditions {
+		preconditionValue, err := evaluator.Eval(precondition.Condition)
+		if err != nil {
+			return false, fmt.Errorf("error evaluating precondition: %w", err)
+		}
+
+		// Precondition must evaluate to true
+		if pv, ok := preconditionValue.(*state.PrimitiveValue); ok && pv.TypeName == "bool" {
+			if pv.BoolValue == nil || !*pv.BoolValue {
+				return false, nil
+			}
+		} else {
+			return false, fmt.Errorf("precondition must evaluate to boolean")
 		}
 	}
 

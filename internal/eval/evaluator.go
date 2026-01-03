@@ -130,7 +130,23 @@ func (e *Evaluator) evalBinaryExpr(expr *ast.BinaryExpr) (state.Value, error) {
 
 // evalBinaryOp evaluates a binary operation
 func (e *Evaluator) evalBinaryOp(op ast.BinaryOp, left, right state.Value) (state.Value, error) {
-	// For now, support primitive operations only
+	// Handle equality/inequality for enum values
+	if op == ast.Eq || op == ast.Neq {
+		leftEnum, leftEnumOk := left.(*state.EnumValue)
+		rightEnum, rightEnumOk := right.(*state.EnumValue)
+		
+		if leftEnumOk && rightEnumOk {
+			// Both are enum values - compare enum name and value name
+			equal := leftEnum.EnumName == rightEnum.EnumName && leftEnum.ValueName == rightEnum.ValueName
+			if op == ast.Eq {
+				return state.NewBoolValue(equal), nil
+			} else {
+				return state.NewBoolValue(!equal), nil
+			}
+		}
+	}
+
+	// For arithmetic and other operations, support primitive operations
 	leftPrim, leftOk := left.(*state.PrimitiveValue)
 	rightPrim, rightOk := right.(*state.PrimitiveValue)
 
@@ -594,9 +610,30 @@ func (e *Evaluator) evalCallExpr(expr *ast.CallExpr) (state.Value, error) {
 	return evaluator.evalFunctionBody(fnDef.Body)
 }
 
-// evalSelectorExpr evaluates a selector expression (e.g., obj.field or obj.method)
+// evalSelectorExpr evaluates a selector expression (e.g., obj.field or obj.method or Enum.Value)
 func (e *Evaluator) evalSelectorExpr(expr *ast.SelectorExpr) (state.Value, error) {
-	// Evaluate the object
+	// Check if it's an enum value access (e.g., ProcessState.Idle)
+	if ident, ok := expr.X.(*ast.Ident); ok {
+		// Check if it's an enum type name
+		enumDef, exists := e.env.GetEnumType(ident.Name)
+		if exists {
+			// Verify that the selector is a valid enum value
+			valid := false
+			for _, val := range enumDef.Values {
+				if val == expr.Sel {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return nil, fmt.Errorf("enum value %s.%s not found in enum %s", ident.Name, expr.Sel, ident.Name)
+			}
+			// Return the enum value
+			return state.NewEnumValue(ident.Name, expr.Sel), nil
+		}
+	}
+
+	// Evaluate the object (for method calls or field access)
 	obj, err := e.Eval(expr.X)
 	if err != nil {
 		return nil, fmt.Errorf("error evaluating object: %w", err)

@@ -5,11 +5,22 @@ import (
 )
 
 // ConstraintModel represents the model of all constraints in a specification
-// Constraints include invariants, preconditions (require), and postconditions (ensure)
+// Constraints include invariants, preconditions (require), postconditions (ensure), and temporal properties
 type ConstraintModel struct {
-	Invariants    []*InvariantInfo
-	Preconditions map[string][]*PreconditionInfo  // Action name -> preconditions
+	Invariants     []*InvariantInfo
+	Preconditions  map[string][]*PreconditionInfo  // Action name -> preconditions
 	Postconditions map[string][]*PostconditionInfo // Action name -> postconditions
+	TemporalProps  []*TemporalPropertyInfo         // Temporal properties
+}
+
+// TemporalPropertyInfo contains information about a temporal property
+type TemporalPropertyInfo struct {
+	Name        string
+	Expression  ast.Expr
+	Declaration *ast.TemporalDecl
+	Position    ast.Position
+	Description string
+	Visibility  ast.Visibility
 }
 
 // InvariantInfo contains information about an invariant
@@ -42,6 +53,7 @@ func NewConstraintModel(file *ast.File, actionModel *ActionModel) *ConstraintMod
 		Invariants:     []*InvariantInfo{},
 		Preconditions:  make(map[string][]*PreconditionInfo),
 		Postconditions: make(map[string][]*PostconditionInfo),
+		TemporalProps:  []*TemporalPropertyInfo{},
 	}
 
 	// Extract all constraints from the file
@@ -63,6 +75,9 @@ func (cm *ConstraintModel) extractConstraintsFromDecl(decl ast.Decl, actionModel
 	case *ast.InvariantDecl:
 		// Top-level invariant declaration
 		cm.addInvariant(d)
+	case *ast.TemporalDecl:
+		// Temporal property declaration
+		cm.addTemporalProperty(d)
 	case *ast.ActionDecl:
 		// Extract preconditions and postconditions from action body
 		cm.extractActionConstraints(d, actionModel)
@@ -72,6 +87,8 @@ func (cm *ConstraintModel) extractConstraintsFromDecl(decl ast.Decl, actionModel
 			switch innerD := innerDecl.(type) {
 			case *ast.InvariantDecl:
 				cm.addInvariant(innerD)
+			case *ast.TemporalDecl:
+				cm.addTemporalProperty(innerD)
 			case *ast.ActionDecl:
 				cm.extractActionConstraints(innerD, actionModel)
 			}
@@ -186,5 +203,32 @@ func (cm *ConstraintModel) HasPostconditions(actionName string) bool {
 // GetInvariantCount returns the number of invariants
 func (cm *ConstraintModel) GetInvariantCount() int {
 	return len(cm.Invariants)
+}
+
+// addTemporalProperty adds a temporal property to the model
+func (cm *ConstraintModel) addTemporalProperty(decl *ast.TemporalDecl) {
+	cm.TemporalProps = append(cm.TemporalProps, &TemporalPropertyInfo{
+		Name:        decl.Name,
+		Expression:  decl.Expression,
+		Declaration: decl,
+		Position:    decl.Position,
+		Description: decl.Description,
+		Visibility:  decl.Visibility,
+	})
+}
+
+// GetTemporalProperties returns all temporal properties
+func (cm *ConstraintModel) GetTemporalProperties() []*TemporalPropertyInfo {
+	return cm.TemporalProps
+}
+
+// GetTemporalProperty returns a temporal property by name
+func (cm *ConstraintModel) GetTemporalProperty(name string) *TemporalPropertyInfo {
+	for _, prop := range cm.TemporalProps {
+		if prop.Name == name {
+			return prop
+		}
+	}
+	return nil
 }
 

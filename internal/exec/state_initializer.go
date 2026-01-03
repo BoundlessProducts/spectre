@@ -13,18 +13,22 @@ type StateInitializer struct {
 	variableModel     *state.VariableModel
 	initialStateModel *state.InitialStateModel
 	evaluator         *eval.Evaluator
+	file              *ast.File // Keep reference to file for enum type registration
 }
 
 // NewStateInitializer creates a new state initializer
-func NewStateInitializer(variableModel *state.VariableModel, initialStateModel *state.InitialStateModel) *StateInitializer {
+func NewStateInitializer(variableModel *state.VariableModel, initialStateModel *state.InitialStateModel, file *ast.File) *StateInitializer {
 	// Create an environment for evaluating initial state expressions
 	env := eval.NewEnvironment()
+	// Register enum types
+	eval.RegisterEnumTypes(env, file)
 	evaluator := eval.NewEvaluator(env)
 
 	return &StateInitializer{
 		variableModel:     variableModel,
 		initialStateModel: initialStateModel,
 		evaluator:         evaluator,
+		file:              file,
 	}
 }
 
@@ -48,6 +52,8 @@ func (si *StateInitializer) generateDeterministicInitialState() ([]*state.State,
 
 	// Create an environment that can access state variables
 	env := eval.NewEnvironment()
+	// Register enum types
+	eval.RegisterEnumTypes(env, si.file)
 
 	// Evaluate each assignment in the init block
 	for _, stmt := range initState.Body.Statements {
@@ -104,6 +110,8 @@ func (si *StateInitializer) generateOneOfInitialStates() ([]*state.State, error)
 
 		// Create an environment that can access state variables
 		env := eval.NewEnvironment()
+		// Register enum types
+		eval.RegisterEnumTypes(env, si.file)
 
 		// Evaluate each assignment in this option
 		for _, stmt := range option.Statements {

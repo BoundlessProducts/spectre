@@ -24,49 +24,49 @@ init {
 
 description "Process 1 requests and acquires the lock, entering critical section"
 action process1Request {
-  require process1 = ProcessState.Idle && !lock
+  require process1 == ProcessState.Idle && !lock
   process1' = ProcessState.Critical
   lock' = true
 }
 
 description "Process 1 releases the lock and returns to idle state"
 action process1Release {
-  require process1 = ProcessState.Critical
+  require process1 == ProcessState.Critical
   process1' = ProcessState.Idle
   lock' = false
 }
 
 description "Process 2 requests and acquires the lock, entering critical section"
 action process2Request {
-  require process2 = ProcessState.Idle && !lock
+  require process2 == ProcessState.Idle && !lock
   process2' = ProcessState.Critical
   lock' = true
 }
 
 description "Process 2 releases the lock and returns to idle state"
 action process2Release {
-  require process2 = ProcessState.Critical
+  require process2 == ProcessState.Critical
   process2' = ProcessState.Idle
   lock' = false
 }
 
 description "CRITICAL: Ensures only one process can be in critical section at a time"
 invariant mutualExclusion {
-  !(process1 = ProcessState.Critical && process2 = ProcessState.Critical)
+  !(process1 == ProcessState.Critical && process2 == ProcessState.Critical)
 }
 
 description "Ensures lock flag accurately reflects whether any process is critical"
 invariant lockConsistency {
-  (process1 = ProcessState.Critical || process2 = ProcessState.Critical) = lock
+  (process1 == ProcessState.Critical || process2 == ProcessState.Critical) == lock
 }
 
 description "Verifies that process 1 eventually enters critical section"
 temporal eventuallyProcess1Critical {
-  eventually (process1 = ProcessState.Critical)
+  eventually (process1 == ProcessState.Critical)
 }
 
 description "Verifies that process 2 eventually enters critical section"
 temporal eventuallyProcess2Critical {
-  eventually (process2 = ProcessState.Critical)
+  eventually (process2 == ProcessState.Critical)
 }
 

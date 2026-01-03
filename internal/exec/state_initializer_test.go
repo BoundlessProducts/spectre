@@ -36,7 +36,7 @@ init {
 	}
 
 	// Create initializer
-	initializer := NewStateInitializer(vm, ism)
+	initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 
 	// Generate initial states
 	states, err := initializer.GenerateInitialStates()
@@ -98,7 +98,7 @@ init oneOf {
 	}
 
 	// Create initializer
-	initializer := NewStateInitializer(vm, ism)
+	initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 
 	// Generate initial states
 	states, err := initializer.GenerateInitialStates()
@@ -160,7 +160,7 @@ init {
 		t.Fatalf("error creating initial state model: %v", err)
 	}
 
-	initializer := NewStateInitializer(vm, ism)
+	initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 	states, err := initializer.GenerateInitialStates()
 	if err != nil {
 		t.Fatalf("error generating initial states: %v", err)
@@ -217,7 +217,7 @@ var counter: int
 	ism, err := state.NewInitialStateModel(file)
 	if err == nil {
 		// If model creation succeeded, test that initializer fails
-		initializer := NewStateInitializer(vm, ism)
+		initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 		_, err = initializer.GenerateInitialStates()
 		if err == nil {
 			t.Error("expected error for missing init declaration")
@@ -255,7 +255,7 @@ init {
 		t.Fatalf("error creating initial state model: %v", err)
 	}
 
-	initializer := NewStateInitializer(vm, ism)
+	initializer := NewStateInitializer(vm, ism, &ast.File{Decls: []ast.Decl{}})
 	states, err := initializer.GenerateInitialStates()
 	if err != nil {
 		t.Fatalf("error generating initial states: %v", err)

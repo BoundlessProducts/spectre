@@ -60,6 +60,28 @@ func (v *PrimitiveValue) String() string {
 	}
 }
 
+// EnumValue represents an enum value
+type EnumValue struct {
+	EnumName  string // Name of the enum type (e.g., "ProcessState")
+	ValueName string // Name of the enum value (e.g., "Idle")
+}
+
+func (v *EnumValue) Type() string {
+	return fmt.Sprintf("enum(%s)", v.EnumName)
+}
+
+func (v *EnumValue) String() string {
+	return fmt.Sprintf("%s.%s", v.EnumName, v.ValueName)
+}
+
+// NewEnumValue creates a new enum value
+func NewEnumValue(enumName, valueName string) *EnumValue {
+	return &EnumValue{
+		EnumName:  enumName,
+		ValueName: valueName,
+	}
+}
+
 // NewState creates a new empty state
 func NewState() *State {
 	return &State{
@@ -118,6 +140,13 @@ func valuesEqual(v1, v2 Value) bool {
 	if p1, ok := v1.(*PrimitiveValue); ok {
 		if p2, ok := v2.(*PrimitiveValue); ok {
 			return primitiveValuesEqual(p1, p2)
+		}
+	}
+
+	// For enum values, compare enum name and value name
+	if e1, ok := v1.(*EnumValue); ok {
+		if e2, ok := v2.(*EnumValue); ok {
+			return e1.EnumName == e2.EnumName && e1.ValueName == e2.ValueName
 		}
 	}
 

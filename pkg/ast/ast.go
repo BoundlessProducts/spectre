@@ -167,6 +167,19 @@ type TypeAliasDecl struct {
 func (t *TypeAliasDecl) Pos() Position { return t.Position }
 func (t *TypeAliasDecl) declNode()     {}
 
+// EnumDecl represents an enum type declaration
+// Format: enum Name { Value1, Value2, ... }
+type EnumDecl struct {
+	Position    Position
+	Description string
+	Name        string
+	Values      []string
+	Visibility  Visibility // Public or Private (defaults to Public)
+}
+
+func (e *EnumDecl) Pos() Position { return e.Position }
+func (e *EnumDecl) declNode()     {}
+
 // Visibility represents public/private visibility
 type Visibility int
 
