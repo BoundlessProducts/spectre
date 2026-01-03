@@ -48,6 +48,10 @@ func (e *Evaluator) Eval(expr ast.Expr) (state.Value, error) {
 		return e.evalLambdaExpr(ex)
 	case *ast.IndexExpr:
 		return e.evalIndexExpr(ex)
+	case *ast.SetLiteral:
+		return e.evalSetLiteral(ex)
+	case *ast.ListLiteral:
+		return e.evalListLiteral(ex)
 	default:
 		return nil, fmt.Errorf("unsupported expression type: %T", expr)
 	}

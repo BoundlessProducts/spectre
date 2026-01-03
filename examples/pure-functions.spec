@@ -16,7 +16,7 @@ var counter: int
 
 description "System starts with no users and counter at zero"
 init {
-  users = Set.empty()
+  users = {}
   counter = 0
 }
 
@@ -134,7 +134,7 @@ action addUser(id: int, name: str, age: int) {
   require !users.exists(u => u.id = id)
   
   let newUser = { id: id, name: name, age: age, active: true }
-  users' = users.union(Set.of(newUser))
+  users' = users.union({ { id: id, name: name, age: age, active: true } })
   counter' = add(counter, 1)
 }
 

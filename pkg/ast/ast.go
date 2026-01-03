@@ -561,3 +561,23 @@ type RecordField struct {
 func (r *RecordLiteral) Pos() Position { return r.Position }
 func (r *RecordLiteral) exprNode()      {}
 
+// SetLiteral represents a set literal value
+// Format: { value1, value2, ... }
+type SetLiteral struct {
+	Position Position
+	Elements []Expr // Elements in the set
+}
+
+func (s *SetLiteral) Pos() Position { return s.Position }
+func (s *SetLiteral) exprNode()     {}
+
+// ListLiteral represents a list literal value
+// Format: [ value1, value2, ... ]
+type ListLiteral struct {
+	Position Position
+	Elements []Expr // Elements in the list
+}
+
+func (l *ListLiteral) Pos() Position { return l.Position }
+func (l *ListLiteral) exprNode()     {}
+

@@ -18,8 +18,8 @@ var nextMessageId: int
 
 description "System starts with empty queue, no processed messages, and first ID set to 1"
 init {
-  queue = List.empty()
-  processed = Set.empty()
+  queue = []
+  processed = {}
   nextMessageId = 1
 }
 
@@ -35,12 +35,12 @@ description "Removes and processes the highest priority message from the queue"
 action dequeue {
   require queue.size() > 0
   queue' = queue.tail()
-  processed' = processed.union(Set.of(queue.head().id))
+  processed' = processed.union({ queue.head().id })
 }
 
 description "Clears all messages from the queue"
 action clearQueue {
-  queue' = List.empty()
+  queue' = []
 }
 
 description "Ensures no duplicate message IDs exist in the queue"

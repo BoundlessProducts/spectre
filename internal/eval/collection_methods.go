@@ -467,6 +467,36 @@ func (e *Evaluator) evalIndexExpr(expr *ast.IndexExpr) (state.Value, error) {
 	return nil, fmt.Errorf("cannot index type %s", container.Type())
 }
 
+// evalSetLiteral evaluates a set literal: { value1, value2, ... }
+func (e *Evaluator) evalSetLiteral(expr *ast.SetLiteral) (state.Value, error) {
+	result := state.NewSetValue()
+	
+	for _, elemExpr := range expr.Elements {
+		elem, err := e.Eval(elemExpr)
+		if err != nil {
+			return nil, fmt.Errorf("error evaluating set element: %w", err)
+		}
+		result.Add(elem)
+	}
+	
+	return result, nil
+}
+
+// evalListLiteral evaluates a list literal: [ value1, value2, ... ]
+func (e *Evaluator) evalListLiteral(expr *ast.ListLiteral) (state.Value, error) {
+	result := state.NewListValue()
+	
+	for _, elemExpr := range expr.Elements {
+		elem, err := e.Eval(elemExpr)
+		if err != nil {
+			return nil, fmt.Errorf("error evaluating list element: %w", err)
+		}
+		result.Append(elem)
+	}
+	
+	return result, nil
+}
+
 // evalPut evaluates the put method: map.put(key, value)
 // Returns a new map with the key-value pair added/updated
 func (e *Evaluator) evalPut(obj state.Value, args []state.Value) (state.Value, error) {

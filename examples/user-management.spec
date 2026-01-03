@@ -16,13 +16,13 @@ var nextId: int
 
 description "System initializes with no users and first ID set to 1"
 init {
-  users = Set.empty()
+  users = {}
   nextId = 1
 }
 
 description "Adds a new user to the system with the next available ID"
 action addUser(name: str, role: str) {
-  users' = users.union(Set.of({ id: nextId, name: name, active: true, role: role }))
+  users' = users.union({ { id: nextId, name: name, active: true, role: role } })
   nextId' = nextId + 1
 }
 

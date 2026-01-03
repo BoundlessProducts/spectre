@@ -165,10 +165,39 @@ type Point = (int, int)
 ```
 
 #### Sets
+
+Sets represent unordered collections of unique elements:
+
 ```spectre
 type UserSet = Set<User>
 type IntSet = Set<int>
 ```
+
+**Set Literals:**
+
+You can create sets using literal syntax with curly braces:
+
+```spectre
+// Empty set
+const emptySet: Set<int> = {}
+
+// Set with elements
+const numbers: Set<int> = { 1, 2, 3, 4, 5 }
+const names: Set<str> = { "alice", "bob", "charlie" }
+
+// Set of records
+type User = { id: int, name: str }
+const users: Set<User> = { 
+  { id: 1, name: "alice" }, 
+  { id: 2, name: "bob" } 
+}
+
+// Sets can also be created using static methods (see Set Operations)
+const altEmpty: Set<int> = Set.empty()
+const singleton: Set<int> = Set.of(42)
+```
+
+**Note**: Set literals use curly braces `{ }`. To distinguish them from record literals (which use `{ field: value }`), the parser checks if the content contains colons. If it does, it's a record literal; otherwise, it's a set literal.
 
 #### Maps (Dictionaries)
 ```spectre
@@ -176,10 +205,38 @@ type UserMap = Map<int, User>  // Maps int keys to User values
 ```
 
 #### Arrays/Lists
+
+Lists represent ordered sequences of elements:
+
 ```spectre
 type UserList = List<User>
 type IntArray = List<int>
 ```
+
+**List Literals:**
+
+You can create lists using literal syntax with square brackets:
+
+```spectre
+// Empty list
+const emptyList: List<int> = []
+
+// List with elements
+const numbers: List<int> = [ 1, 2, 3, 4, 5 ]
+const names: List<str> = [ "alice", "bob", "charlie" ]
+
+// List of records
+type User = { id: int, name: str }
+const users: List<User> = [ 
+  { id: 1, name: "alice" }, 
+  { id: 2, name: "bob" } 
+]
+
+// Lists can also be created using static methods (see List Operations)
+const altEmpty: List<int> = List.empty()
+```
+
+**Note**: List literals use square brackets `[ ]` to distinguish them from sets (which use curly braces `{ }`).
 
 #### Enums
 ```spectre
@@ -413,7 +470,7 @@ const MAX_ITERATIONS: int = 1000
 var processes: Set<Process>
 
 init {
-  processes = Set.empty()
+  processes = {}  // Empty set literal
 }
 
 action addProcess {
@@ -460,7 +517,7 @@ The initial state is defined using the `init` action:
 ```spectre
 init {
   counter = 0
-  users = Set.empty()
+  users = {}  // Empty set literal
   status = Status.Pending
 }
 ```
@@ -468,7 +525,7 @@ init {
 Or using a single expression:
 
 ```spectre
-init counter = 0 && users = Set.empty()
+init counter = 0 && users = {}
 ```
 
 ### Non-deterministic Initial States
@@ -554,7 +611,7 @@ action incrementIfPositive {
 
 ```spectre
 action addUser(user: User) {
-  users' = users.union(Set.of(user))
+  users' = users.union({ user })  // Using set literal
   counter' = counter + 1
 }
 ```
@@ -913,7 +970,7 @@ action dequeue {
   require queue.size() > 0
   let msg = queue.head()
   queue' = queue.tail()
-  processed' = processed.union(Set.of(msg.id))
+  processed' = processed.union({ msg.id })  // Using set literal
 }
 
 description "Ensures messages are processed fairly when queue is not empty"
@@ -1044,14 +1101,13 @@ var nextId: int
 
 description "System initializes with no users and first ID set to 1"
 init {
-  users = Set.empty()
+  users = {}  // Empty set literal
   nextId = 1
 }
 
 description "Adds a new user to the system with the next available ID"
 action addUser(name: str) {
-  let newUser = { id: nextId, name: name, active: true }
-  users' = users.union(Set.of(newUser))
+  users' = users.union({ { id: nextId, name: name, active: true } })
   nextId' = nextId + 1
 }
 
@@ -1183,8 +1239,8 @@ var nextMessageId: int
 
 description "System starts with empty queue, no processed messages, and first ID set to 1"
 init {
-  queue = List.empty()
-  processed = Set.empty()
+  queue = []      // Empty list literal
+  processed = {}  // Empty set literal
   nextMessageId = 1
 }
 
@@ -1200,7 +1256,7 @@ action dequeue {
   require queue.size() > 0
   let msg = queue.head()
   queue' = queue.tail()
-  processed' = processed.union(Set.of(msg.id))
+  processed' = processed.union({ msg.id })  // Using set literal
 }
 
 description "Ensures no duplicate message IDs exist in the queue"
@@ -1244,7 +1300,7 @@ var transactions: List<(int, int, int)>
 description "System starts with no accounts and no transactions"
 init {
   accounts = Map.empty()
-  transactions = List.empty()
+  transactions = []  // Empty list literal
 }
 
 description "Creates a new account with the given ID and initial balance"
@@ -1365,8 +1421,15 @@ temporal eventuallyTransaction {
 
 ### Set Operations
 
-- `Set.empty()`: Empty set
-- `Set.of(x)`: Singleton set
+**Set Literals:**
+- `{ value1, value2, ... }`: Create a set with elements
+- `{}`: Empty set literal
+
+**Static Constructors:**
+- `Set.empty()`: Empty set (alternative to `{}`)
+- `Set.of(x)`: Singleton set containing one element (alternative to `{ x }`)
+
+**Set Methods:**
 - `s.union(t)`: Union of sets
 - `s.intersection(t)`: Intersection of sets
 - `s.contains(x)`: Membership test
@@ -1375,15 +1438,63 @@ temporal eventuallyTransaction {
 - `s.exists(predicate)`: Existential quantification
 - `s.filter(predicate)`: Filter elements
 - `s.map(fn)`: Map function over elements
+- `s.toList()`: Convert set to list
+
+**Examples:**
+```spectre
+// Using literals
+const names = { "alice", "bob", "charlie" }
+const empty = {}
+
+// Using static methods (equivalent to literals, but verbose)
+// Note: Literal syntax { "alice", "bob", "charlie" } is preferred
+const namesAlt = { "alice", "bob", "charlie" }  // Literal syntax is cleaner
+const emptyAlt = {}  // Or Set.empty() - both are equivalent
+
+// Set operations
+const all = names.union({ "dave", "eve" })
+const filtered = names.filter(name => name.length() > 4)
+```
 
 ### List Operations
 
-- `List.empty()`: Empty list
-- `l.append(x)`: Append element
+**List Literals:**
+- `[ value1, value2, ... ]`: Create a list with elements
+- `[]`: Empty list literal
+
+**Static Constructors:**
+- `List.empty()`: Empty list (alternative to `[]`)
+- `List.of(x)`: Singleton list containing one element (alternative to `[ x ]`)
+
+**List Methods:**
+- `l.append(x)`: Append element (returns new list)
 - `l.head()`: First element
-- `l.tail()`: List without first element
+- `l.tail()`: List without first element (returns new list)
 - `l.size()`: List size
-- `l.sortBy(fn)`: Sort by function
+- `l.filter(predicate)`: Filter elements
+- `l.map(fn)`: Map function over elements
+- `l.reduce(initial, fn)`: Reduce to single value
+- `l.forall(predicate)`: Universal quantification
+- `l.exists(predicate)`: Existential quantification
+- `l.toSet()`: Convert list to set
+
+**Examples:**
+```spectre
+// Using literals
+const numbers = [ 1, 2, 3, 4, 5 ]
+const empty = []
+
+// Using static methods (equivalent to literals, but verbose)
+// Note: Literal syntax [ 1, 2 ] is preferred
+const numbersAlt = [ 1, 2 ]  // Literal syntax is cleaner
+const emptyAlt = []  // Or List.empty() - both are equivalent
+
+// List operations
+const doubled = numbers.map(x => x * 2)
+const sum = numbers.reduce(0, (acc, x) => acc + x)
+const first = numbers.head()
+const rest = numbers.tail()
+```
 
 ### Map Operations
 

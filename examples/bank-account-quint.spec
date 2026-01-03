@@ -13,7 +13,7 @@ module bank {
   var balances: Map<str, int>
 
   description "Set of valid account addresses"
-  const ADDRESSES: Set<str> = Set.of("alice").union(Set.of("bob")).union(Set.of("charlie"))
+  const ADDRESSES: Set<str> = { "alice", "bob", "charlie" }
 
   description "At the initial state, all balances are zero"
   init {

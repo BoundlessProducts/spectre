@@ -157,19 +157,15 @@ func (p *Parser) parsePrefixExpression() ast.Expr {
 		p.nextToken() // consume "return"
 		return p.parseExpression(LOWEST)
 	case lexer.LBRACE:
-		// Distinguish between record literals and blocks
+		// Distinguish between record literals and set literals
 		// Record literals: { field: value, ... } or { ...spread }
-		// Blocks: { statements }
-		// Peek ahead to see if this looks like a record literal
-		// A record literal starts with: identifier followed by :, or ... followed by identifier
-		if p.peekTokenIs(lexer.IDENT) || p.peekTokenIs(lexer.ELLIPSIS) {
-			// Could be a record literal, check further
-			// Save current position to potentially backtrack
-			return p.parseRecordLiteral()
-		}
-		// Not a record literal pattern, error
-		p.addErrorf("unexpected { in expression context")
-		return nil
+		// Set literals: { value1, value2, ... }
+		// Use a try-parse approach: attempt to parse as record literal first
+		// If that fails (no colon found), parse as set literal
+		return p.parseRecordOrSetLiteral()
+	case lexer.LBRACKET:
+		// List literal: [ value1, value2, ... ]
+		return p.parseListLiteral()
 	default:
 		p.addErrorf("no prefix parse function for %s found", p.curToken.Type)
 		return nil
@@ -868,6 +864,238 @@ func (p *Parser) parseRecordLiteral() ast.Expr {
 	return &ast.RecordLiteral{
 		Position: pos,
 		Fields:   fields,
+	}
+}
+
+// parseRecordOrSetLiteral attempts to parse as record literal first,
+// then falls back to set literal if no colons are found
+// This function is called when we encounter a { token and need to decide
+// if it's a record literal { field: value } or a set literal { value1, value2 }
+func (p *Parser) parseRecordOrSetLiteral() ast.Expr {
+	pos := tokenPos(p.curToken)
+	
+	// Check if we have a colon or ellipsis - indicates record literal
+	if p.peekTokenIs(lexer.ELLIPSIS) {
+		// Spread operator - must be record
+		return p.parseRecordLiteral()
+	}
+	
+	if p.peekTokenIs(lexer.RBRACE) {
+		// Empty: {} - treat as empty set
+		p.nextToken() // consume "{"
+		p.nextToken() // consume "}"
+		return &ast.SetLiteral{
+			Position: pos,
+			Elements: []ast.Expr{},
+		}
+	}
+	
+	// Check if next token after { is IDENT followed by COLON (record) or not (set)
+	if p.peekTokenIs(lexer.LBRACE) {
+		// Nested brace: { { ... } }
+		// The outer must be a set literal (sets can contain records)
+		// When we parse elements, parseExpression will correctly identify
+		// the inner { ... } as a record if it has the pattern { id: ... }
+		return p.parseSetLiteral()
+	} else if p.peekTokenIs(lexer.IDENT) {
+		// Check if IDENT is followed by COLON (record) or not (set)
+		// We need to look ahead by consuming { to get to IDENT, then checking
+		// what comes after IDENT
+		p.nextToken() // consume {, now curToken is IDENT, peekToken is what comes after IDENT
+		isRecord := p.peekTokenIs(lexer.COLON)
+		
+		if isRecord {
+			// It's a record literal. We've consumed {, so we're at IDENT.
+			// Parse record fields starting from IDENT.
+			return p.parseRecordLiteralFromIdent(pos)
+		}
+		
+		// It's a set literal. We've consumed {, so we're at IDENT.
+		// IDENT is the first element of the set. Parse it as an expression
+		// (which may include method calls, etc.), then continue with set parsing.
+		var elements []ast.Expr
+		
+		// Parse the first element as an expression (not just identifier)
+		// This handles cases like { queue.head().id } where the element
+		// is a complex expression
+		firstElement := p.parseExpression(LOWEST)
+		if firstElement == nil {
+			return nil
+		}
+		elements = append(elements, firstElement)
+		
+		// Continue parsing remaining elements
+		for p.curTokenIs(lexer.COMMA) {
+			p.nextToken() // consume ","
+			value := p.parseExpression(LOWEST)
+			if value == nil {
+				return nil
+			}
+			elements = append(elements, value)
+		}
+		
+		if !p.curTokenIs(lexer.RBRACE) {
+			p.addErrorf("expected } to close set literal, got %s", p.curToken.Type)
+			return nil
+		}
+		p.nextToken() // consume "}"
+		
+		return &ast.SetLiteral{
+			Position: pos,
+			Elements: elements,
+		}
+	}
+	
+	// For nested braces or when we can't determine, default to set literal
+	return p.parseSetLiteral()
+}
+
+// parseRecordLiteralFromIdent parses a record literal starting from IDENT
+// (assuming { was already consumed). This is used when we've determined
+// that { IDENT ... is a record literal.
+func (p *Parser) parseRecordLiteralFromIdent(pos ast.Position) ast.Expr {
+	// We're at IDENT, which is the first field name
+	var fields []ast.RecordField
+	
+	// Parse fields until closing brace
+	for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
+		// Check for spread operator
+		if p.curTokenIs(lexer.ELLIPSIS) {
+			p.nextToken() // consume "..."
+			
+			if !p.curTokenIs(lexer.IDENT) {
+				p.addErrorf("expected identifier after ..., got %s", p.curToken.Type)
+				return nil
+			}
+			
+			fields = append(fields, ast.RecordField{
+				Name:   p.curToken.Literal,
+				Value:  nil,
+				Spread: true,
+			})
+			p.nextToken() // consume identifier
+		} else {
+			// Regular field: name: value
+			if !p.curTokenIs(lexer.IDENT) {
+				p.addErrorf("expected identifier or ... in record literal, got %s", p.curToken.Type)
+				return nil
+			}
+			
+			fieldName := p.curToken.Literal
+			p.nextToken() // consume identifier
+			
+			if !p.curTokenIs(lexer.COLON) {
+				p.addErrorf("expected : after field name, got %s", p.curToken.Type)
+				return nil
+			}
+			p.nextToken() // consume ":"
+			
+			value := p.parseExpression(LOWEST)
+			if value == nil {
+				return nil
+			}
+			
+			fields = append(fields, ast.RecordField{
+				Name:   fieldName,
+				Value:  value,
+				Spread: false,
+			})
+		}
+		
+		// Check for comma or closing brace
+		if p.curTokenIs(lexer.COMMA) {
+			p.nextToken() // consume ","
+		} else if !p.curTokenIs(lexer.RBRACE) {
+			p.addErrorf("expected , or } after field, got %s", p.curToken.Type)
+			return nil
+		}
+	}
+	
+	if !p.curTokenIs(lexer.RBRACE) {
+		p.addErrorf("expected } to close record literal, got %s", p.curToken.Type)
+		return nil
+	}
+	p.nextToken() // consume "}"
+	
+	return &ast.RecordLiteral{
+		Position: pos,
+		Fields:   fields,
+	}
+}
+
+// parseSetLiteral parses a set literal value
+// Format: { value1, value2, ... }
+func (p *Parser) parseSetLiteral() ast.Expr {
+	pos := tokenPos(p.curToken)
+	p.nextToken() // consume "{"
+	
+	var elements []ast.Expr
+	
+	// Parse elements until closing brace
+	for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
+		value := p.parseExpression(LOWEST)
+		if value == nil {
+			return nil
+		}
+		
+		elements = append(elements, value)
+		
+		// Check for comma or closing brace
+		if p.curTokenIs(lexer.COMMA) {
+			p.nextToken() // consume ","
+		} else if !p.curTokenIs(lexer.RBRACE) {
+			p.addErrorf("expected , or } after set element, got %s", p.curToken.Type)
+			return nil
+		}
+	}
+	
+	if !p.curTokenIs(lexer.RBRACE) {
+		p.addErrorf("expected } to close set literal, got %s", p.curToken.Type)
+		return nil
+	}
+	p.nextToken() // consume "}"
+	
+	return &ast.SetLiteral{
+		Position: pos,
+		Elements: elements,
+	}
+}
+
+// parseListLiteral parses a list literal value
+// Format: [ value1, value2, ... ]
+func (p *Parser) parseListLiteral() ast.Expr {
+	pos := tokenPos(p.curToken)
+	p.nextToken() // consume "["
+	
+	var elements []ast.Expr
+	
+	// Parse elements until closing bracket
+	for !p.curTokenIs(lexer.RBRACKET) && !p.curTokenIs(lexer.EOF) {
+		value := p.parseExpression(LOWEST)
+		if value == nil {
+			return nil
+		}
+		
+		elements = append(elements, value)
+		
+		// Check for comma or closing bracket
+		if p.curTokenIs(lexer.COMMA) {
+			p.nextToken() // consume ","
+		} else if !p.curTokenIs(lexer.RBRACKET) {
+			p.addErrorf("expected , or ] after list element, got %s", p.curToken.Type)
+			return nil
+		}
+	}
+	
+	if !p.curTokenIs(lexer.RBRACKET) {
+		p.addErrorf("expected ] to close list literal, got %s", p.curToken.Type)
+		return nil
+	}
+	p.nextToken() // consume "]"
+	
+	return &ast.ListLiteral{
+		Position: pos,
+		Elements: elements,
 	}
 }
 

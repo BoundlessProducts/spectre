@@ -32,14 +32,14 @@ var retryCount: int
 
 description "System initializes with no users and zero retries"
 init {
-  users = Set.empty()
+  users = {}
   retryCount = 0
 }
 
 description "Adds a new user, enforcing maximum user limit"
 action addUser(name: str) {
   require users.size() < MAX_USERS
-  users' = users.union(Set.of({ id: users.size() + 1, name: name, active: true }))
+  users' = users.union({ { id: users.size() + 1, name: name, active: true } })
 }
 
 description "Increments retry count up to maximum allowed"

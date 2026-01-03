@@ -82,6 +82,10 @@ func (c *Checker) CheckExpression(expr ast.Expr) Type {
 		return c.checkLambdaExpr(e)
 	case *ast.RecordLiteral:
 		return c.checkRecordLiteral(e)
+	case *ast.SetLiteral:
+		return c.checkSetLiteral(e)
+	case *ast.ListLiteral:
+		return c.checkListLiteral(e)
 	default:
 		c.addError(expr.Pos(), "unsupported expression type: %T", expr)
 		return nil
@@ -1068,5 +1072,75 @@ func (c *Checker) checkRecordLiteral(expr *ast.RecordLiteral) Type {
 	}
 	
 	return &Record{Fields: fields}
+}
+
+// checkSetLiteral type-checks a set literal expression
+// It infers the element type from the element types
+func (c *Checker) checkSetLiteral(expr *ast.SetLiteral) Type {
+	if len(expr.Elements) == 0 {
+		// Empty set literal, cannot infer type - will need type annotation
+		// For now, return a generic Set<int> as a placeholder
+		// In practice, this will be inferred from context
+		return &Set{Element: &Primitive{Kind: Int}}
+	}
+	
+	// Check all elements and find common type
+	var elementType Type
+	for i, elem := range expr.Elements {
+		elemType := c.CheckExpression(elem)
+		if elemType == nil {
+			return nil
+		}
+		
+		if i == 0 {
+			elementType = elemType
+		} else {
+			// Try to find a common type
+			// For now, if types are assignable, use the first type
+			// In the future, we might want more sophisticated type unification
+			if !IsAssignable(elemType, elementType) && !IsAssignable(elementType, elemType) {
+				c.addError(expr.Pos(), "set elements have incompatible types: %s and %s",
+					elementType.String(), elemType.String())
+				return nil
+			}
+		}
+	}
+	
+	return &Set{Element: elementType}
+}
+
+// checkListLiteral type-checks a list literal expression
+// It infers the element type from the element types
+func (c *Checker) checkListLiteral(expr *ast.ListLiteral) Type {
+	if len(expr.Elements) == 0 {
+		// Empty list literal, cannot infer type - will need type annotation
+		// For now, return a generic List<int> as a placeholder
+		// In practice, this will be inferred from context
+		return &List{Element: &Primitive{Kind: Int}}
+	}
+	
+	// Check all elements and find common type
+	var elementType Type
+	for i, elem := range expr.Elements {
+		elemType := c.CheckExpression(elem)
+		if elemType == nil {
+			return nil
+		}
+		
+		if i == 0 {
+			elementType = elemType
+		} else {
+			// Try to find a common type
+			// For now, if types are assignable, use the first type
+			// In the future, we might want more sophisticated type unification
+			if !IsAssignable(elemType, elementType) && !IsAssignable(elementType, elemType) {
+				c.addError(expr.Pos(), "list elements have incompatible types: %s and %s",
+					elementType.String(), elemType.String())
+				return nil
+			}
+		}
+	}
+	
+	return &List{Element: elementType}
 }
 
