@@ -479,6 +479,7 @@ func runVerify(args []string) error {
 	if len(temporalProps) > 0 {
 		hasher := explore.NewStateHasher()
 		temporalVerifier := explore.NewTemporalVerifier(hasher, file)
+		temporalVerifier.SetStateMachine(sm) // Set state machine for fairness checking
 		
 		for _, prop := range temporalProps {
 			verificationResult, err := temporalVerifier.VerifyTemporalProperty(prop, result.TransitionGraph, result.InitialStates)

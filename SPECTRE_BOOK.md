@@ -197,7 +197,7 @@ spectre verify counter.spec
 
 ---
 
-## Example: Understanding Temporal Property Violations
+##  Understanding Temporal Property Violations
 
 Before diving into the language details, let's examine a real example that demonstrates how Spectre finds and reports temporal property violations. This will help you understand what temporal verification does and how to fix common issues.
 
@@ -335,9 +335,9 @@ action reset {
 
 This ensures that once counter reaches 10, it can be reset, but the reset can't prevent reaching 10 in the first place.
 
-#### Option 3: Add Fairness Constraints (Future Enhancement)
+#### Option 3: Add Fairness Constraints
 
-In the future, when fairness conditions are fully supported, you could specify:
+You can add fairness constraints to ensure that certain actions execute fairly:
 
 ```spectre
 temporal progress {
@@ -345,7 +345,9 @@ temporal progress {
 }
 ```
 
-This would mean: "If `increment` has weak fairness (is continuously enabled and eventually executes), then progress holds."
+This means: "If `increment` has weak fairness (is continuously enabled and eventually executes), then progress holds."
+
+The fairness constraint (`WF(increment)`) filters out execution paths where `increment` is continuously enabled but never executes, ensuring that only "fair" execution paths are considered when verifying the property.
 
 ### Key Lessons
 

@@ -887,10 +887,10 @@ This is stronger than weak fairness: even if the action is not continuously enab
 
 #### Fairness on Actions
 
-Apply fairness to specific actions:
+Apply fairness to specific actions. Fairness can be declared as a standalone property or used to filter paths in leads-to expressions:
 
 ```spectre
-description "Ensures increment action executes fairly"
+description "Ensures increment action executes fairly (standalone fairness declaration)"
 temporal incrementFairness {
   WF(increment)
 }
@@ -899,7 +899,16 @@ description "Ensures decrement action executes fairly"
 temporal decrementFairness {
   SF(decrement)
 }
+
+description "With fairness, guarantee progress - filters paths before verifying property"
+temporal progressWithFairness {
+  WF(increment) → always (counter < 10 → eventually counter == 10)
+}
 ```
+
+**Usage:**
+- **Standalone fairness** (`WF(action)`): Declares that fair executions exist
+- **Fairness in leads-to** (`WF(action) → P`): Filters transition graph to only fair paths, then verifies `P`
 
 #### Fairness on Variables
 
@@ -1014,6 +1023,60 @@ temporal fairnessGuaranteesAccess {
 }
 ```
 
+#### Using Fairness in Temporal Properties
+
+Fairness conditions can be combined with temporal operators using the leads-to (`→`) operator. When used in a leads-to expression, fairness conditions filter the transition graph to only consider paths that satisfy the fairness constraint:
+
+```spectre
+description "Guarantees progress: if counter is below 10, it will eventually reach 10"
+description "With weak fairness on increment, this property holds because increment will"
+description "eventually execute when continuously enabled, ensuring progress to counter = 10"
+temporal progress {
+  WF(increment) → always (counter < 10 → eventually counter == 10)
+}
+```
+
+**How it works:**
+1. The left side of `→` (`WF(increment)` or `SF(action)`) specifies a fairness constraint
+2. The verifier filters the transition graph to remove unfair paths:
+   - **Weak Fairness (WF)**: Removes cycles where the action is continuously enabled but never executes
+   - **Strong Fairness (SF)**: Removes cycles where the action is enabled infinitely often but never executes
+3. The right side of `→` is verified only over the filtered (fair) paths
+
+**Example: Counter with Fairness**
+
+```spectre
+description "Tracks a numeric counter value"
+var counter: int
+
+init {
+  counter = 0
+}
+
+action increment {
+  counter' = counter + 1
+}
+
+action decrement {
+  require counter > 0
+  counter' = counter - 1
+}
+
+action reset {
+  counter' = 0
+}
+
+// Without fairness, this property might fail because the system could
+// infinitely cycle between states without incrementing (e.g., repeatedly resetting)
+// With weak fairness on increment, cycles where increment is continuously
+// enabled but never executes are filtered out, ensuring progress
+temporal progress {
+  WF(increment) → always (counter < 10 → eventually counter == 10)
+}
+```
+
+In this example, weak fairness ensures that if `increment` is continuously enabled (which it is, since it has no preconditions), it will eventually execute, guaranteeing that the counter will progress toward 10.
+
 #### When to Use Weak vs Strong Fairness
 
 - **Weak Fairness (WF)**: Use when an action should execute if it's continuously available
@@ -1037,11 +1100,27 @@ WF(variableName)
 // Strong fairness on variable
 SF(variableName)
 
-// In temporal properties
+// In temporal properties - as a standalone property
+temporal propertyName {
+  WF(actionName)
+}
+
+// In temporal properties - combined with leads-to for path filtering
+temporal propertyName {
+  WF(actionName) → temporalExpression
+}
+
+// Multiple fairness conditions
 temporal propertyName {
   WF(actionName) && SF(otherAction)
 }
 ```
+
+**Important Notes:**
+- When used alone (e.g., `WF(action)`), fairness declares that fair paths exist
+- When used with `→` (e.g., `WF(action) → P`), fairness filters paths before verifying `P`
+- Fairness filtering only affects the paths considered during verification; it doesn't change the actual transition graph structure
+- Nested temporal expressions (like `always (P → eventually Q)`) work correctly with fairness-filtered paths
 
 ---
 

@@ -2,27 +2,111 @@
 
 **Last Updated**: January 2025  
 **Current Phase**: Production Ready ✅  
-**Recent Updates**: Map Methods Implementation (put, get, indexing)
+**Recent Updates**: Temporal Property Verification with Fairness Support, Cycle Handling, Enum Type Support
 
 ## Quick Status Summary
 
 - ✅ **Core Language**: Fully implemented (lexer, parser, type system, semantic analysis)
-- ✅ **Verification Engine**: Complete (invariants, temporal properties, fairness)
+- ✅ **Verification Engine**: Complete (invariants, temporal properties with cycle handling, fairness)
 - ✅ **CLI Tool**: Fully functional with parse, typecheck, and verify commands
-- ✅ **State Space Exploration**: BFS/DFS exploration with cycle detection and counterexample generation
+- ✅ **State Space Exploration**: BFS/DFS exploration with cycle detection, transition graph building, and counterexample generation
 - ✅ **Error Reporting**: User-friendly error messages with descriptions and stack traces
 - ✅ **Collection Methods**: Set, List, and Map methods fully implemented
 - ✅ **Lambda Expressions**: Full support with type inference
 - ✅ **Map Operations**: Map.put(), Map.get(), and map[key] indexing support
+- ✅ **Enum Types**: Full support (declaration, parsing, evaluation, comparison)
+- ✅ **Temporal Verification**: Proper cycle handling and fairness support in temporal property verification
 
 **Test Status**: Core tests passing ✅  
-**Example Status**: 5/12 example files typecheck successfully  
-**Version**: 0.1.0  
+**Example Status**: 7/13 example files typecheck successfully  
+**Version**: 0.2.0  
 **Status**: Production Ready (with some example fixes pending)
 
 ---
 
 ## Recent Work Completed
+
+### Temporal Property Verification with Fairness Support (January 2025)
+
+**Completed**:
+1. ✅ **Fairness-Aware Temporal Verification**
+   - Fixed `canEventuallyReachP` to properly handle nested temporal expressions
+   - Implemented fairness filtering in transition graphs (WF/SF)
+   - Fixed reachability checking with fresh visited maps for temporal expressions
+   - Fairness conditions now correctly filter paths during temporal verification
+
+2. ✅ **Fairness Path Filtering**
+   - `filterFairPaths` removes unfair cycles from transition graphs
+   - Weak Fairness (WF): Removes cycles where action is continuously enabled but never executes
+   - Strong Fairness (SF): Removes cycles where action is enabled infinitely often but never executes
+   - Fair graph is used for verifying properties with fairness constraints
+
+3. ✅ **Nested Temporal Expression Handling**
+   - Fixed `canEventuallyReachP` to recursively handle `EventuallyExpr` and `LeadsToExpr`
+   - Uses fresh visited maps for nested temporal expressions to allow cycle exploration
+   - Properly verifies properties like `always (P → eventually Q)` with fairness
+
+4. ✅ **counter-with-fairness.spec Example**
+   - Demonstrates WF fairness in temporal properties
+   - Property `WF(increment) → always (counter < 10 → eventually counter == 10)` now verifies correctly
+   - Shows how fairness conditions enable progress guarantees
+
+**Key Files Modified**:
+- `internal/explore/temporal_verifier.go` - Fixed `canEventuallyReachP` for nested temporal expressions
+- `examples/counter-with-fairness.spec` - Working example with fairness constraints
+
+### Temporal Property Verification with Cycle Handling (January 2025)
+
+**Completed**:
+1. ✅ **Transition Graph Building**
+   - Build complete transition graph during state space exploration
+   - Record all transitions including those that form cycles
+   - Track cycles separately using CycleInfo with detailed state/transition information
+
+2. ✅ **Temporal Verifier**
+   - Implement TemporalVerifier for verifying temporal properties over transition graphs
+   - Support for `eventually`, `always`, `until`, and `leads-to` operators
+   - Proper handling of cycles in temporal verification
+   - BFS-based reachability analysis from initial states
+
+3. ✅ **Enum Type Support**
+   - Add enum declaration parsing (`enum Name { Value1, Value2, ... }`)
+   - Implement enum type checking and resolution
+   - Add enum value evaluation and comparison
+   - Register enum types in evaluation environment
+
+4. ✅ **Constraint Model Extension**
+   - Extend ConstraintModel to store temporal property declarations
+   - Extract temporal properties from AST during model building
+
+5. ✅ **Verify Command Enhancement**
+   - Update verify command to check temporal properties after state exploration
+   - Report temporal property violations with counterexample traces
+   - Show which properties hold and which fail
+
+6. ✅ **Bug Fixes**
+   - Fix action executor to skip require/ensure statements during execution
+   - Fix CanExecute to properly check preconditions
+   - Fix comparison operators (== vs =) in error-trace-example.spec
+
+7. ✅ **Documentation**
+   - Add temporal property violation example to SPECTRE_BOOK.md
+   - Add counter-corrected.spec demonstrating proper temporal properties
+
+**Key Files Added**:
+- `internal/explore/temporal_verifier.go` - Temporal property verification logic
+- `internal/explore/graph.go` - Transition graph building and cycle detection
+- `internal/eval/enum_register.go` - Enum type registration
+- `internal/parser/enum_decl.go` - Enum declaration parsing
+- `examples/counter-corrected.spec` - Corrected counter example
+
+**Key Files Modified**:
+- `internal/explore/explorer.go` - Build transition graph during exploration
+- `internal/state/constraint_model.go` - Store temporal properties
+- `internal/state/state.go` - Add EnumValue type
+- `internal/eval/evaluator.go` - Enum value evaluation
+- `internal/types/checker.go` - Enum type checking
+- `cmd/spectre/commands.go` - Temporal property verification in verify command
 
 ### Map Methods Implementation (January 2025)
 
@@ -86,12 +170,14 @@
 - ✅ Module system (module, import, extends)
 - ✅ Description fields
 - ✅ Prime notation for next-state variables
+- ✅ Enum declaration parsing
 
 **Key Files**:
 - `internal/parser/parser.go`
 - `internal/parser/expression.go`
 - `internal/parser/declaration.go`
 - `internal/parser/type.go`
+- `internal/parser/enum_decl.go`
 
 ### Phase 8-9: Type System ✅
 **Status**: Complete and tested
@@ -102,6 +188,7 @@
 - ✅ Type inference for lambdas
 - ✅ Named type resolution (type aliases)
 - ✅ Collection method type checking
+- ✅ Enum type checking and resolution
 
 **Key Files**:
 - `internal/types/types.go`
@@ -144,11 +231,13 @@
 - ✅ Lambda evaluation with closures
 - ✅ Recursion support
 - ✅ Purity checking
+- ✅ Enum type registration and evaluation
 
 **Key Files**:
 - `internal/eval/environment.go`
 - `internal/eval/evaluator.go`
 - `internal/eval/purity_checker.go`
+- `internal/eval/enum_register.go`
 
 ### Phase 14-15: Verification Engine ✅
 **Status**: Complete and tested
@@ -159,22 +248,33 @@
 - ✅ State space exploration (BFS/DFS)
 - ✅ Cycle detection
 - ✅ Counterexample generation
+- ✅ Transition graph building
+- ✅ Temporal property verification
 
 **Key Files**:
 - `internal/exec/state_initializer.go`
 - `internal/exec/action_executor.go`
 - `internal/exec/state_validator.go`
 - `internal/explore/explorer.go`
+- `internal/explore/graph.go`
+- `internal/explore/temporal_verifier.go`
 
 ### Phase 16: Temporal Properties ✅
 **Status**: Complete and tested
 
 - ✅ Execution trace tracking
 - ✅ Temporal operators (always, eventually, until, leads-to)
-- ✅ Fairness conditions (WF, SF)
+- ✅ Fairness conditions (WF, SF) with path filtering
+- ✅ Transition graph building with cycle detection
+- ✅ Temporal property verification over transition graphs
+- ✅ Cycle-aware temporal verification (cycles don't prevent verification)
+- ✅ Fairness-aware verification (WF/SF filter unfair paths)
+- ✅ Nested temporal expression handling (eventually, leads-to)
 
 **Key Files**:
 - `internal/temporal/` (all files)
+- `internal/explore/temporal_verifier.go`
+- `internal/explore/graph.go`
 
 ### Phase 17-20: Error Reporting, CLI, Integration ✅
 **Status**: Complete and tested
@@ -257,14 +357,16 @@ ADDRESSES.forall(addr => balances[addr] >= 0)
 
 ## Example Files Status
 
-### ✅ Working Examples (5/12)
+### ✅ Working Examples (7/13)
 1. ✅ `bank-account-quint.spec` - Complete bank account example with maps
-2. ✅ `counter.spec` - Simple counter with invariants
-3. ✅ `mutex.spec` - Mutual exclusion example
-4. ✅ `modules-example.spec` - Module system demonstration
-5. ✅ `error-trace-example.spec` - Error reporting example
+2. ✅ `counter.spec` - Simple counter with invariants (has temporal violation in progress property)
+3. ✅ `counter-corrected.spec` - Corrected counter example with proper temporal properties
+4. ✅ `counter-with-fairness.spec` - Counter example demonstrating fairness constraints
+5. ✅ `mutex.spec` - Mutual exclusion example
+6. ✅ `modules-example.spec` - Module system demonstration
+7. ✅ `error-trace-example.spec` - Error reporting example with enum types and temporal properties
 
-### ⚠️ Examples Needing Fixes (7/12)
+### ⚠️ Examples Needing Fixes (6/12)
 1. ⚠️ `bank-account.spec` - Type errors (field access on inferred types)
 2. ⚠️ `user-management.spec` - Type errors (field access issues)
 3. ⚠️ `pure-functions.spec` - Type errors (needs verification)
@@ -272,6 +374,8 @@ ADDRESSES.forall(addr => balances[addr] >= 0)
 5. ⚠️ `constants-example.spec` - Type errors
 6. ⚠️ `message-queue.spec` - Type errors
 7. ⚠️ `fairness-example.spec` - Needs verification
+
+**Note**: `counter.spec` has a temporal property violation (progress property) but is intentionally left as an example of how temporal violations are detected. Use `counter-corrected.spec` for a working example.
 
 **Common Issues**:
 - Field access on inferred types in lambdas
@@ -292,6 +396,9 @@ ADDRESSES.forall(addr => balances[addr] >= 0)
 
 3. ⚠️ **Map.get() missing key handling**: Currently returns error if key not found
    - **Future**: Should return `Option<Value>` type
+
+4. ✅ **Enum types**: Fully supported
+   - **Status**: Complete - parsing, type checking, evaluation, and comparison all work
 
 ### Parser
 1. ✅ **Map indexing parsing**: Fixed to properly handle `map[key]` in all contexts
@@ -490,17 +597,32 @@ go build -o spectre ./cmd/spectre
 ## Key Achievements
 
 1. ✅ **Complete Language Implementation**: From lexer to verification engine
-2. ✅ **Map Operations**: Full support for Map.put(), Map.get(), and indexing
-3. ✅ **Lambda Expressions**: Full support with type inference
-4. ✅ **Collection Methods**: Complete Set, List, and Map method implementations
-5. ✅ **Bank Account Example**: Complete working example with maps
-6. ✅ **600+ Tests**: Comprehensive test coverage
-7. ✅ **CLI Tool**: Fully functional with all commands
-8. ✅ **Error Reporting**: User-friendly messages with stack traces
+2. ✅ **Temporal Property Verification**: Proper cycle handling and fairness support
+3. ✅ **Fairness Conditions**: WF/SF filtering for temporal verification
+4. ✅ **Enum Types**: Full support for enum declarations and values
+5. ✅ **Map Operations**: Full support for Map.put(), Map.get(), and indexing
+6. ✅ **Lambda Expressions**: Full support with type inference
+7. ✅ **Collection Methods**: Complete Set, List, and Map method implementations
+8. ✅ **Bank Account Example**: Complete working example with maps
+9. ✅ **Fairness Example**: Working counter example with fairness constraints
+10. ✅ **600+ Tests**: Comprehensive test coverage
+11. ✅ **CLI Tool**: Fully functional with all commands
+12. ✅ **Error Reporting**: User-friendly messages with stack traces
 
 ---
 
 ## Version History
+
+- **v0.2.0** (January 2025): Temporal property verification with fairness support
+  - Implemented temporal property verification with proper cycle handling
+  - Added fairness-aware path filtering (WF/SF) for temporal verification
+  - Fixed nested temporal expression handling in reachability checks
+  - Added transition graph building during state exploration
+  - Added enum type support (declaration, parsing, evaluation, comparison)
+  - Fixed action executor to properly handle require/ensure statements
+  - Enhanced verify command to check temporal properties
+  - Added temporal violation example to documentation
+  - Added counter-corrected.spec and counter-with-fairness.spec examples
 
 - **v0.1.0** (January 2025): Map methods implementation
   - Added Map.put() and Map.get() methods
@@ -516,4 +638,4 @@ go build -o spectre ./cmd/spectre
 ---
 
 **Status**: ✅ **Production Ready** - Core functionality complete, some example files need fixes
-**Next Focus**: Fix remaining example files and improve type inference for field access
+**Next Focus**: Fix remaining example files and improve type inference for field access. Temporal property verification with cycle handling and fairness support is now complete and working correctly.

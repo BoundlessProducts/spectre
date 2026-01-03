@@ -1,5 +1,5 @@
-// Simple Counter Example with Descriptions (Corrected)
-// Demonstrates how descriptions improve error messages
+// Counter example with fairness constraints
+// This demonstrates Option 3 from SPECTRE_BOOK.md: Add Fairness Constraints
 
 description "Tracks a numeric counter value"
 var counter: int
@@ -15,7 +15,6 @@ action increment {
 }
 
 description "Decrements the counter by one, only when counter is positive"
-description "Note: This can create paths where counter oscillates without progress"
 action decrement {
   require counter > 0
   counter' = counter - 1
@@ -23,7 +22,6 @@ action decrement {
 
 description "Resets the counter back to zero"
 action reset {
-  require counter > 10
   counter' = 0
 }
 
@@ -38,9 +36,8 @@ invariant bounded {
 }
 
 description "Verifies that counter can eventually reach value 10"
-description "This property holds because there exists a path where we only increment"
 temporal eventuallyReachesTen {
-  eventually (counter == 10)
+  eventually (counter = 10)
 }
 
 description "Ensures counter remains non-negative throughout execution"
@@ -48,11 +45,10 @@ temporal alwaysNonNegative {
   always (counter >= 0)
 }
 
-// Removed the 'progress' property because it requires fairness to hold
-// Without fairness constraints, the system allows infinite paths where:
-// 1. reset is executed repeatedly (counter never reaches 10)
-// 2. decrement/increment oscillate (counter oscillates between values < 10)
-//
-// To make progress hold, you would need:
-// - Fairness constraints (WF/SF) on actions
-// - Or restrict actions to prevent infinite non-progress paths
+description "Guarantees progress: if counter is below 10, it will eventually reach 10"
+description "With weak fairness on increment, this property holds because increment will"
+description "eventually execute when continuously enabled, ensuring progress to counter = 10"
+temporal progress {
+  WF(increment) → always (counter < 10 → eventually counter == 10)
+}
+
