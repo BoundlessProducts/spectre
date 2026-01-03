@@ -73,7 +73,7 @@ invariant modeValid {
 
 description "Ensures initialized systems have non-negative counters"
 invariant initializationConsistency {
-  initialized → counter >= 0
+  !initialized || counter >= 0
 }
 
 description "Verifies that counter will eventually reach a high value"

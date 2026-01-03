@@ -79,6 +79,10 @@ func (l *Lexer) NextToken() Token {
 			ch := l.ch
 			l.readChar()
 			tok = Token{Type: EQ, Literal: string(ch) + string(l.ch), Position: pos}
+		} else if l.peekChar() == '>' {
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: FATARROW, Literal: string(ch) + string(l.ch), Position: pos}
 		} else {
 			tok = Token{Type: ASSIGN, Literal: string(l.ch), Position: pos}
 		}

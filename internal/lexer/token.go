@@ -32,6 +32,7 @@ const (
 	NOT      TokenType = "!"   // !
 	PRIME    TokenType = "'"   // ' (next state)
 	ARROW    TokenType = "->"  // -> (leads to)
+	FATARROW TokenType = "=>"  // => (lambda)
 
 	// Delimiters
 	COMMA     TokenType = ","  // ,

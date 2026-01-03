@@ -201,12 +201,8 @@ func (p *Parser) parseAlwaysExpression() ast.Expr {
 		if expr == nil {
 			return nil
 		}
-	} else {
+	} else if p.curTokenIs(lexer.LPAREN) {
 		// Parse parenthesized expression
-		if !p.curTokenIs(lexer.LPAREN) {
-			p.addErrorf("expected ( after always, got %s", p.curToken.Type)
-			return nil
-		}
 		p.nextToken() // consume "("
 
 		expr = p.parseTemporalExpression()
@@ -220,6 +216,12 @@ func (p *Parser) parseAlwaysExpression() ast.Expr {
 			return nil
 		}
 		p.nextToken() // consume ")"
+	} else {
+		// Parse expression without parentheses (for cases like "always users.size() > 0")
+		expr = p.parseTemporalExpression()
+		if expr == nil {
+			return nil
+		}
 	}
 
 	return &ast.AlwaysExpr{

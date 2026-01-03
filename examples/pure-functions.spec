@@ -61,20 +61,19 @@ fun getUserNames(userSet: Set<User>): List<str> {
 description "Finds a user by their ID, returning an optional result"
 fun findUserById(userSet: Set<User>, id: int): Option<User> {
   let matches = userSet.filter(u => u.id = id)
-  if (matches.size() > 0) {
-    return Option.some(matches.head())
-  } else {
+  if (matches.size() = 0) {
     return Option.none()
+  } else {
+    return Option.some(matches.head())
   }
 }
 
 description "Calculates the average age of users in a set"
 fun averageAge(userSet: Set<User>): float {
-  if (userSet.size() = 0) {
-    return 0.0
+  return if (userSet.size() = 0) {
+    0.0
   } else {
-    let totalAge = userSet.map(u => u.age).reduce(0, (acc, age) => acc + age)
-    return totalAge / userSet.size()
+    userSet.map(u => u.age).reduce(0, (acc, age) => acc + age) / userSet.size()
   }
 }
 
@@ -101,8 +100,8 @@ fun isValidUserName(name: str): bool {
 description "Calculates a score for a user based on age and active status"
 fun calculateUserScore(user: User): int {
   let baseScore = 100
-  let ageBonus = if (user.age >= 18) then 50 else 0
-  let activeBonus = if (user.active) then 25 else 0
+  let ageBonus = if (user.age >= 18) { 50 } else { 0 }
+  let activeBonus = if (user.active) { 25 } else { 0 }
   return baseScore + ageBonus + activeBonus
 }
 
@@ -119,10 +118,12 @@ description "Sums all integers in a range recursively"
 fun sumRange(start: int, end: int): int {
   if (start > end) {
     return 0
-  } else if (start = end) {
-    return start
   } else {
-    return start + sumRange(start + 1, end)
+    if (start = end) {
+      return start
+    } else {
+      return start + sumRange(start + 1, end)
+    }
   }
 }
 
@@ -148,7 +149,7 @@ description "Activates a user account"
 action activateUser(id: int) {
   require users.exists(u => u.id = id)
   users' = users.map(u => 
-    if (u.id = id) then { ...u, active: true } else u
+    if (u.id = id) { { id: u.id, name: u.name, age: u.age, active: true } } else { u }
   )
 }
 
@@ -169,7 +170,7 @@ invariant allUsersValid {
 
 description "Ensures eligible users are always active"
 invariant eligibleUsersActive {
-  users.forall(u => isEligible(u) → u.active)
+  users.forall(u => !isEligible(u) || u.active)
 }
 
 description "Verifies that active users will eventually exist"

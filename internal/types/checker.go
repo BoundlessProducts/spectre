@@ -38,6 +38,11 @@ func (c *Checker) Errors() []*TypeError {
 	return c.errors
 }
 
+// MergeErrors merges errors from another checker into this checker
+func (c *Checker) MergeErrors(other *Checker) {
+	c.errors = append(c.errors, other.errors...)
+}
+
 // addError adds a type error
 func (c *Checker) addError(pos ast.Position, format string, args ...interface{}) {
 	c.errors = append(c.errors, &TypeError{
@@ -73,6 +78,10 @@ func (c *Checker) CheckExpression(expr ast.Expr) Type {
 		return c.checkIfExpr(e)
 	case *ast.LetExpr:
 		return c.checkLetExpr(e)
+	case *ast.LambdaExpr:
+		return c.checkLambdaExpr(e)
+	case *ast.RecordLiteral:
+		return c.checkRecordLiteral(e)
 	default:
 		c.addError(expr.Pos(), "unsupported expression type: %T", expr)
 		return nil
@@ -207,7 +216,8 @@ func (c *Checker) checkIdent(ident *ast.Ident) Type {
 
 	// Check if it's a variable
 	if typ, found := c.env.LookupVariable(name); found {
-		return typ
+		// Resolve any named types in the type (e.g., Set<User> -> Set<Record{...}>)
+		return c.resolveNamedTypesInType(typ)
 	}
 
 	// Check if it's a constant
@@ -341,13 +351,45 @@ func (c *Checker) checkCallExpr(expr *ast.CallExpr) Type {
 	var funcName string
 	if sel, ok := expr.Fun.(*ast.SelectorExpr); ok {
 		funcName = sel.Sel
-		// Check the receiver type
+		
+		// Check if it's a static method call (Set.empty(), Set.of(), etc.)
+		if ident, ok := sel.X.(*ast.Ident); ok {
+			if ident.Name == "Set" || ident.Name == "List" || ident.Name == "Map" || ident.Name == "Option" {
+				// Static method call on collection type
+				return c.checkStaticMethodCall(ident.Name, funcName, argTypes, expr.Pos())
+			}
+		}
+		
+		// Instance method call - check the receiver type
 		receiverType := c.CheckExpression(sel.X)
 		if receiverType == nil {
 			return nil
 		}
-		// For now, we'll handle method calls later
-		// This is a placeholder
+		
+		// Resolve any named types in the receiver type (e.g., Set<User> -> Set<Record{...}>)
+		receiverType = c.resolveNamedTypesInType(receiverType)
+		
+		// Handle method calls with lambda type inference
+		if len(expr.Args) > 0 {
+			// Check if first argument is a lambda that needs type inference
+			if lambda, ok := expr.Args[0].(*ast.LambdaExpr); ok {
+				// Infer lambda parameter types from method context
+				inferredLambdaType := c.inferLambdaTypeFromMethod(receiverType, funcName, lambda, argTypes[0])
+				if inferredLambdaType != nil {
+					// Re-check the lambda with inferred types
+					// Create a new checker with the same environment to re-check the lambda
+					lambdaChecker := &Checker{env: c.env, errors: []*TypeError{}}
+					recheckedLambdaType := lambdaChecker.checkLambdaExprWithExpected(lambda, inferredLambdaType)
+					// Merge errors from lambda re-checking
+					c.errors = append(c.errors, lambdaChecker.errors...)
+					// Update argTypes with the properly type-checked lambda
+					argTypes[0] = recheckedLambdaType
+				}
+			}
+		}
+		
+		// Handle known collection methods
+		return c.checkMethodCall(receiverType, funcName, argTypes, expr.Pos())
 	} else if ident, ok := expr.Fun.(*ast.Ident); ok {
 		funcName = ident.Name
 		// Don't check the identifier as an expression - it's a function name
@@ -374,9 +416,18 @@ func (c *Checker) checkCallExpr(expr *ast.CallExpr) Type {
 
 			// Check argument types
 			for i, argType := range argTypes {
-				if !IsAssignable(argType, sig.Parameters[i]) {
+				if argType == nil {
+					c.addError(expr.Pos(), "argument %d: cannot determine type", i+1)
+					return nil
+				}
+				paramType := sig.Parameters[i]
+				if paramType == nil {
+					c.addError(expr.Pos(), "argument %d: function parameter type is nil", i+1)
+					return nil
+				}
+				if !IsAssignable(argType, paramType) {
 					c.addError(expr.Pos(), "argument %d: cannot assign %s to %s",
-						i+1, argType.String(), sig.Parameters[i].String())
+						i+1, argType.String(), paramType.String())
 					return nil
 				}
 			}
@@ -519,6 +570,335 @@ func (c *Checker) checkLetExpr(expr *ast.LetExpr) Type {
 	return bodyType
 }
 
+// checkLambdaExpr checks a lambda expression
+// If expectedType is provided, it's used to infer parameter types
+func (c *Checker) checkLambdaExpr(expr *ast.LambdaExpr) Type {
+	return c.checkLambdaExprWithExpected(expr, nil)
+}
+
+// checkLambdaExprWithExpected checks a lambda expression with an expected function type
+func (c *Checker) checkLambdaExprWithExpected(expr *ast.LambdaExpr, expectedType *Function) Type {
+	// Create a new scope for lambda parameters
+	lambdaEnv := NewChildEnvironment(c.env)
+	
+	// Add parameters to the lambda environment
+	var paramTypes []Type
+	for i, param := range expr.Params {
+		var paramType Type
+		if param.Type != nil {
+			// Type is explicitly specified
+			var err error
+			paramType, err = c.resolveType(param.Type)
+			if err != nil {
+				c.addError(expr.Pos(), "invalid parameter type in lambda: %v", err)
+				return nil
+			}
+		} else if expectedType != nil && i < len(expectedType.Params) {
+			// Infer from expected type
+			paramType = expectedType.Params[i]
+			// Resolve any named types in the parameter type
+			paramType = c.resolveNamedTypesInType(paramType)
+		} else {
+			// Cannot infer - this will cause an error later
+			// For now, use a placeholder
+			paramType = &Primitive{Kind: Int} // Placeholder
+		}
+		
+		paramTypes = append(paramTypes, paramType)
+		lambdaEnv.DeclareVariable(param.Name, paramType)
+	}
+	
+	// Check lambda body in the new environment
+	lambdaChecker := &Checker{env: lambdaEnv, errors: c.errors}
+	bodyType := lambdaChecker.CheckExpression(expr.Body)
+	
+	// Merge errors
+	c.errors = lambdaChecker.errors
+	
+	if bodyType == nil {
+		return nil
+	}
+	
+	// Return a function type representing the lambda
+	return &Function{
+		Params:     paramTypes,
+		ReturnType: bodyType,
+	}
+}
+
+// inferLambdaTypeFromMethod infers lambda parameter types from method call context
+func (c *Checker) inferLambdaTypeFromMethod(receiverType Type, methodName string, lambda *ast.LambdaExpr, currentArgType Type) *Function {
+	// Infer based on method name and receiver type
+	switch methodName {
+	case "filter", "map", "forall", "exists":
+		// These methods take a lambda: element => bool (filter/forall/exists) or element => newElement (map)
+		if setType, ok := receiverType.(*Set); ok {
+			// Set<T>.filter/map/etc. expects lambda: T => ...
+			if len(lambda.Params) == 1 && lambda.Params[0].Type == nil {
+				// Resolve the element type (in case it's a named type)
+				elementType := c.resolveNamedTypesInType(setType.Element)
+				// Infer parameter type from set element type
+				expectedFunc := &Function{
+					Params:     []Type{elementType},
+					ReturnType: &Primitive{Kind: Bool}, // Default return type
+				}
+				if methodName == "map" {
+					// Map returns same type as lambda return type
+					expectedFunc.ReturnType = nil // Will be inferred from lambda body
+				}
+				return expectedFunc
+			}
+		}
+		if listType, ok := receiverType.(*List); ok {
+			// List<T>.filter/map/etc. expects lambda: T => ...
+			if len(lambda.Params) == 1 && lambda.Params[0].Type == nil {
+				// Resolve the element type (in case it's a named type)
+				elementType := c.resolveNamedTypesInType(listType.Element)
+				expectedFunc := &Function{
+					Params:     []Type{elementType},
+					ReturnType: &Primitive{Kind: Bool},
+				}
+				if methodName == "map" {
+					expectedFunc.ReturnType = nil
+				}
+				return expectedFunc
+			}
+		}
+	case "reduce":
+		// reduce(initial, (acc, element) => acc)
+		if setType, ok := receiverType.(*Set); ok {
+			if len(lambda.Params) == 2 && lambda.Params[0].Type == nil && lambda.Params[1].Type == nil {
+				// Infer from first argument type (initial value)
+				if len(lambda.Params) >= 1 {
+					// Resolve the element type (in case it's a named type)
+					elementType := c.resolveNamedTypesInType(setType.Element)
+					// First param is accumulator (same type as initial)
+					// Second param is element (set element type)
+					return &Function{
+						Params:     []Type{currentArgType, elementType}, // Will be refined
+						ReturnType: currentArgType,
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// checkMethodCall checks a method call on a receiver type
+func (c *Checker) checkMethodCall(receiverType Type, methodName string, argTypes []Type, pos ast.Position) Type {
+	switch methodName {
+	case "filter":
+		if len(argTypes) != 1 {
+			c.addError(pos, "filter expects 1 argument (predicate), got %d", len(argTypes))
+			return nil
+		}
+		// Check that argument is a function: T => bool
+		if funcType, ok := argTypes[0].(*Function); ok {
+			if len(funcType.Params) != 1 {
+				c.addError(pos, "filter predicate must have 1 parameter")
+				return nil
+			}
+			if !isBool(funcType.ReturnType) {
+				c.addError(pos, "filter predicate must return bool, got %s", funcType.ReturnType.String())
+				return nil
+			}
+			// Return same collection type
+			return receiverType
+		}
+		c.addError(pos, "filter argument must be a function")
+		return nil
+	case "map":
+		if len(argTypes) != 1 {
+			c.addError(pos, "map expects 1 argument (function), got %d", len(argTypes))
+			return nil
+		}
+		if funcType, ok := argTypes[0].(*Function); ok {
+			if len(funcType.Params) != 1 {
+				c.addError(pos, "map function must have 1 parameter")
+				return nil
+			}
+			// Return collection with mapped element type
+			if _, ok := receiverType.(*Set); ok {
+				return &Set{Element: funcType.ReturnType}
+			}
+			if _, ok := receiverType.(*List); ok {
+				return &List{Element: funcType.ReturnType}
+			}
+		}
+		c.addError(pos, "map argument must be a function")
+		return nil
+	case "reduce":
+		if len(argTypes) != 2 {
+			c.addError(pos, "reduce expects 2 arguments (initial, function), got %d", len(argTypes))
+			return nil
+		}
+		if funcType, ok := argTypes[1].(*Function); ok {
+			if len(funcType.Params) != 2 {
+				c.addError(pos, "reduce function must have 2 parameters")
+				return nil
+			}
+			// Return type is the accumulator type (first argument type)
+			return argTypes[0]
+		}
+		c.addError(pos, "reduce second argument must be a function")
+		return nil
+	case "forall", "exists":
+		if len(argTypes) != 1 {
+			c.addError(pos, "%s expects 1 argument (predicate), got %d", methodName, len(argTypes))
+			return nil
+		}
+		if funcType, ok := argTypes[0].(*Function); ok {
+			if len(funcType.Params) != 1 {
+				c.addError(pos, "%s predicate must have 1 parameter", methodName)
+				return nil
+			}
+			if !isBool(funcType.ReturnType) {
+				c.addError(pos, "%s predicate must return bool, got %s", methodName, funcType.ReturnType.String())
+				return nil
+			}
+			return &Primitive{Kind: Bool}
+		}
+		c.addError(pos, "%s argument must be a function", methodName)
+		return nil
+	case "size":
+		if len(argTypes) != 0 {
+			c.addError(pos, "size expects 0 arguments, got %d", len(argTypes))
+			return nil
+		}
+		return &Primitive{Kind: Int}
+	case "union", "intersection":
+		if len(argTypes) != 1 {
+			c.addError(pos, "%s expects 1 argument, got %d", methodName, len(argTypes))
+			return nil
+		}
+		// Argument must be the same collection type
+		if !IsAssignable(argTypes[0], receiverType) && !IsAssignable(receiverType, argTypes[0]) {
+			c.addError(pos, "%s argument must be compatible with receiver type %s, got %s",
+				methodName, receiverType.String(), argTypes[0].String())
+			return nil
+		}
+		return receiverType
+	case "contains":
+		if len(argTypes) != 1 {
+			c.addError(pos, "contains expects 1 argument, got %d", len(argTypes))
+			return nil
+		}
+		// Argument should be compatible with element type
+		if setType, ok := receiverType.(*Set); ok {
+			if !IsAssignable(argTypes[0], setType.Element) && !IsAssignable(setType.Element, argTypes[0]) {
+				c.addError(pos, "contains argument must be compatible with element type %s, got %s",
+					setType.Element.String(), argTypes[0].String())
+				return nil
+			}
+		} else if listType, ok := receiverType.(*List); ok {
+			if !IsAssignable(argTypes[0], listType.Element) && !IsAssignable(listType.Element, argTypes[0]) {
+				c.addError(pos, "contains argument must be compatible with element type %s, got %s",
+					listType.Element.String(), argTypes[0].String())
+				return nil
+			}
+		}
+		return &Primitive{Kind: Bool}
+	case "put":
+		// Map.put(key, value) - returns a new map with the key-value pair added/updated
+		if mapType, ok := receiverType.(*Map); ok {
+			if len(argTypes) != 2 {
+				c.addError(pos, "put expects 2 arguments (key, value), got %d", len(argTypes))
+				return nil
+			}
+			// Check key type
+			if !IsAssignable(argTypes[0], mapType.Key) && !IsAssignable(mapType.Key, argTypes[0]) {
+				c.addError(pos, "put key argument must be compatible with key type %s, got %s",
+					mapType.Key.String(), argTypes[0].String())
+				return nil
+			}
+			// Check value type
+			if !IsAssignable(argTypes[1], mapType.Value) && !IsAssignable(mapType.Value, argTypes[1]) {
+				c.addError(pos, "put value argument must be compatible with value type %s, got %s",
+					mapType.Value.String(), argTypes[1].String())
+				return nil
+			}
+			// Return the same map type
+			return receiverType
+		}
+		c.addError(pos, "put can only be called on Map, got %s", receiverType.String())
+		return nil
+	case "get":
+		// Map.get(key) - returns the value for the key (or Option<Value> if key might not exist)
+		// For now, we'll return the value type directly (assuming key exists)
+		// In the future, this could return Option<Value>
+		if mapType, ok := receiverType.(*Map); ok {
+			if len(argTypes) != 1 {
+				c.addError(pos, "get expects 1 argument (key), got %d", len(argTypes))
+				return nil
+			}
+			// Check key type
+			if !IsAssignable(argTypes[0], mapType.Key) && !IsAssignable(mapType.Key, argTypes[0]) {
+				c.addError(pos, "get key argument must be compatible with key type %s, got %s",
+					mapType.Key.String(), argTypes[0].String())
+				return nil
+			}
+			// Return the value type
+			return mapType.Value
+		}
+		c.addError(pos, "get can only be called on Map, got %s", receiverType.String())
+		return nil
+	case "append":
+		if len(argTypes) != 1 {
+			c.addError(pos, "append expects 1 argument, got %d", len(argTypes))
+			return nil
+		}
+		// Argument must be compatible with element type
+		if listType, ok := receiverType.(*List); ok {
+			if !IsAssignable(argTypes[0], listType.Element) && !IsAssignable(listType.Element, argTypes[0]) {
+				c.addError(pos, "append argument must be compatible with element type %s, got %s",
+					listType.Element.String(), argTypes[0].String())
+				return nil
+			}
+			return receiverType
+		}
+		c.addError(pos, "append can only be called on List, got %s", receiverType.String())
+		return nil
+	case "head", "tail", "toList", "toSet":
+		// These methods are handled in the evaluator, but we need to type-check them
+		if methodName == "head" {
+			if len(argTypes) != 0 {
+				c.addError(pos, "head expects 0 arguments, got %d", len(argTypes))
+				return nil
+			}
+			if listType, ok := receiverType.(*List); ok {
+				return listType.Element
+			}
+		} else if methodName == "tail" {
+			if len(argTypes) != 0 {
+				c.addError(pos, "tail expects 0 arguments, got %d", len(argTypes))
+				return nil
+			}
+			return receiverType
+		} else if methodName == "toList" {
+			if len(argTypes) != 0 {
+				c.addError(pos, "toList expects 0 arguments, got %d", len(argTypes))
+				return nil
+			}
+			if setType, ok := receiverType.(*Set); ok {
+				return &List{Element: setType.Element}
+			}
+		} else if methodName == "toSet" {
+			if len(argTypes) != 0 {
+				c.addError(pos, "toSet expects 0 arguments, got %d", len(argTypes))
+				return nil
+			}
+			if listType, ok := receiverType.(*List); ok {
+				return &Set{Element: listType.Element}
+			}
+		}
+		return receiverType
+	default:
+		c.addError(pos, "unknown method: %s", methodName)
+		return nil
+	}
+}
+
 // Helper functions
 
 func isNumeric(typ Type) bool {
@@ -539,5 +919,154 @@ func isFloat(typ Type) bool {
 func isBool(typ Type) bool {
 	prim, ok := typ.(*Primitive)
 	return ok && prim.Kind == Bool
+}
+
+// resolveType resolves a type from AST, handling named types by looking them up in the environment
+func (c *Checker) resolveType(astType ast.Type) (Type, error) {
+	return FromASTWithResolver(astType, func(name string) (Type, bool) {
+		return c.env.LookupType(name)
+	})
+}
+
+// ResolveNamedTypesInType recursively resolves any named types within a type
+// For example, if we have Set<User> where User is a type alias, this will resolve it to Set<Record{...}>
+func (c *Checker) ResolveNamedTypesInType(typ Type) Type {
+	return c.resolveNamedTypesInType(typ)
+}
+
+// resolveNamedTypesInType recursively resolves any named types within a type
+// For example, if we have Set<User> where User is a type alias, this will resolve it to Set<Record{...}>
+func (c *Checker) resolveNamedTypesInType(typ Type) Type {
+	if typ == nil {
+		return nil
+	}
+	
+	switch t := typ.(type) {
+	case *Set:
+		// Resolve the element type
+		resolvedElement := c.resolveNamedTypesInType(t.Element)
+		if resolvedElement != t.Element {
+			return &Set{Element: resolvedElement}
+		}
+		return typ
+	case *List:
+		// Resolve the element type
+		resolvedElement := c.resolveNamedTypesInType(t.Element)
+		if resolvedElement != t.Element {
+			return &List{Element: resolvedElement}
+		}
+		return typ
+	case *Map:
+		// Resolve key and value types
+		resolvedKey := c.resolveNamedTypesInType(t.Key)
+		resolvedValue := c.resolveNamedTypesInType(t.Value)
+		if resolvedKey != t.Key || resolvedValue != t.Value {
+			return &Map{Key: resolvedKey, Value: resolvedValue}
+		}
+		return typ
+	case *Option:
+		// Resolve the element type
+		resolvedElement := c.resolveNamedTypesInType(t.Element)
+		if resolvedElement != t.Element {
+			return &Option{Element: resolvedElement}
+		}
+		return typ
+	case *Named:
+		// If it's a named type, try to resolve it
+		if resolved, found := c.env.LookupType(t.Name); found {
+			return c.resolveNamedTypesInType(resolved)
+		}
+		// If not found in environment, it might be a primitive or built-in type
+		// Try to resolve it as a primitive
+		if prim, err := FromPrimitiveName(t.Name); err == nil {
+			return prim
+		}
+		return typ
+	default:
+		// Primitive types, records, etc. don't need resolution
+		return typ
+	}
+}
+
+// checkStaticMethodCall checks static method calls like Set.empty(), Set.of(x), etc.
+func (c *Checker) checkStaticMethodCall(collectionType string, methodName string, argTypes []Type, pos ast.Position) Type {
+	switch methodName {
+	case "empty":
+		if len(argTypes) != 0 {
+			c.addError(pos, "%s.empty() expects 0 arguments, got %d", collectionType, len(argTypes))
+			return nil
+		}
+		switch collectionType {
+		case "Set":
+			return &Set{Element: &Primitive{Kind: Int}} // Element type will be inferred from usage
+		case "List":
+			return &List{Element: &Primitive{Kind: Int}} // Element type will be inferred from usage
+		case "Map":
+			return &Map{Key: &Primitive{Kind: Int}, Value: &Primitive{Kind: Int}} // Types will be inferred
+		case "Option":
+			return &Option{Element: &Primitive{Kind: Int}} // Element type will be inferred
+		default:
+			c.addError(pos, "unknown collection type: %s", collectionType)
+			return nil
+		}
+	case "of":
+		if len(argTypes) != 1 {
+			c.addError(pos, "%s.of() expects 1 argument, got %d", collectionType, len(argTypes))
+			return nil
+		}
+		elemType := argTypes[0]
+		if elemType == nil {
+			c.addError(pos, "cannot determine element type for %s.of()", collectionType)
+			return nil
+		}
+		switch collectionType {
+		case "Set":
+			return &Set{Element: elemType}
+		case "List":
+			return &List{Element: elemType}
+		default:
+			c.addError(pos, "%s.of() not supported", collectionType)
+			return nil
+		}
+	default:
+		c.addError(pos, "unknown static method %s.%s", collectionType, methodName)
+		return nil
+	}
+}
+
+// checkRecordLiteral type-checks a record literal expression
+// It infers the record type from the field types
+func (c *Checker) checkRecordLiteral(expr *ast.RecordLiteral) Type {
+	fields := make(map[string]Type)
+	
+	// Check each field value and infer its type
+	for _, field := range expr.Fields {
+		if field.Spread {
+			// Handle spread operator: ...identifier
+			spreadType := c.CheckExpression(field.Value)
+			if spreadType == nil {
+				return nil
+			}
+			// Spread should be a record type
+			if rec, ok := spreadType.(*Record); ok {
+				// Merge fields from spread record
+				for name, typ := range rec.Fields {
+					fields[name] = typ
+				}
+			} else {
+				c.addError(expr.Pos(), "spread operator can only be used with record types, got %s", spreadType.String())
+				return nil
+			}
+		} else {
+			// Regular field: name: value
+			fieldType := c.CheckExpression(field.Value)
+			if fieldType == nil {
+				return nil
+			}
+			fields[field.Name] = fieldType
+		}
+	}
+	
+	return &Record{Fields: fields}
 }
 

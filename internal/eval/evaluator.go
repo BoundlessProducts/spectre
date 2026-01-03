@@ -38,10 +38,16 @@ func (e *Evaluator) Eval(expr ast.Expr) (state.Value, error) {
 		return e.evalParenExpr(ex)
 	case *ast.CallExpr:
 		return e.evalCallExpr(ex)
+	case *ast.SelectorExpr:
+		return e.evalSelectorExpr(ex)
 	case *ast.IfExpr:
 		return e.evalIfExpr(ex)
 	case *ast.LetExpr:
 		return e.evalLetExpr(ex)
+	case *ast.LambdaExpr:
+		return e.evalLambdaExpr(ex)
+	case *ast.IndexExpr:
+		return e.evalIndexExpr(ex)
 	default:
 		return nil, fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -520,9 +526,32 @@ func (e *Evaluator) evalCallExpr(expr *ast.CallExpr) (state.Value, error) {
 	case *ast.Ident:
 		funcName = fun.Name
 	case *ast.SelectorExpr:
-		// For now, only support simple function calls
-		// Method calls (selector expressions) will be handled later
-		return nil, fmt.Errorf("method calls not yet supported")
+		// Check if it's a static method call (Set.empty(), Set.of(), etc.)
+		if ident, ok := fun.X.(*ast.Ident); ok {
+			if ident.Name == "Set" || ident.Name == "List" || ident.Name == "Map" || ident.Name == "Option" {
+				// Static method call on collection type
+				return e.evalStaticMethodCall(ident.Name, fun.Sel, expr.Args)
+			}
+		}
+		
+		// Instance method call (e.g., users.filter(...))
+		obj, err := e.Eval(fun.X)
+		if err != nil {
+			return nil, fmt.Errorf("error evaluating object in method call: %w", err)
+		}
+		
+		// Evaluate arguments
+		args := make([]state.Value, len(expr.Args))
+		for i, arg := range expr.Args {
+			val, err := e.Eval(arg)
+			if err != nil {
+				return nil, fmt.Errorf("error evaluating argument %d: %w", i, err)
+			}
+			args[i] = val
+		}
+		
+		// Evaluate method call with the object
+		return e.evalMethodCall(obj, fun.Sel, args)
 	default:
 		return nil, fmt.Errorf("unsupported function call expression type: %T", expr.Fun)
 	}
@@ -559,6 +588,78 @@ func (e *Evaluator) evalCallExpr(expr *ast.CallExpr) (state.Value, error) {
 	// Evaluate function body
 	evaluator := NewEvaluator(funcEnv)
 	return evaluator.evalFunctionBody(fnDef.Body)
+}
+
+// evalSelectorExpr evaluates a selector expression (e.g., obj.field or obj.method)
+func (e *Evaluator) evalSelectorExpr(expr *ast.SelectorExpr) (state.Value, error) {
+	// Evaluate the object
+	obj, err := e.Eval(expr.X)
+	if err != nil {
+		return nil, fmt.Errorf("error evaluating object: %w", err)
+	}
+	
+	// For now, selector expressions are only used in method calls
+	// Field access (record.field) will be handled separately
+	// Return the selector expression wrapped so it can be called
+	return &SelectorValue{
+		Object: obj,
+		Method:  expr.Sel,
+	}, nil
+}
+
+// SelectorValue represents a method selector that can be called
+type SelectorValue struct {
+	Object state.Value
+	Method string
+}
+
+func (v *SelectorValue) Type() string {
+	return "selector"
+}
+
+func (v *SelectorValue) String() string {
+	return fmt.Sprintf("%s.%s", v.Object.String(), v.Method)
+}
+
+// evalMethodCall evaluates a method call on an object
+func (e *Evaluator) evalMethodCall(obj state.Value, methodName string, args []state.Value) (state.Value, error) {
+	// Handle collection methods
+	switch methodName {
+	case "filter":
+		return e.evalFilter(obj, args)
+	case "map":
+		return e.evalMap(obj, args)
+	case "reduce":
+		return e.evalReduce(obj, args)
+	case "forall":
+		return e.evalForall(obj, args)
+	case "exists":
+		return e.evalExists(obj, args)
+	case "size":
+		return e.evalSize(obj)
+	case "contains":
+		return e.evalContains(obj, args)
+	case "union":
+		return e.evalUnion(obj, args)
+	case "intersection":
+		return e.evalIntersection(obj, args)
+	case "head":
+		return e.evalHead(obj)
+	case "tail":
+		return e.evalTail(obj)
+	case "toList":
+		return e.evalToList(obj)
+	case "toSet":
+		return e.evalToSet(obj)
+	case "append":
+		return e.evalAppend(obj, args)
+	case "put":
+		return e.evalPut(obj, args)
+	case "get":
+		return e.evalGet(obj, args)
+	default:
+		return nil, fmt.Errorf("unknown method: %s", methodName)
+	}
 }
 
 // evalFunctionBody evaluates a function body and returns the return value
@@ -639,5 +740,121 @@ func (e *Evaluator) evalLetExpr(expr *ast.LetExpr) (state.Value, error) {
 	// Evaluate body in new scope
 	evaluator := NewEvaluator(letEnv)
 	return evaluator.Eval(expr.Body)
+}
+
+// LambdaValue represents a lambda function value
+// This is used to pass lambdas as values (e.g., to filter, map, etc.)
+type LambdaValue struct {
+	Params []ast.Parameter // Lambda parameters
+	Body   ast.Expr        // Lambda body expression
+	Env    *Environment    // Captured environment (closure)
+}
+
+func (v *LambdaValue) Type() string {
+	return "lambda"
+}
+
+func (v *LambdaValue) String() string {
+	if len(v.Params) == 1 {
+		return fmt.Sprintf("(%s => ...)", v.Params[0].Name)
+	}
+	paramNames := make([]string, len(v.Params))
+	for i, p := range v.Params {
+		paramNames[i] = p.Name
+	}
+	return fmt.Sprintf("((%s) => ...)", fmt.Sprint(paramNames))
+}
+
+// Call executes the lambda with the given arguments
+func (v *LambdaValue) Call(args []state.Value) (state.Value, error) {
+	if len(args) != len(v.Params) {
+		return nil, fmt.Errorf("lambda expects %d arguments, got %d", len(v.Params), len(args))
+	}
+	
+	// Create new scope for lambda execution
+	lambdaEnv := NewChildEnvironment(v.Env)
+	
+	// Bind parameters to argument values
+	for i, param := range v.Params {
+		lambdaEnv.SetVariable(param.Name, args[i])
+	}
+	
+	// Evaluate lambda body in new scope
+	evaluator := NewEvaluator(lambdaEnv)
+	return evaluator.Eval(v.Body)
+}
+
+// evalLambdaExpr evaluates a lambda expression
+// Returns a LambdaValue that can be called later
+func (e *Evaluator) evalLambdaExpr(expr *ast.LambdaExpr) (state.Value, error) {
+	// Create a lambda value that captures the current environment
+	// and the lambda AST node
+	return &LambdaValue{
+		Params: expr.Params,
+		Body:   expr.Body,
+		Env:    e.env, // Capture current environment (closure)
+	}, nil
+}
+
+// evalStaticMethodCall evaluates static method calls like Set.empty(), Set.of(x), etc.
+func (e *Evaluator) evalStaticMethodCall(collectionType string, methodName string, args []ast.Expr) (state.Value, error) {
+	// Evaluate arguments
+	argValues := make([]state.Value, len(args))
+	for i, arg := range args {
+		val, err := e.Eval(arg)
+		if err != nil {
+			return nil, fmt.Errorf("error evaluating argument %d: %w", i, err)
+		}
+		argValues[i] = val
+	}
+	
+	switch methodName {
+	case "empty":
+		return e.evalEmptyConstructor(collectionType, argValues)
+	case "of":
+		return e.evalOfConstructor(collectionType, argValues)
+	default:
+		return nil, fmt.Errorf("unknown static method %s.%s", collectionType, methodName)
+	}
+}
+
+// evalEmptyConstructor evaluates Set.empty(), List.empty(), Map.empty()
+func (e *Evaluator) evalEmptyConstructor(collectionType string, args []state.Value) (state.Value, error) {
+	if len(args) != 0 {
+		return nil, fmt.Errorf("%s.empty() expects 0 arguments, got %d", collectionType, len(args))
+	}
+	
+	switch collectionType {
+	case "Set":
+		return state.NewSetValue(), nil
+	case "List":
+		return state.NewListValue(), nil
+	case "Map":
+		return state.NewMapValue(), nil
+	default:
+		return nil, fmt.Errorf("unknown collection type: %s", collectionType)
+	}
+}
+
+// evalOfConstructor evaluates Set.of(x), List.of(x)
+func (e *Evaluator) evalOfConstructor(collectionType string, args []state.Value) (state.Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("%s.of() expects 1 argument, got %d", collectionType, len(args))
+	}
+	
+	elem := args[0]
+	
+	switch collectionType {
+	case "Set":
+		result := state.NewSetValue()
+		result.Add(elem)
+		return result, nil
+	case "List":
+		result := state.NewListValue()
+		result.Append(elem)
+		return result, nil
+	default:
+		return nil, fmt.Errorf("%s.of() not supported", collectionType)
+	}
 }
 

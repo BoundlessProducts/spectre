@@ -11,6 +11,7 @@ type Environment struct {
 	variables map[string]Type
 	functions map[string]*FunctionSignature
 	constants map[string]Type
+	types     map[string]Type // Type definitions (type aliases)
 }
 
 // FunctionSignature represents the type signature of a function
@@ -25,6 +26,7 @@ func NewEnvironment() *Environment {
 		variables: make(map[string]Type),
 		functions: make(map[string]*FunctionSignature),
 		constants: make(map[string]Type),
+		types:     make(map[string]Type),
 	}
 }
 
@@ -35,6 +37,7 @@ func NewChildEnvironment(parent *Environment) *Environment {
 		variables: make(map[string]Type),
 		functions: make(map[string]*FunctionSignature),
 		constants: make(map[string]Type),
+		types:     make(map[string]Type),
 	}
 }
 
@@ -130,5 +133,25 @@ func (e *Environment) GetParent() *Environment {
 // IsRoot returns true if this is the root environment (no parent)
 func (e *Environment) IsRoot() bool {
 	return e.parent == nil
+}
+
+// DeclareType declares a type definition (type alias)
+func (e *Environment) DeclareType(name string, typ Type) error {
+	if _, exists := e.types[name]; exists {
+		return fmt.Errorf("type %s already declared in this scope", name)
+	}
+	e.types[name] = typ
+	return nil
+}
+
+// LookupType looks up a type definition, searching parent scopes if not found
+func (e *Environment) LookupType(name string) (Type, bool) {
+	if typ, exists := e.types[name]; exists {
+		return typ, true
+	}
+	if e.parent != nil {
+		return e.parent.LookupType(name)
+	}
+	return nil, false
 }
 

@@ -22,13 +22,7 @@ init {
 
 description "Adds a new user to the system with the next available ID"
 action addUser(name: str, role: str) {
-  let newUser = { 
-    id: nextId, 
-    name: name, 
-    active: true,
-    role: role
-  }
-  users' = users.union(Set.of(newUser))
+  users' = users.union(Set.of({ id: nextId, name: name, active: true, role: role }))
   nextId' = nextId + 1
 }
 
@@ -42,7 +36,7 @@ description "Deactivates a user account, marking them as inactive"
 action deactivateUser(id: int) {
   require users.exists(u => u.id = id && u.active)
   users' = users.map(u => 
-    if (u.id = id) then { ...u, active: false } else u
+    if (u.id = id) { { id: u.id, name: u.name, active: false, role: u.role } } else { u }
   )
 }
 
@@ -50,7 +44,7 @@ description "Reactivates a previously deactivated user account"
 action activateUser(id: int) {
   require users.exists(u => u.id = id && !u.active)
   users' = users.map(u => 
-    if (u.id = id) then { ...u, active: true } else u
+    if (u.id = id) { { id: u.id, name: u.name, active: true, role: u.role } } else { u }
   )
 }
 
@@ -58,7 +52,7 @@ description "Changes the role of an existing user"
 action changeRole(id: int, newRole: str) {
   require users.exists(u => u.id = id)
   users' = users.map(u => 
-    if (u.id = id) then { ...u, role: newRole } else u
+    if (u.id = id) { { id: u.id, name: u.name, active: u.active, role: newRole } } else { u }
   )
 }
 

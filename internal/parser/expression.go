@@ -51,14 +51,27 @@ func (p *Parser) parseExpression(precedence int) ast.Expr {
 	}
 
 	// Continue parsing infix expressions while precedence allows
-	for precedence < p.curPrecedence() {
+	for {
+		// Check if current token is an infix operator
+		curPrec := p.curPrecedence()
+		if curPrec <= precedence {
+			// Current operator has lower or equal precedence, stop
+			break
+		}
+		
+		// Stop if we hit EOF, SEMICOLON, LBRACE, or RBRACE
+		if p.curTokenIs(lexer.EOF) || p.curTokenIs(lexer.SEMICOLON) || p.curTokenIs(lexer.LBRACE) || p.curTokenIs(lexer.RBRACE) {
+			break
+		}
+		
 		infix := p.parseInfixExpression(left)
 		if infix == nil {
-			return left
+			// No infix operator recognized, stop
+			break
 		}
 		left = infix
 		
-		// Stop if we hit EOF, SEMICOLON, LBRACE, or RBRACE
+		// Stop if we hit EOF, SEMICOLON, LBRACE, or RBRACE after parsing infix
 		if p.curTokenIs(lexer.EOF) || p.curTokenIs(lexer.SEMICOLON) || p.curTokenIs(lexer.LBRACE) || p.curTokenIs(lexer.RBRACE) {
 			break
 		}
@@ -116,6 +129,10 @@ func (p *Parser) parsePrefixExpression() ast.Expr {
 	switch p.curToken.Type {
 	case lexer.IDENT, lexer.SET, lexer.MAP, lexer.LIST, lexer.OPTION:
 		// These keywords can be used as identifiers in expressions
+		// Check if this is a lambda: param => expr (single param without parens)
+		if p.peekTokenIs(lexer.FATARROW) {
+			return p.parseLambdaExpression()
+		}
 		// parseIdentifier already advances past the identifier (and prime if present)
 		return p.parseIdentifier()
 	case lexer.INT, lexer.FLOAT, lexer.STRING, lexer.BOOL:
@@ -125,13 +142,34 @@ func (p *Parser) parsePrefixExpression() ast.Expr {
 	case lexer.NOT, lexer.MINUS:
 		return p.parseUnaryExpression()
 	case lexer.LPAREN:
-		return p.parseGroupedExpression()
+		// Could be a grouped expression or lambda with parentheses
+		// Try to parse as grouped expression first. If we see => after ), it's a lambda
+		return p.parseGroupedOrLambda()
 	case lexer.IF:
 		return p.parseIfExpression()
 	case lexer.LET:
 		return p.parseLetExpression()
 	case lexer.SUPER:
 		return p.parseSuperExpression()
+	case lexer.RETURN:
+		// Handle return statements in expression context (e.g., in if expressions)
+		// Parse return and extract the value
+		p.nextToken() // consume "return"
+		return p.parseExpression(LOWEST)
+	case lexer.LBRACE:
+		// Distinguish between record literals and blocks
+		// Record literals: { field: value, ... } or { ...spread }
+		// Blocks: { statements }
+		// Peek ahead to see if this looks like a record literal
+		// A record literal starts with: identifier followed by :, or ... followed by identifier
+		if p.peekTokenIs(lexer.IDENT) || p.peekTokenIs(lexer.ELLIPSIS) {
+			// Could be a record literal, check further
+			// Save current position to potentially backtrack
+			return p.parseRecordLiteral()
+		}
+		// Not a record literal pattern, error
+		p.addErrorf("unexpected { in expression context")
+		return nil
 	default:
 		p.addErrorf("no prefix parse function for %s found", p.curToken.Type)
 		return nil
@@ -275,8 +313,126 @@ func (p *Parser) parseBinaryExpression(left ast.Expr) ast.Expr {
 	}
 }
 
+// parseGroupedOrLambda parses either a grouped expression or a lambda
+// We parse the parenthesized content and check if => follows to determine which it is
+func (p *Parser) parseGroupedOrLambda() ast.Expr {
+	pos := tokenPos(p.curToken)
+	p.nextToken() // consume "("
+
+	// Check for empty parens followed by =>
+	if p.curTokenIs(lexer.RPAREN) && p.peekTokenIs(lexer.FATARROW) {
+		// It's a lambda with no parameters: () => expr
+		p.nextToken() // consume ")"
+		p.nextToken() // consume "=>"
+		body := p.parseExpression(LOWEST)
+		return &ast.LambdaExpr{
+			Position: pos,
+			Params:   []ast.Parameter{},
+			Body:     body,
+		}
+	}
+
+	// Check if it looks like lambda parameters (identifier optionally with type)
+	// A lambda must have: (param) => or (param1, param2) => or (param: Type) =>
+	// Quick check: if next token after IDENT is = (assignment), it's definitely not a lambda
+	if p.curTokenIs(lexer.IDENT) && !p.peekTokenIs(lexer.ASSIGN) {
+		// Could be a lambda - try to parse as lambda parameters
+		// We check if we can parse parameters and then see ) followed by =>
+		params, isLambda := p.tryParseLambdaParams()
+		if isLambda {
+			// It's a lambda
+			if !p.curTokenIs(lexer.RPAREN) {
+				p.addErrorf("expected ) after lambda parameters, got %s", p.curToken.Type)
+				return nil
+			}
+			p.nextToken() // consume ")"
+			
+			if !p.curTokenIs(lexer.FATARROW) {
+				p.addErrorf("expected => after lambda parameters, got %s", p.curToken.Type)
+				return nil
+			}
+			p.nextToken() // consume "=>"
+			
+			body := p.parseExpression(LOWEST)
+			return &ast.LambdaExpr{
+				Position: pos,
+				Params:   params,
+				Body:     body,
+			}
+		}
+		// If tryParseLambdaParams failed, we've consumed some tokens
+		// But that's okay - we'll parse as grouped expression from current position
+		// The tokens consumed were just identifiers and commas, which are valid in expressions
+	}
+
+	// Not a lambda, parse as grouped expression
+	expr := p.parseExpression(LOWEST)
+
+	if !p.curTokenIs(lexer.RPAREN) {
+		p.addErrorf("expected ), got %s", p.curToken.Type)
+		return nil
+	}
+	p.nextToken() // consume ")"
+
+	return &ast.ParenExpr{
+		Position: pos,
+		X:        expr,
+	}
+}
+
+// tryParseLambdaParams tries to parse lambda parameters and returns them if successful
+// Returns (params, true) if it's lambda parameters, (nil, false) otherwise
+// This function consumes tokens, so caller must restore state if it returns false
+func (p *Parser) tryParseLambdaParams() ([]ast.Parameter, bool) {
+	var params []ast.Parameter
+	
+	for p.curTokenIs(lexer.IDENT) {
+		// Check if next token is = (assignment) - this means it's not a lambda parameter
+		if p.peekTokenIs(lexer.ASSIGN) {
+			// This is an assignment expression, not a lambda
+			return nil, false
+		}
+		
+		paramName := p.curToken.Literal
+		p.nextToken() // consume parameter name
+		
+		// Check for type annotation
+		var paramType ast.Type
+		if p.curTokenIs(lexer.COLON) {
+			p.nextToken() // consume ":"
+			paramType = p.parseType()
+			if paramType == nil {
+				return nil, false
+			}
+		}
+		
+		params = append(params, ast.Parameter{
+			Name: paramName,
+			Type: paramType,
+		})
+		
+		// Check for comma (more params) or closing paren
+		if p.curTokenIs(lexer.COMMA) {
+			p.nextToken() // consume ","
+			continue
+		}
+		
+		// Must be at closing paren followed by =>
+		if p.curTokenIs(lexer.RPAREN) && p.peekTokenIs(lexer.FATARROW) {
+			// It's a lambda!
+			return params, true
+		}
+		
+		// Not a lambda (could be grouped expression like (a = b) or (a + b))
+		return nil, false
+	}
+	
+	return nil, false
+}
+
 // parseGroupedExpression parses a parenthesized expression
 func (p *Parser) parseGroupedExpression() ast.Expr {
+	pos := tokenPos(p.curToken)
 	p.nextToken() // consume "("
 
 	expr := p.parseExpression(LOWEST)
@@ -289,7 +445,7 @@ func (p *Parser) parseGroupedExpression() ast.Expr {
 	p.nextToken() // consume ")"
 
 	return &ast.ParenExpr{
-		Position: tokenPos(p.curToken),
+		Position: pos,
 		X:        expr,
 	}
 }
@@ -317,13 +473,18 @@ func (p *Parser) parseCallExpression(fn ast.Expr) ast.Expr {
 
 // parseIndexExpression parses an index expression
 func (p *Parser) parseIndexExpression(left ast.Expr) ast.Expr {
-	p.nextToken()
+	p.nextToken() // consume '['
 
-	index := p.parseExpression(LOWEST)
-
-	if !p.expectPeek(lexer.RBRACKET) {
+	index := p.parseExpressionUntil(lexer.RBRACKET)
+	if index == nil {
 		return nil
 	}
+	// parseExpressionUntil stops at RBRACKET, so curToken should be on RBRACKET now
+
+	if !p.curTokenIs(lexer.RBRACKET) {
+		return nil
+	}
+	p.nextToken() // consume ']'
 
 	return &ast.IndexExpr{
 		Position: tokenPos(p.curToken),
@@ -358,7 +519,7 @@ func (p *Parser) parseSelectorExpression(left ast.Expr) ast.Expr {
 
 // parseExpressionList parses a comma-separated list of expressions
 func (p *Parser) parseExpressionList(end lexer.TokenType) []ast.Expr {
-	var list []ast.Expr
+	list := []ast.Expr{} // Initialize as empty slice, not nil
 
 	// curToken should be on the opening delimiter (LPAREN or LBRACKET)
 	p.nextToken() // consume opening delimiter
@@ -406,8 +567,8 @@ func (p *Parser) peekPrecedence() int {
 }
 
 func (p *Parser) curPrecedence() int {
-	if p, ok := precedences[p.curToken.Type]; ok {
-		return p
+	if prec, ok := precedences[p.curToken.Type]; ok {
+		return prec
 	}
 	return LOWEST
 }
@@ -444,6 +605,11 @@ func (p *Parser) parseIfExpression() ast.Expr {
 	}
 	p.nextToken() // consume ")"
 
+	// Check for optional "then" keyword
+	if p.curTokenIs(lexer.THEN) {
+		p.nextToken() // consume "then"
+	}
+
 	// Parse then block
 	if !p.curTokenIs(lexer.LBRACE) {
 		p.addErrorf("expected { after if condition, got %s", p.curToken.Type)
@@ -451,9 +617,25 @@ func (p *Parser) parseIfExpression() ast.Expr {
 	}
 	p.nextToken() // consume "{"
 
-	thenExpr := p.parseExpression(LOWEST)
-	if thenExpr == nil {
-		return nil
+	// Check if block contains statements (like return) or expressions
+	// Peek ahead to see if first token is RETURN
+	var thenExpr ast.Expr
+	if p.curTokenIs(lexer.RETURN) {
+		// Parse as return statement and extract its value
+		// We need to manually parse the return statement since we're in expression context
+		p.nextToken() // consume "return"
+		
+		value := p.parseExpression(LOWEST)
+		if value == nil {
+			return nil
+		}
+		thenExpr = value
+	} else {
+		// Parse as expression
+		thenExpr = p.parseExpression(LOWEST)
+		if thenExpr == nil {
+			return nil
+		}
 	}
 
 	if !p.curTokenIs(lexer.RBRACE) {
@@ -475,9 +657,23 @@ func (p *Parser) parseIfExpression() ast.Expr {
 	}
 	p.nextToken() // consume "{"
 
-	elseExpr := p.parseExpression(LOWEST)
-	if elseExpr == nil {
-		return nil
+	// Check if block contains statements (like return) or expressions
+	var elseExpr ast.Expr
+	if p.curTokenIs(lexer.RETURN) {
+		// Parse as return statement and extract its value
+		p.nextToken() // consume "return"
+		
+		value := p.parseExpression(LOWEST)
+		if value == nil {
+			return nil
+		}
+		elseExpr = value
+	} else {
+		// Parse as expression
+		elseExpr = p.parseExpression(LOWEST)
+		if elseExpr == nil {
+			return nil
+		}
 	}
 
 	if !p.curTokenIs(lexer.RBRACE) {
@@ -598,6 +794,228 @@ func (p *Parser) parseLetExpression() ast.Expr {
 		Name:     name,
 		Value:    value,
 		Body:     nil, // Will be set by the caller if needed
+	}
+}
+
+// parseRecordLiteral parses a record literal value
+// Format: { field1: value1, field2: value2, ...identifier }
+func (p *Parser) parseRecordLiteral() ast.Expr {
+	pos := tokenPos(p.curToken)
+	p.nextToken() // consume "{"
+	
+	var fields []ast.RecordField
+	
+	// Parse fields until closing brace
+	for !p.curTokenIs(lexer.RBRACE) && !p.curTokenIs(lexer.EOF) {
+		// Check for spread operator
+		if p.curTokenIs(lexer.ELLIPSIS) {
+			p.nextToken() // consume "..."
+			
+			if !p.curTokenIs(lexer.IDENT) {
+				p.addErrorf("expected identifier after ..., got %s", p.curToken.Type)
+				return nil
+			}
+			
+			fields = append(fields, ast.RecordField{
+				Name:   p.curToken.Literal,
+				Value:  nil, // Spread fields don't have values
+				Spread: true,
+			})
+			p.nextToken() // consume identifier
+		} else {
+			// Regular field: name: value
+			if !p.curTokenIs(lexer.IDENT) {
+				p.addErrorf("expected identifier or ... in record literal, got %s", p.curToken.Type)
+				return nil
+			}
+			
+			fieldName := p.curToken.Literal
+			p.nextToken() // consume identifier
+			
+			if !p.curTokenIs(lexer.COLON) {
+				p.addErrorf("expected : after field name, got %s", p.curToken.Type)
+				return nil
+			}
+			p.nextToken() // consume ":"
+			
+			value := p.parseExpression(LOWEST)
+			if value == nil {
+				return nil
+			}
+			
+			fields = append(fields, ast.RecordField{
+				Name:   fieldName,
+				Value:  value,
+				Spread: false,
+			})
+		}
+		
+		// Check for comma or closing brace
+		if p.curTokenIs(lexer.COMMA) {
+			p.nextToken() // consume ","
+		} else if !p.curTokenIs(lexer.RBRACE) {
+			p.addErrorf("expected , or } after field, got %s", p.curToken.Type)
+			return nil
+		}
+	}
+	
+	if !p.curTokenIs(lexer.RBRACE) {
+		p.addErrorf("expected } to close record literal, got %s", p.curToken.Type)
+		return nil
+	}
+	p.nextToken() // consume "}"
+	
+	return &ast.RecordLiteral{
+		Position: pos,
+		Fields:   fields,
+	}
+}
+
+// isLambdaStart checks if the current position starts a lambda expression
+// Lambda can be: param => expr or (param) => expr or (param1, param2) => expr
+func (p *Parser) isLambdaStart() bool {
+	// We're at LPAREN, check if next tokens suggest a lambda
+	// Save current position
+	savedCur := p.curToken
+	savedPeek := p.peekToken
+	
+	// Advance past LPAREN
+	p.nextToken()
+	
+	// Check if we have identifier(s) followed by => or )
+	if p.curTokenIs(lexer.IDENT) {
+		// Could be lambda parameter
+		p.nextToken() // consume IDENT
+		
+		// Check for comma (multiple params) or closing paren
+		if p.curTokenIs(lexer.COMMA) {
+			// Multiple params, continue checking
+			p.nextToken() // consume COMMA
+			if p.curTokenIs(lexer.IDENT) {
+				p.nextToken() // consume second IDENT
+				// Check for closing paren and fat arrow
+				if p.curTokenIs(lexer.RPAREN) && p.peekTokenIs(lexer.FATARROW) {
+					// Restore and return true
+					p.curToken = savedCur
+					p.peekToken = savedPeek
+					return true
+				}
+			}
+		} else if p.curTokenIs(lexer.RPAREN) && p.peekTokenIs(lexer.FATARROW) {
+			// Single param with parens: (param) =>
+			// Restore and return true
+			p.curToken = savedCur
+			p.peekToken = savedPeek
+			return true
+		} else if p.curTokenIs(lexer.COLON) {
+			// Typed parameter: (param: Type) =>
+			p.nextToken() // consume COLON
+			// Skip type parsing - just check if we eventually hit RPAREN FATARROW
+			depth := 1
+			for depth > 0 && !p.curTokenIs(lexer.EOF) {
+				if p.curTokenIs(lexer.LPAREN) {
+					depth++
+				} else if p.curTokenIs(lexer.RPAREN) {
+					depth--
+					if depth == 0 && p.peekTokenIs(lexer.FATARROW) {
+						// Restore and return true
+						p.curToken = savedCur
+						p.peekToken = savedPeek
+						return true
+					}
+				}
+				p.nextToken()
+			}
+		}
+	}
+	
+	// Restore position
+	p.curToken = savedCur
+	p.peekToken = savedPeek
+	return false
+}
+
+// parseLambdaExpression parses a lambda expression
+// Format: param => expr or (param) => expr or (param1, param2) => expr
+// Also handles: (param: Type) => expr
+func (p *Parser) parseLambdaExpression() ast.Expr {
+	pos := tokenPos(p.curToken)
+	var params []ast.Parameter
+	
+	// Check if lambda starts with parentheses
+	if p.curTokenIs(lexer.LPAREN) {
+		p.nextToken() // consume "("
+		
+		// Parse parameters until closing paren
+		for !p.curTokenIs(lexer.RPAREN) && !p.curTokenIs(lexer.EOF) {
+			if !p.curTokenIs(lexer.IDENT) {
+				p.addErrorf("expected parameter name in lambda, got %s", p.curToken.Type)
+				return nil
+			}
+			
+			paramName := p.curToken.Literal
+			p.nextToken() // consume parameter name
+			
+			// Check for optional type annotation
+			var paramType ast.Type
+			if p.curTokenIs(lexer.COLON) {
+				p.nextToken() // consume ":"
+				paramType = p.parseType()
+				if paramType == nil {
+					return nil
+				}
+			}
+			
+			params = append(params, ast.Parameter{
+				Name: paramName,
+				Type: paramType,
+			})
+			
+			// Check for comma or closing paren
+			if p.curTokenIs(lexer.COMMA) {
+				p.nextToken() // consume ","
+			} else if !p.curTokenIs(lexer.RPAREN) {
+				p.addErrorf("expected , or ) after lambda parameter, got %s", p.curToken.Type)
+				return nil
+			}
+		}
+		
+		if !p.curTokenIs(lexer.RPAREN) {
+			p.addErrorf("expected ) to close lambda parameters, got %s", p.curToken.Type)
+			return nil
+		}
+		p.nextToken() // consume ")"
+	} else if p.curTokenIs(lexer.IDENT) {
+		// Single parameter without parentheses: param => expr
+		paramName := p.curToken.Literal
+		p.nextToken() // consume parameter name
+		
+		params = append(params, ast.Parameter{
+			Name: paramName,
+			Type: nil, // Type inferred from usage
+		})
+	} else {
+		p.addErrorf("expected parameter name or ( for lambda expression, got %s", p.curToken.Type)
+		return nil
+	}
+	
+	// Parse fat arrow
+	if !p.curTokenIs(lexer.FATARROW) {
+		p.addErrorf("expected => after lambda parameters, got %s", p.curToken.Type)
+		return nil
+	}
+	p.nextToken() // consume "=>"
+	
+	// Parse lambda body expression
+	body := p.parseExpression(LOWEST)
+	if body == nil {
+		return nil
+	}
+	
+	return &ast.LambdaExpr{
+		Position: pos,
+		Params:   params,
+		Body:     body,
 	}
 }
 

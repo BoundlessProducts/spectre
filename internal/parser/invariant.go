@@ -36,12 +36,12 @@ func (p *Parser) parseInvariantDecl() ast.Decl {
 	p.nextToken() // consume "{"
 
 	// Parse the condition expression
-	// Parse expression normally - it will stop at RBRACE naturally
-	condition := p.parseExpression(LOWEST)
+	// Use parseExpressionUntil to parse until RBRACE, allowing comparison operators
+	condition := p.parseExpressionUntil(lexer.RBRACE)
 	if condition == nil {
 		return nil
 	}
-	// parseExpression already advanced past the expression
+	// parseExpressionUntil already advanced past the expression and stopped at RBRACE
 
 	// Parse closing brace
 	if !p.curTokenIs(lexer.RBRACE) {

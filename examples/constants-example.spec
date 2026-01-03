@@ -39,8 +39,7 @@ init {
 description "Adds a new user, enforcing maximum user limit"
 action addUser(name: str) {
   require users.size() < MAX_USERS
-  let newUser = { id: users.size() + 1, name: name, active: true }
-  users' = users.union(Set.of(newUser))
+  users' = users.union(Set.of({ id: users.size() + 1, name: name, active: true }))
 }
 
 description "Increments retry count up to maximum allowed"

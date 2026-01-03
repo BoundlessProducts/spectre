@@ -201,35 +201,72 @@ func (n *Named) Equals(other Type) bool {
 	return false
 }
 
+// Function represents a function type (for lambdas and function references)
+type Function struct {
+	Params     []Type // Parameter types
+	ReturnType Type   // Return type
+}
+
+func (f *Function) String() string {
+	paramStrs := make([]string, len(f.Params))
+	for i, p := range f.Params {
+		paramStrs[i] = p.String()
+	}
+	return fmt.Sprintf("(%s) => %s", fmt.Sprint(paramStrs), f.ReturnType.String())
+}
+
+func (f *Function) Equals(other Type) bool {
+	if otherFunc, ok := other.(*Function); ok {
+		if len(f.Params) != len(otherFunc.Params) {
+			return false
+		}
+		for i, p := range f.Params {
+			if !p.Equals(otherFunc.Params[i]) {
+				return false
+			}
+		}
+		return f.ReturnType.Equals(otherFunc.ReturnType)
+	}
+	return false
+}
+
+// TypeResolver is a function that can resolve named types
+type TypeResolver func(name string) (Type, bool)
+
 // FromAST converts an AST type to a runtime Type
 func FromAST(astType ast.Type) (Type, error) {
+	return FromASTWithResolver(astType, nil)
+}
+
+// FromASTWithResolver converts an AST type to a runtime Type, using a resolver for named types
+func FromASTWithResolver(astType ast.Type, resolver TypeResolver) (Type, error) {
 	switch t := astType.(type) {
 	case *ast.PrimitiveType:
 		return FromPrimitiveName(t.Name)
 	case *ast.SetType:
-		elem, err := FromAST(t.Element)
+		elem, err := FromASTWithResolver(t.Element, resolver)
 		if err != nil {
 			return nil, err
 		}
 		return &Set{Element: elem}, nil
 	case *ast.MapType:
-		key, err := FromAST(t.Key)
+		key, err := FromASTWithResolver(t.Key, resolver)
 		if err != nil {
 			return nil, err
 		}
-		val, err := FromAST(t.Value)
+		val, err := FromASTWithResolver(t.Value, resolver)
 		if err != nil {
 			return nil, err
 		}
 		return &Map{Key: key, Value: val}, nil
 	case *ast.ListType:
-		elem, err := FromAST(t.Element)
+		elem, err := FromASTWithResolver(t.Element, resolver)
 		if err != nil {
 			return nil, err
 		}
 		return &List{Element: elem}, nil
 	case *ast.OptionType:
-		elem, err := FromAST(t.Element)
+		elem, err := FromASTWithResolver(t.Element, resolver)
 		if err != nil {
 			return nil, err
 		}
@@ -237,7 +274,7 @@ func FromAST(astType ast.Type) (Type, error) {
 	case *ast.RecordType:
 		fields := make(map[string]Type)
 		for _, field := range t.Fields {
-			fieldType, err := FromAST(field.Type)
+			fieldType, err := FromASTWithResolver(field.Type, resolver)
 			if err != nil {
 				return nil, err
 			}
@@ -250,8 +287,12 @@ func FromAST(astType ast.Type) (Type, error) {
 			Values: t.Values,
 		}, nil
 	case *ast.NamedType:
-		// For named types, we'll need to resolve them later via the type environment
-		// For now, return an error indicating resolution is needed
+		// Try to resolve the named type using the resolver
+		if resolver != nil {
+			if resolvedType, found := resolver(t.Name); found {
+				return resolvedType, nil
+			}
+		}
 		return nil, fmt.Errorf("named type %s requires type environment for resolution", t.Name)
 	default:
 		return nil, fmt.Errorf("unknown AST type: %T", astType)

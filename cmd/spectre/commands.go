@@ -121,29 +121,71 @@ func runTypecheck(args []string) error {
 		return fmt.Errorf("module resolution failed with %d error(s)", len(resolutionErrors))
 	}
 
-	// Build type environment from declarations
+	// Build type environment from declarations (same logic as typecheck)
+	// First pass: collect type aliases
 	typeEnv := types.NewEnvironment()
+	typeAliases := make(map[string]ast.Type) // Store AST types for later resolution
+	
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *ast.TypeAliasDecl:
+			// Store the AST type for later resolution (we need all types defined first)
+			typeAliases[d.Name] = d.Type
+		}
+	}
+	
+	// Second pass: resolve type aliases and build environment
+	// Create a resolver function that can resolve named types
+	var resolveType func(ast.Type) (types.Type, error)
+	resolveType = func(astType ast.Type) (types.Type, error) {
+		return types.FromASTWithResolver(astType, func(name string) (types.Type, bool) {
+			// First check if it's a type alias we've defined
+			if aliasAST, ok := typeAliases[name]; ok {
+				// Recursively resolve the alias type
+				resolved, err := resolveType(aliasAST)
+				if err == nil {
+					return resolved, true
+				}
+			}
+			// Then check the environment
+			return typeEnv.LookupType(name)
+		})
+	}
+	
+	// Now resolve all type aliases and store them
+	for name, aliasAST := range typeAliases {
+		resolvedType, err := resolveType(aliasAST)
+		if err == nil {
+			typeEnv.DeclareType(name, resolvedType)
+		}
+	}
+	
+	// Third pass: add variables, constants, and functions (using the resolver)
+	// Create a temporary checker to resolve named types in stored types
+	tempChecker := types.NewChecker(typeEnv)
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.VariableDecl:
-			typ, err := types.FromAST(d.Type)
+			typ, err := resolveType(d.Type)
 			if err == nil {
-				typeEnv.DeclareVariable(d.Name, typ)
+				// Fully resolve any named types in the stored type
+				fullyResolvedType := tempChecker.ResolveNamedTypesInType(typ)
+				typeEnv.DeclareVariable(d.Name, fullyResolvedType)
 			}
 		case *ast.ConstantDecl:
-			typ, err := types.FromAST(d.Type)
+			typ, err := resolveType(d.Type)
 			if err == nil {
 				typeEnv.DeclareConstant(d.Name, typ)
 			}
 		case *ast.FunctionDecl:
 			params := make([]types.Type, len(d.Parameters))
 			for i, param := range d.Parameters {
-				paramType, err := types.FromAST(param.Type)
+				paramType, err := resolveType(param.Type)
 				if err == nil {
 					params[i] = paramType
 				}
 			}
-			returnType, err := types.FromAST(d.ReturnType)
+			returnType, err := resolveType(d.ReturnType)
 			if err == nil {
 				sig := &types.FunctionSignature{
 					Parameters: params,
@@ -159,18 +201,32 @@ func runTypecheck(args []string) error {
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.ActionDecl:
+			// Create a new environment for this action with its parameters
+			actionEnv := types.NewChildEnvironment(typeEnv)
+			for _, param := range d.Parameters {
+				paramType, err := types.FromASTWithResolver(param.Type, func(name string) (types.Type, bool) {
+					return typeEnv.LookupType(name)
+				})
+				if err == nil {
+					actionEnv.DeclareVariable(param.Name, paramType)
+				}
+			}
+			actionChecker := types.NewChecker(actionEnv)
+			
 			if d.Body != nil {
 				for _, stmt := range d.Body.Statements {
 					switch s := stmt.(type) {
 					case *ast.AssignStmt:
-						checker.CheckAssignment(s)
+						actionChecker.CheckAssignment(s)
 					case *ast.RequireStmt:
-						checker.CheckExpression(s.Condition)
+						actionChecker.CheckExpression(s.Condition)
 					case *ast.EnsureStmt:
-						checker.CheckExpression(s.Condition)
+						actionChecker.CheckExpression(s.Condition)
 					}
 				}
 			}
+			// Merge errors from action checker
+			checker.MergeErrors(actionChecker)
 		case *ast.InvariantDecl:
 			checker.CheckExpression(d.Condition)
 		case *ast.TemporalDecl:
@@ -243,29 +299,71 @@ func runVerify(args []string) error {
 		return fmt.Errorf("module resolution failed with %d error(s)", len(resolutionErrors))
 	}
 
-	// Build type environment from declarations
+	// Build type environment from declarations (same logic as typecheck)
+	// First pass: collect type aliases
 	typeEnv := types.NewEnvironment()
+	typeAliases := make(map[string]ast.Type) // Store AST types for later resolution
+	
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *ast.TypeAliasDecl:
+			// Store the AST type for later resolution (we need all types defined first)
+			typeAliases[d.Name] = d.Type
+		}
+	}
+	
+	// Second pass: resolve type aliases and build environment
+	// Create a resolver function that can resolve named types
+	var resolveType func(ast.Type) (types.Type, error)
+	resolveType = func(astType ast.Type) (types.Type, error) {
+		return types.FromASTWithResolver(astType, func(name string) (types.Type, bool) {
+			// First check if it's a type alias we've defined
+			if aliasAST, ok := typeAliases[name]; ok {
+				// Recursively resolve the alias type
+				resolved, err := resolveType(aliasAST)
+				if err == nil {
+					return resolved, true
+				}
+			}
+			// Then check the environment
+			return typeEnv.LookupType(name)
+		})
+	}
+	
+	// Now resolve all type aliases and store them
+	for name, aliasAST := range typeAliases {
+		resolvedType, err := resolveType(aliasAST)
+		if err == nil {
+			typeEnv.DeclareType(name, resolvedType)
+		}
+	}
+	
+	// Third pass: add variables, constants, and functions (using the resolver)
+	// Create a temporary checker to resolve named types in stored types
+	tempChecker := types.NewChecker(typeEnv)
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.VariableDecl:
-			typ, err := types.FromAST(d.Type)
+			typ, err := resolveType(d.Type)
 			if err == nil {
-				typeEnv.DeclareVariable(d.Name, typ)
+				// Fully resolve any named types in the stored type
+				fullyResolvedType := tempChecker.ResolveNamedTypesInType(typ)
+				typeEnv.DeclareVariable(d.Name, fullyResolvedType)
 			}
 		case *ast.ConstantDecl:
-			typ, err := types.FromAST(d.Type)
+			typ, err := resolveType(d.Type)
 			if err == nil {
 				typeEnv.DeclareConstant(d.Name, typ)
 			}
 		case *ast.FunctionDecl:
 			params := make([]types.Type, len(d.Parameters))
 			for i, param := range d.Parameters {
-				paramType, err := types.FromAST(param.Type)
+				paramType, err := resolveType(param.Type)
 				if err == nil {
 					params[i] = paramType
 				}
 			}
-			returnType, err := types.FromAST(d.ReturnType)
+			returnType, err := resolveType(d.ReturnType)
 			if err == nil {
 				sig := &types.FunctionSignature{
 					Parameters: params,
@@ -281,18 +379,32 @@ func runVerify(args []string) error {
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.ActionDecl:
+			// Create a new environment for this action with its parameters
+			actionEnv := types.NewChildEnvironment(typeEnv)
+			for _, param := range d.Parameters {
+				paramType, err := types.FromASTWithResolver(param.Type, func(name string) (types.Type, bool) {
+					return typeEnv.LookupType(name)
+				})
+				if err == nil {
+					actionEnv.DeclareVariable(param.Name, paramType)
+				}
+			}
+			actionChecker := types.NewChecker(actionEnv)
+			
 			if d.Body != nil {
 				for _, stmt := range d.Body.Statements {
 					switch s := stmt.(type) {
 					case *ast.AssignStmt:
-						checker.CheckAssignment(s)
+						actionChecker.CheckAssignment(s)
 					case *ast.RequireStmt:
-						checker.CheckExpression(s.Condition)
+						actionChecker.CheckExpression(s.Condition)
 					case *ast.EnsureStmt:
-						checker.CheckExpression(s.Condition)
+						actionChecker.CheckExpression(s.Condition)
 					}
 				}
 			}
+			// Merge errors from action checker
+			checker.MergeErrors(actionChecker)
 		case *ast.InvariantDecl:
 			checker.CheckExpression(d.Condition)
 		case *ast.TemporalDecl:

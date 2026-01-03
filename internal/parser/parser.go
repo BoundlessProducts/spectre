@@ -156,6 +156,8 @@ func (p *Parser) ParseFile() *ast.File {
 		case lexer.IMPORT:
 			// Top-level imports are allowed (though typically they're in modules)
 			decl = p.parseImportDecl()
+		case lexer.TYPE:
+			decl = p.parseTypeAliasDecl()
 		default:
 			// Skip unknown tokens (comments, whitespace, etc.)
 			p.nextToken()

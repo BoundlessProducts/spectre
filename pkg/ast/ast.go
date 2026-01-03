@@ -154,6 +154,19 @@ type ModuleInstanceDecl struct {
 func (m *ModuleInstanceDecl) Pos() Position { return m.Position }
 func (m *ModuleInstanceDecl) declNode()     {}
 
+// TypeAliasDecl represents a type alias declaration
+// Format: type Name = Type
+type TypeAliasDecl struct {
+	Position    Position
+	Description string
+	Name        string
+	Type        Type // The type being aliased
+	Visibility  Visibility // Public or Private (defaults to Public)
+}
+
+func (t *TypeAliasDecl) Pos() Position { return t.Position }
+func (t *TypeAliasDecl) declNode()     {}
+
 // Visibility represents public/private visibility
 type Visibility int
 
@@ -519,4 +532,32 @@ type SuperExpr struct {
 
 func (s *SuperExpr) Pos() Position { return s.Position }
 func (s *SuperExpr) exprNode()     {}
+
+// LambdaExpr represents a lambda expression (anonymous function)
+// Format: param => expression or (param1, param2) => expression
+type LambdaExpr struct {
+	Position Position
+	Params   []Parameter // Lambda parameters
+	Body     Expr        // Lambda body expression
+}
+
+func (l *LambdaExpr) Pos() Position { return l.Position }
+func (l *LambdaExpr) exprNode()     {}
+
+// RecordLiteral represents a record literal value
+// Format: { field1: value1, field2: value2, ... }
+type RecordLiteral struct {
+	Position Position
+	Fields   []RecordField
+}
+
+// RecordField represents a field in a record literal
+type RecordField struct {
+	Name  string
+	Value Expr
+	Spread bool // true if this is a spread field: ...identifier
+}
+
+func (r *RecordLiteral) Pos() Position { return r.Position }
+func (r *RecordLiteral) exprNode()      {}
 
