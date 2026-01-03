@@ -54,12 +54,17 @@ func (sv *StateValidator) ValidateState(s *state.State) ([]*ValidationError, err
 		// Invariant must evaluate to true
 		if pv, ok := value.(*state.PrimitiveValue); ok && pv.TypeName == "bool" {
 			if pv.BoolValue == nil || !*pv.BoolValue {
+				msg := fmt.Sprintf("invariant %s violated", inv.Name)
+				if inv.Description != "" {
+					msg = fmt.Sprintf("invariant %s violated: (%s)", inv.Name, inv.Description)
+				}
 				errors = append(errors, &ValidationError{
-					Type:      ErrorTypeInvariant,
-					Name:      inv.Name,
-					Message:   fmt.Sprintf("invariant %s violated", inv.Name),
-					Condition: inv.Condition,
-					Position:  inv.Position,
+					Type:        ErrorTypeInvariant,
+					Name:        inv.Name,
+					Message:     msg,
+					Description: inv.Description,
+					Condition:   inv.Condition,
+					Position:    inv.Position,
 				})
 			}
 		} else {
@@ -130,11 +135,12 @@ func (sv *StateValidator) ValidatePostconditions(actionName string, currentState
 
 // ValidationError represents a validation error
 type ValidationError struct {
-	Type      ErrorType
-	Name      string
-	Message   string
-	Condition ast.Expr
-	Position  ast.Position
+	Type        ErrorType
+	Name        string
+	Message     string
+	Description string // Human-readable description from the declaration
+	Condition   ast.Expr
+	Position    ast.Position
 }
 
 // ErrorType represents the type of validation error

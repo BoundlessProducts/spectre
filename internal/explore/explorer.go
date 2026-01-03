@@ -2,6 +2,7 @@ package explore
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/akkeshavan/spectre/internal/exec"
 	"github.com/akkeshavan/spectre/internal/state"
@@ -222,8 +223,27 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 			}
 			nextState, err := e.stateMachine.ExecuteAction(actionName, current.State, nil)
 			if err != nil {
-				// Action execution failed - log for debugging but continue
-				if e.verbose {
+				// Action execution failed - check if it's due to invariant violations
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "violates invariants") {
+					// Extract invariant violation information from the error
+					violationDesc := errMsg
+					// Try to extract just the violation part
+					if idx := strings.Index(errMsg, ": "); idx > 0 {
+						violationDesc = errMsg[idx+2:]
+					}
+					
+					result.Violations = append(result.Violations, &Violation{
+						State:       current.State,
+						Invariant:   "unknown", // We'll extract this from the error message if possible
+						Path:        current.Path,
+						Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionName, violationDesc),
+					})
+					
+					if e.verbose {
+						fmt.Printf("      [FAIL] Action %s failed: %s\n", actionName, errMsg)
+					}
+				} else if e.verbose {
 					fmt.Printf("      [FAIL] Action %s failed: %v\n", actionName, err)
 				}
 				// This could be due to preconditions not being met (shouldn't happen since
@@ -400,11 +420,35 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 			actionName := availableActions[i]
 			nextState, err := e.stateMachine.ExecuteAction(actionName, current.State, nil)
 			if err != nil {
-				// Action execution failed
-				continue
+				// Action execution failed - check if it's due to invariant violations
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "violates invariants") {
+					// Extract invariant violation information from the error
+				// The error format is: "next state violates invariants: [validation error messages]"
+				// We need to parse this and create violation entries
+				violationDesc := errMsg
+				// Try to extract just the violation part
+				if idx := strings.Index(errMsg, ": "); idx > 0 {
+					violationDesc = errMsg[idx+2:]
+				}
+				
+				result.Violations = append(result.Violations, &Violation{
+					State:       current.State,
+					Invariant:   "unknown", // We'll extract this from the error message if possible
+					Path:        current.Path,
+					Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionName, violationDesc),
+				})
+				
+				if e.verbose {
+					fmt.Printf("      [FAIL] Action %s failed: %s\n", actionName, errMsg)
+				}
+			} else if e.verbose {
+				fmt.Printf("      [FAIL] Action %s failed: %s\n", actionName, errMsg)
 			}
+			continue
+		}
 
-			hash := e.hasher.HashState(nextState)
+		hash := e.hasher.HashState(nextState)
 			
 			// Check for cycles if enabled
 			if e.detectCycles {

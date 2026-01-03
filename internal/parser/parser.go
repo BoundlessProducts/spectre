@@ -14,6 +14,11 @@ type Parser struct {
 
 	curToken  lexer.Token
 	peekToken lexer.Token
+	
+	// pendingDescription stores a description that was consumed but should be
+	// associated with the next declaration. This handles descriptions on separate
+	// lines before declarations.
+	pendingDescription string
 }
 
 // New creates a new Parser
@@ -127,12 +132,36 @@ func (p *Parser) ParseFile() *ast.File {
 
 	// Parse all declarations until EOF
 	for !p.curTokenIs(lexer.EOF) {
-		// Skip comments and standalone descriptions
+		// Handle descriptions: if description is followed by a declaration keyword,
+		// store it as pending so the declaration parser can use it.
 		if p.curTokenIs(lexer.DESCRIPTION) {
-			// Check if this is a standalone description (not part of a declaration)
-			// by peeking ahead to see if it's followed by a declaration keyword
-			p.parseDescription()
-			continue
+			// Check if this description is followed by a declaration keyword
+			if p.peekToken.Type == lexer.STRING {
+				// Temporarily consume description and string to see what follows
+				p.nextToken() // consume "description"
+				descText := p.curToken.Literal // store description text
+				p.nextToken() // consume string
+				
+				// Check if next token is a declaration keyword
+				if p.curTokenIs(lexer.VAR) || p.curTokenIs(lexer.CONST) || p.curTokenIs(lexer.FUN) ||
+					p.curTokenIs(lexer.ACTION) || p.curTokenIs(lexer.INIT) || p.curTokenIs(lexer.INVARIANT) ||
+					p.curTokenIs(lexer.TEMPORAL) || p.curTokenIs(lexer.MODULE) || p.curTokenIs(lexer.IMPORT) ||
+					p.curTokenIs(lexer.TYPE) || p.curTokenIs(lexer.ENUM) {
+					// Description is before a declaration - store it for the declaration parser
+					p.pendingDescription = descText
+					// Continue - the declaration parser will consume the declaration keyword
+					// and use the pending description
+				} else {
+					// Standalone description - skip it
+					p.pendingDescription = "" // Clear any pending description
+					continue
+				}
+			} else {
+				// Invalid description - skip it
+				p.parseDescription()
+				p.pendingDescription = "" // Clear any pending description
+				continue
+			}
 		}
 
 		var decl ast.Decl

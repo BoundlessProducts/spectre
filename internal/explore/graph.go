@@ -82,9 +82,29 @@ func (tg *TransitionGraph) DetectCycles(hasher *StateHasher) []*CycleInfo {
 						}
 					}
 				}
-				// Add transition from last to first
-				if len(path) > cycleStart+1 {
-					lastNode := path[len(path)-1]
+				// Add transition from last to first (or self-loop transition)
+				lastNode := path[len(path)-1]
+				// Check if this is a self-loop (path has only one node)
+				if len(path) == cycleStart+1 && len(path) == 1 {
+					// Self-loop: find the self-loop transition
+					for _, trans := range lastNode.Outgoing {
+						if hasher.HashState(trans.ToState) == node.Hash {
+							// Make sure we haven't already added it
+							alreadyAdded := false
+							for _, t := range cycleTransitions {
+								if t == trans {
+									alreadyAdded = true
+									break
+								}
+							}
+							if !alreadyAdded {
+								cycleTransitions = append(cycleTransitions, trans)
+							}
+							break
+						}
+					}
+				} else if len(path) > cycleStart+1 {
+					// Multi-state cycle - add transition from last to first
 					for _, trans := range lastNode.Outgoing {
 						if hasher.HashState(trans.ToState) == node.Hash {
 							cycleTransitions = append(cycleTransitions, trans)

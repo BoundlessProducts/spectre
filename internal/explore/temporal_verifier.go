@@ -159,12 +159,16 @@ func (tv *TemporalVerifier) verifyEventuallyWithInitial(prop *state.TemporalProp
 	// Build counterexample trace (simplified - just show one path)
 	trace := tv.buildCounterexampleTrace(initialStates, graph)
 	
+	desc := fmt.Sprintf("Property '%s' never becomes true in any reachable state", prop.Name)
+	if prop.Description != "" {
+		desc = fmt.Sprintf("Property '%s' violated: (%s) property never becomes true in any reachable state", prop.Name, prop.Description)
+	}
 	return &TemporalVerificationResult{
 		PropertyName: prop.Name,
 		Holds:        false,
 		Violation: &TemporalViolation{
 			PropertyName: prop.Name,
-			Description:  fmt.Sprintf("Property '%s' never becomes true in any reachable state", prop.Name),
+			Description:  desc,
 			Trace:        trace,
 			Cycles:       blockingCycles,
 		},
@@ -228,12 +232,16 @@ func (tv *TemporalVerifier) verifyAlwaysStatePredicate(prop *state.TemporalPrope
 	}
 	
 	if violatingState != nil {
+		desc := fmt.Sprintf("Property '%s' violated in reachable state", prop.Name)
+		if prop.Description != "" {
+			desc = fmt.Sprintf("Property '%s' violated: (%s) property does not hold in some reachable state", prop.Name, prop.Description)
+		}
 		return &TemporalVerificationResult{
 			PropertyName: prop.Name,
 			Holds:        false,
 			Violation: &TemporalViolation{
 				PropertyName: prop.Name,
-				Description:  fmt.Sprintf("Property '%s' violated in reachable state", prop.Name),
+				Description:  desc,
 				Trace:        violatingTrace,
 			},
 		}, nil
@@ -262,8 +270,27 @@ func (tv *TemporalVerifier) verifyAlwaysLeadsTo(prop *state.TemporalPropertyInfo
 		// Check if P holds in this state
 		pHolds, _ := tv.evaluateProperty(leadsToExpr.Left, s)
 		if pHolds {
-			// P holds - verify that Q eventually holds from this state
-			if !tv.canEventuallyReachP(s, leadsToExpr.Right, graph, make(map[string]bool)) {
+			// P holds - verify that Q eventually holds from this state on ALL paths
+			// For "always (P → eventually Q)", we need to check that Q eventually holds
+			// on all paths from states where P holds.
+			// This is violated if there exists a path where Q never holds.
+			// 
+			// We check this by seeing if Q can be reached from ALL successors, or
+			// if there exists a successor from which Q cannot be reached.
+			canReachQ := tv.canEventuallyReachP(s, leadsToExpr.Right, graph, make(map[string]bool))
+			if !canReachQ {
+				// Cannot reach Q from this state - violation
+				if violatingPState == nil {
+					violatingPState = s
+					violatingTrace = trace.Copy()
+				}
+				return
+			}
+			
+			// Can reach Q, but need to check if there's a path where we get stuck
+			// in a cycle before reaching Q. Check if there's a blocking cycle.
+			// This is called for unfiltered graphs, so isFairGraph = false
+			if tv.hasBlockingCycle(s, leadsToExpr.Right, graph, false) {
 				if violatingPState == nil {
 					violatingPState = s
 					violatingTrace = trace.Copy()
@@ -289,12 +316,16 @@ func (tv *TemporalVerifier) verifyAlwaysLeadsTo(prop *state.TemporalPropertyInfo
 	}
 	
 	if violatingPState != nil {
+		desc := fmt.Sprintf("Property '%s' violated: P holds but Q never becomes true", prop.Name)
+		if prop.Description != "" {
+			desc = fmt.Sprintf("Property '%s' violated: (%s) P holds but Q never becomes true", prop.Name, prop.Description)
+		}
 		return &TemporalVerificationResult{
 			PropertyName: prop.Name,
 			Holds:        false,
 			Violation: &TemporalViolation{
 				PropertyName: prop.Name,
-				Description:  fmt.Sprintf("Property '%s' violated: P holds but Q never becomes true", prop.Name),
+				Description:  desc,
 				Trace:        violatingTrace,
 			},
 		}, nil
@@ -346,12 +377,16 @@ func (tv *TemporalVerifier) verifyAlwaysEventually(prop *state.TemporalPropertyI
 	}
 	
 	if violatingState != nil {
+		desc := fmt.Sprintf("Property '%s' violated: eventually P does not hold from some state", prop.Name)
+		if prop.Description != "" {
+			desc = fmt.Sprintf("Property '%s' violated: (%s) eventually P does not hold from some state", prop.Name, prop.Description)
+		}
 		return &TemporalVerificationResult{
 			PropertyName: prop.Name,
 			Holds:        false,
 			Violation: &TemporalViolation{
 				PropertyName: prop.Name,
-				Description:  fmt.Sprintf("Property '%s' violated: eventually P does not hold from some state", prop.Name),
+				Description:  desc,
 				Trace:        violatingTrace,
 			},
 		}, nil
@@ -410,12 +445,16 @@ func (tv *TemporalVerifier) verifyUntilWithInitial(prop *state.TemporalPropertyI
 	}
 	
 	if violatingState != nil {
+		desc := fmt.Sprintf("Property '%s' violated: P doesn't hold before Q", prop.Name)
+		if prop.Description != "" {
+			desc = fmt.Sprintf("Property '%s' violated: (%s) P doesn't hold before Q", prop.Name, prop.Description)
+		}
 		return &TemporalVerificationResult{
 			PropertyName: prop.Name,
 			Holds:        false,
 			Violation: &TemporalViolation{
 				PropertyName: prop.Name,
-				Description:  fmt.Sprintf("Property '%s' violated: P doesn't hold before Q", prop.Name),
+				Description:  desc,
 				Trace:        violatingTrace,
 			},
 		}, nil
@@ -660,6 +699,184 @@ func (tv *TemporalVerifier) canEventuallyReachP(from *state.State, propExpr ast.
 	return false
 }
 
+// hasBlockingCycle checks if there exists an infinite path from the given state
+// where the property never holds. For "always (P → eventually Q)", if such a path
+// exists, the property is violated because Q never holds on that path.
+// 
+// For "always (P → eventually Q)", this checks if there exists a path where Q never holds.
+// This is true if there exists a reachable cycle where Q never holds, even if there
+// also exists another path where Q does hold.
+func (tv *TemporalVerifier) hasBlockingCycle(from *state.State, propExpr ast.Expr, graph *TransitionGraph, isFairGraph bool) bool {
+	fromHash := tv.hasher.HashState(from)
+	
+	// First, check for self-loops explicitly (they might not be detected by DetectCycles)
+	// A self-loop where the property never holds is a blocking cycle if reachable
+	for _, trans := range graph.Transitions {
+		fromTransHash := tv.hasher.HashState(trans.FromState)
+		toTransHash := tv.hasher.HashState(trans.ToState)
+		if fromTransHash == toTransHash {
+			// Self-loop found - check if property never holds
+			holds, err := tv.evaluateProperty(propExpr, trans.FromState)
+			if err == nil && !holds {
+				// Property doesn't hold in the self-loop state
+				// Check if this state is reachable from 'from'
+				visited := make(map[string]bool)
+				queue := []*state.State{from}
+				visited[fromHash] = true
+				
+				stateReachable := false
+				for len(queue) > 0 && !stateReachable {
+					current := queue[0]
+					queue = queue[1:]
+					
+					currentHash := tv.hasher.HashState(current)
+					if currentHash == fromTransHash {
+						stateReachable = true
+						break
+					}
+					
+					// Explore successors
+					if node := graph.GetStateNode(currentHash); node != nil {
+						for _, t := range node.Outgoing {
+							toHash := tv.hasher.HashState(t.ToState)
+							if !visited[toHash] {
+								visited[toHash] = true
+								queue = append(queue, t.ToState)
+							}
+						}
+					}
+				}
+				
+				if stateReachable {
+					// Self-loop is reachable - check if it can be exited (for fair graphs only)
+					if isFairGraph {
+						// For fair graphs, check if the self-loop can be exited to reach the property
+						canExitToProperty := false
+						if node := graph.GetStateNode(fromTransHash); node != nil {
+							for _, exitTrans := range node.Outgoing {
+								toHash := tv.hasher.HashState(exitTrans.ToState)
+								if toHash != fromTransHash {
+									// Exit transition found - check if we can reach property from exit state
+									if tv.canEventuallyReachP(exitTrans.ToState, propExpr, graph, make(map[string]bool)) {
+										canExitToProperty = true
+										break
+									}
+								}
+							}
+						}
+						if !canExitToProperty {
+							return true
+						}
+					} else {
+						// For unfiltered graphs, any reachable self-loop where property never holds is blocking
+						return true
+					}
+				}
+			}
+		}
+	}
+	
+	// Find all cycles in the graph (multi-state cycles)
+	cycles := graph.DetectCycles(tv.hasher)
+	
+	// Check each cycle to see if:
+	// 1. Property never holds in any state in the cycle
+	// 2. Cycle is reachable from 'from'
+	// If such a cycle exists, there's a path where property never holds (violation)
+	for _, cycle := range cycles {
+		// Check if property holds in any state in the cycle
+		propertyHoldsInCycle := false
+		for _, cycleState := range cycle.States {
+			holds, err := tv.evaluateProperty(propExpr, cycleState)
+			if err == nil && holds {
+				propertyHoldsInCycle = true
+				break
+			}
+		}
+		
+		// If property never holds in this cycle, check if cycle is reachable from 'from'
+		if !propertyHoldsInCycle {
+			// Use BFS to check if cycle is reachable from 'from'
+			visited := make(map[string]bool)
+			queue := []*state.State{from}
+			visited[fromHash] = true
+			
+			cycleReachable := false
+			for len(queue) > 0 && !cycleReachable {
+				current := queue[0]
+				queue = queue[1:]
+				
+				currentHash := tv.hasher.HashState(current)
+				
+				// Check if current state is in the cycle
+				for _, cycleState := range cycle.States {
+					if tv.hasher.HashState(cycleState) == currentHash {
+						cycleReachable = true
+						break
+					}
+				}
+				
+				if cycleReachable {
+					break
+				}
+				
+				// Explore successors
+				if node := graph.GetStateNode(currentHash); node != nil {
+					for _, trans := range node.Outgoing {
+						toHash := tv.hasher.HashState(trans.ToState)
+						if !visited[toHash] {
+							visited[toHash] = true
+							queue = append(queue, trans.ToState)
+						}
+					}
+				}
+			}
+			
+			if cycleReachable {
+				// Cycle is reachable - for fair graphs, check if it can be exited
+				if isFairGraph {
+					// For fair graphs, check if the cycle can be exited to reach the property
+					canExitToProperty := false
+					for _, cycleState := range cycle.States {
+						cycleStateHash := tv.hasher.HashState(cycleState)
+						if node := graph.GetStateNode(cycleStateHash); node != nil {
+							for _, trans := range node.Outgoing {
+								toHash := tv.hasher.HashState(trans.ToState)
+								// Check if this transition exits the cycle
+								isExitTransition := true
+								for _, cs := range cycle.States {
+									if tv.hasher.HashState(cs) == toHash {
+										isExitTransition = false
+										break
+									}
+								}
+								if isExitTransition {
+									// Exit transition found - check if we can reach property from exit state
+									if tv.canEventuallyReachP(trans.ToState, propExpr, graph, make(map[string]bool)) {
+										canExitToProperty = true
+										break
+									}
+								}
+							}
+							if canExitToProperty {
+								break
+							}
+						}
+					}
+					if !canExitToProperty {
+						return true
+					}
+				} else {
+					// For unfiltered graphs, any reachable cycle where property never holds is blocking
+					return true
+				}
+			}
+		}
+	}
+	
+	return false
+}
+
 func (tv *TemporalVerifier) buildCounterexampleTrace(initialStates []*state.State, graph *TransitionGraph) *temporal.Trace {
 	if len(initialStates) == 0 {
 		return temporal.NewTrace()
@@ -708,6 +925,12 @@ func (tv *TemporalVerifier) extractActionNameFromExpr(expr ast.Expr) (string, er
 // filterFairPaths filters the transition graph to only include paths that satisfy fairness
 // For WF: removes cycles where action is continuously enabled but never executes
 // For SF: removes cycles where action is enabled at least once but never executes
+// 
+// The filtering works by:
+// 1. Detecting all cycles (including self-loops)
+// 2. Identifying cycles that violate fairness (unfair cycles)
+// 3. Removing all transitions that are part of unfair cycles
+// 4. This ensures that fair executions cannot get stuck in unfair cycles
 func (tv *TemporalVerifier) filterFairPaths(graph *TransitionGraph, actionName string, fairnessType string) *TransitionGraph {
 	if tv.stateMachine == nil {
 		// Cannot filter without state machine - return original graph
@@ -722,28 +945,135 @@ func (tv *TemporalVerifier) filterFairPaths(graph *TransitionGraph, actionName s
 		fairGraph.AddState(node.State, hash)
 	}
 	
+	// Build a map of all transitions for efficient lookup
+	allTransitions := make(map[string]*Transition)
+	for _, trans := range graph.Transitions {
+		fromHash := tv.hasher.HashState(trans.FromState)
+		toHash := tv.hasher.HashState(trans.ToState)
+		transHash := fmt.Sprintf("%s->%s", fromHash, toHash)
+		allTransitions[transHash] = trans
+	}
+	
+	// Helper function to create a unique transition hash including the action
+	getTransitionHash := func(trans *Transition) string {
+		fromHash := tv.hasher.HashState(trans.FromState)
+		toHash := tv.hasher.HashState(trans.ToState)
+		return fmt.Sprintf("%s-[%s]->%s", fromHash, trans.Action, toHash)
+	}
+	
 	// Detect cycles and check fairness
 	cycles := graph.DetectCycles(tv.hasher)
-	unfairCycles := make(map[string]bool) // Cycle identifier -> is unfair
+	unfairTransitions := make(map[string]bool) // Transition hash -> is unfair
 	
+	// Check all detected cycles
 	for _, cycle := range cycles {
 		isUnfair := tv.isCycleUnfair(cycle, actionName, fairnessType)
 		if isUnfair {
 			// Mark all transitions in this cycle as unfair
 			for _, trans := range cycle.Transitions {
-				transHash := fmt.Sprintf("%s->%s", tv.hasher.HashState(trans.FromState), tv.hasher.HashState(trans.ToState))
-				unfairCycles[transHash] = true
+				transHash := getTransitionHash(trans)
+				unfairTransitions[transHash] = true
+			}
+		}
+	}
+	
+	// Also check for self-loops explicitly (they might not be detected as cycles by DFS)
+	// Self-loops are cycles of length 1 - they need special handling
+	// IMPORTANT: We must check self-loops BEFORE adding transitions to fairGraph
+	// because self-loops might not be detected by DetectCycles if DFS doesn't explore them
+	for _, trans := range graph.Transitions {
+		fromHash := tv.hasher.HashState(trans.FromState)
+		toHash := tv.hasher.HashState(trans.ToState)
+		if fromHash == toHash {
+			// Self-loop detected - check if it's unfair
+			// Create a temporary cycle info for the self-loop
+			cycle := &CycleInfo{
+				States:      []*state.State{trans.FromState},
+				Transitions: []*Transition{trans},
+				StartState:  trans.FromState,
+			}
+			// For self-loops, we need to check if the action is enabled in the state
+			// If the action is continuously enabled but never executes, the self-loop is unfair
+			if tv.isCycleUnfair(cycle, actionName, fairnessType) {
+				transHash := getTransitionHash(trans)
+				unfairTransitions[transHash] = true
 			}
 		}
 	}
 	
 	// Add only fair transitions (not in unfair cycles)
 	for _, trans := range graph.Transitions {
-		transHash := fmt.Sprintf("%s->%s", tv.hasher.HashState(trans.FromState), tv.hasher.HashState(trans.ToState))
-		if !unfairCycles[transHash] {
+		transHash := getTransitionHash(trans)
+		
+		if !unfairTransitions[transHash] {
 			fromHash := tv.hasher.HashState(trans.FromState)
 			toHash := tv.hasher.HashState(trans.ToState)
 			fairGraph.AddTransition(trans, fromHash, toHash)
+		}
+	}
+	
+	// After filtering, verify that no unfair cycles remain in the fair graph
+	// This is a safety check to ensure our filtering worked correctly
+	// Iteratively remove unfair cycles until none remain
+	maxIterations := 10 // Prevent infinite loops
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		additionalUnfairTransitions := make(map[string]bool)
+		
+		// Check all cycles in the current fair graph
+		fairCycles := fairGraph.DetectCycles(tv.hasher)
+		for _, cycle := range fairCycles {
+			if tv.isCycleUnfair(cycle, actionName, fairnessType) {
+				// Found an unfair cycle - mark all its transitions as unfair
+				for _, trans := range cycle.Transitions {
+					transHash := getTransitionHash(trans)
+					additionalUnfairTransitions[transHash] = true
+				}
+			}
+		}
+		
+		// Also check for self-loops in the fair graph explicitly
+		for _, trans := range fairGraph.Transitions {
+			fromHash := tv.hasher.HashState(trans.FromState)
+			toHash := tv.hasher.HashState(trans.ToState)
+			if fromHash == toHash {
+				// Self-loop in fair graph - check if it's unfair
+				cycle := &CycleInfo{
+					States:      []*state.State{trans.FromState},
+					Transitions: []*Transition{trans},
+					StartState:  trans.FromState,
+				}
+				if tv.isCycleUnfair(cycle, actionName, fairnessType) {
+					transHash := getTransitionHash(trans)
+					additionalUnfairTransitions[transHash] = true
+				}
+			}
+		}
+		
+		// If we found additional unfair transitions, merge them and rebuild
+		if len(additionalUnfairTransitions) > 0 {
+			// Merge with existing unfair transitions
+			for transHash := range additionalUnfairTransitions {
+				unfairTransitions[transHash] = true
+			}
+			// Rebuild the fair graph from the original graph
+			fairGraph = NewTransitionGraph()
+			// Copy all states
+			for hash, node := range graph.States {
+				fairGraph.AddState(node.State, hash)
+			}
+			// Add only fair transitions
+			for _, trans := range graph.Transitions {
+				transHash := getTransitionHash(trans)
+				
+				if !unfairTransitions[transHash] {
+					fromHash := tv.hasher.HashState(trans.FromState)
+					toHash := tv.hasher.HashState(trans.ToState)
+					fairGraph.AddTransition(trans, fromHash, toHash)
+				}
+			}
+		} else {
+			// No more unfair cycles found - we're done
+			break
 		}
 	}
 	
@@ -751,8 +1081,16 @@ func (tv *TemporalVerifier) filterFairPaths(graph *TransitionGraph, actionName s
 }
 
 // isCycleUnfair checks if a cycle violates fairness constraints
+// A cycle is unfair if:
+// - For WF: the action is continuously enabled in all states of the cycle but never executes
+// - For SF: the action is enabled in at least one state of the cycle but never executes
 func (tv *TemporalVerifier) isCycleUnfair(cycle *CycleInfo, actionName string, fairnessType string) bool {
 	if tv.stateMachine == nil {
+		return false
+	}
+	
+	// Ensure cycle has states and transitions
+	if len(cycle.States) == 0 || len(cycle.Transitions) == 0 {
 		return false
 	}
 	
@@ -773,10 +1111,16 @@ func (tv *TemporalVerifier) isCycleUnfair(cycle *CycleInfo, actionName string, f
 	// Action doesn't execute - check if it should have (based on fairness type)
 	if fairnessType == "WF" {
 		// Weak fairness: cycle is unfair if action is continuously enabled in all states
+		// This means the action must be enabled in EVERY state of the cycle
 		continuouslyEnabled := true
 		for _, cycleState := range cycle.States {
+			if cycleState == nil {
+				continuouslyEnabled = false
+				break
+			}
 			enabled, err := tv.stateMachine.GetAvailableActions(cycleState)
 			if err != nil {
+				// If we can't determine enabled actions, assume not continuously enabled
 				continuouslyEnabled = false
 				break
 			}
@@ -788,17 +1132,21 @@ func (tv *TemporalVerifier) isCycleUnfair(cycle *CycleInfo, actionName string, f
 				}
 			}
 			if !actionEnabled {
+				// Action not enabled in this state - not continuously enabled
 				continuouslyEnabled = false
 				break
 			}
 		}
-		return continuouslyEnabled // Unfair if continuously enabled but never executes
+		// Unfair if continuously enabled but never executes
+		return continuouslyEnabled
 	} else if fairnessType == "SF" {
 		// Strong fairness: cycle is unfair if action is enabled in at least one state
+		// but never executes in the cycle
 		enabledAtLeastOnce := false
 		for _, cycleState := range cycle.States {
 			enabled, err := tv.stateMachine.GetAvailableActions(cycleState)
 			if err != nil {
+				// Skip states where we can't determine enabled actions
 				continue
 			}
 			for _, name := range enabled {
@@ -811,7 +1159,8 @@ func (tv *TemporalVerifier) isCycleUnfair(cycle *CycleInfo, actionName string, f
 				break
 			}
 		}
-		return enabledAtLeastOnce // Unfair if enabled at least once but never executes
+		// Unfair if enabled at least once but never executes
+		return enabledAtLeastOnce
 	}
 	
 	return false
@@ -840,7 +1189,105 @@ func (tv *TemporalVerifier) verifyEventuallyWithFairGraph(prop *state.TemporalPr
 // verifyAlwaysWithFairGraph verifies "always P" over fair paths
 func (tv *TemporalVerifier) verifyAlwaysWithFairGraph(prop *state.TemporalPropertyInfo, expr *ast.AlwaysExpr, fairGraph *TransitionGraph, initialStates []*state.State, fairnessType string, actionName string) (*TemporalVerificationResult, error) {
 	// Use the same logic as verifyAlwaysWithInitial but on the fair graph
-	return tv.verifyAlwaysWithInitial(prop, expr, fairGraph, initialStates)
+	// We need to pass a flag indicating this is a fair graph
+	// For now, we'll modify verifyAlwaysLeadsTo to accept a fairGraph flag
+	// But to avoid changing the signature, we'll use a different approach:
+	// Check if the graph passed is the same as the original (not filtered)
+	// This is a workaround - in the future we could add a field to TransitionGraph
+	return tv.verifyAlwaysWithInitialOnFairGraph(prop, expr, fairGraph, initialStates)
+}
+
+// verifyAlwaysWithInitialOnFairGraph is like verifyAlwaysWithInitial but for fair graphs
+func (tv *TemporalVerifier) verifyAlwaysWithInitialOnFairGraph(prop *state.TemporalPropertyInfo, expr *ast.AlwaysExpr, graph *TransitionGraph, initialStates []*state.State) (*TemporalVerificationResult, error) {
+	// Handle nested temporal operators specially
+	switch innerExpr := expr.Expr.(type) {
+	case *ast.LeadsToExpr:
+		// For "always (P → Q)", verify that in every state where P holds, Q eventually holds
+		return tv.verifyAlwaysLeadsToOnFairGraph(prop, innerExpr, graph, initialStates)
+	case *ast.EventuallyExpr:
+		// For "always eventually P", verify that from every state, eventually P holds
+		return tv.verifyAlwaysEventually(prop, innerExpr, graph, initialStates)
+	default:
+		// For state predicates, check all states
+		return tv.verifyAlwaysStatePredicate(prop, expr.Expr, graph, initialStates)
+	}
+}
+
+// verifyAlwaysLeadsToOnFairGraph is like verifyAlwaysLeadsTo but for fair graphs
+func (tv *TemporalVerifier) verifyAlwaysLeadsToOnFairGraph(prop *state.TemporalPropertyInfo, leadsToExpr *ast.LeadsToExpr, graph *TransitionGraph, initialStates []*state.State) (*TemporalVerificationResult, error) {
+	visited := make(map[string]bool)
+	var violatingPState *state.State
+	var violatingTrace *temporal.Trace
+	
+	var dfs func(s *state.State, trace *temporal.Trace)
+	dfs = func(s *state.State, trace *temporal.Trace) {
+		hash := tv.hasher.HashState(s)
+		if visited[hash] {
+			return
+		}
+		visited[hash] = true
+		
+		// Check if P holds in this state
+		pHolds, _ := tv.evaluateProperty(leadsToExpr.Left, s)
+		if pHolds {
+			// P holds - verify that Q eventually holds from this state on ALL paths
+			canReachQ := tv.canEventuallyReachP(s, leadsToExpr.Right, graph, make(map[string]bool))
+			if !canReachQ {
+				if violatingPState == nil {
+					violatingPState = s
+					violatingTrace = trace.Copy()
+				}
+				return
+			}
+			
+			// Can reach Q, but need to check if there's a path where we get stuck
+			// in a cycle before reaching Q. Check if there's a blocking cycle.
+			// This is a fair graph, so cycles that can be exited are not blocking
+			if tv.hasBlockingCycle(s, leadsToExpr.Right, graph, true) {
+				if violatingPState == nil {
+					violatingPState = s
+					violatingTrace = trace.Copy()
+				}
+				return
+			}
+		}
+		
+		// Continue exploring
+		if node := graph.GetStateNode(hash); node != nil {
+			for _, trans := range node.Outgoing {
+				newTrace := trace.Copy()
+				newTrace.AddState(trans.ToState, trans.Action, trans.Args)
+				dfs(trans.ToState, newTrace)
+			}
+		}
+	}
+	
+	for _, initState := range initialStates {
+		trace := temporal.NewTrace()
+		trace.AddState(initState, "", nil)
+		dfs(initState, trace)
+	}
+	
+	if violatingPState != nil {
+		desc := fmt.Sprintf("Property '%s' violated: P holds but Q never becomes true", prop.Name)
+		if prop.Description != "" {
+			desc = fmt.Sprintf("Property '%s' violated: (%s) P holds but Q never becomes true", prop.Name, prop.Description)
+		}
+		return &TemporalVerificationResult{
+			PropertyName: prop.Name,
+			Holds:        false,
+			Violation: &TemporalViolation{
+				PropertyName: prop.Name,
+				Description:  desc,
+				Trace:        violatingTrace,
+			},
+		}, nil
+	}
+	
+	return &TemporalVerificationResult{
+		PropertyName: prop.Name,
+		Holds:        true,
+	}, nil
 }
 
 // verifyGenericWithFairGraph verifies a generic property expression over fair paths
@@ -884,12 +1331,16 @@ func (tv *TemporalVerifier) verifyGenericWithFairGraph(prop *state.TemporalPrope
 	}
 	
 	if violatingState != nil {
+		desc := fmt.Sprintf("Property '%s' violated under %s(%s) fairness constraint", prop.Name, fairnessType, actionName)
+		if prop.Description != "" {
+			desc = fmt.Sprintf("Property '%s' violated: (%s) property does not hold under %s(%s) fairness constraint", prop.Name, prop.Description, fairnessType, actionName)
+		}
 		return &TemporalVerificationResult{
 			PropertyName: prop.Name,
 			Holds:        false,
 			Violation: &TemporalViolation{
 				PropertyName: prop.Name,
-				Description:  fmt.Sprintf("Property '%s' violated under %s(%s) fairness constraint", prop.Name, fairnessType, actionName),
+				Description:  desc,
 				Trace:        violatingTrace,
 			},
 		}, nil
