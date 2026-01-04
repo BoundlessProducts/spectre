@@ -1,6 +1,8 @@
 package explore
 
 import (
+	"sort"
+
 	"github.com/akkeshavan/spectre/internal/state"
 )
 
@@ -151,7 +153,15 @@ func (tg *TransitionGraph) DetectCycles(hasher *StateHasher) []*CycleInfo {
 	}
 	
 	// Start DFS from each unvisited state
-	for _, node := range tg.States {
+	// Sort state hashes for deterministic iteration order
+	stateHashes := make([]string, 0, len(tg.States))
+	for hash := range tg.States {
+		stateHashes = append(stateHashes, hash)
+	}
+	sort.Strings(stateHashes)
+	
+	for _, hash := range stateHashes {
+		node := tg.States[hash]
 		if !visited[node.Hash] {
 			path = []*StateNode{}
 			dfs(node)
@@ -169,8 +179,15 @@ func (tg *TransitionGraph) GetStateNode(hash string) *StateNode {
 // GetAllStates returns all states in the graph
 func (tg *TransitionGraph) GetAllStates() []*state.State {
 	states := make([]*state.State, 0, len(tg.States))
-	for _, node := range tg.States {
-		states = append(states, node.State)
+	// Sort state hashes for deterministic iteration order
+	stateHashes := make([]string, 0, len(tg.States))
+	for hash := range tg.States {
+		stateHashes = append(stateHashes, hash)
+	}
+	sort.Strings(stateHashes)
+	
+	for _, hash := range stateHashes {
+		states = append(states, tg.States[hash].State)
 	}
 	return states
 }

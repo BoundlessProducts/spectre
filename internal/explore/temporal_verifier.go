@@ -2,6 +2,7 @@ package explore
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/akkeshavan/spectre/internal/eval"
 	"github.com/akkeshavan/spectre/internal/exec"
@@ -10,12 +11,16 @@ import (
 	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
+// ViolationCallback is called immediately when a temporal violation is detected
+type ViolationCallback func(result *TemporalVerificationResult)
+
 // TemporalVerifier verifies temporal properties over the state space
 type TemporalVerifier struct {
-	temporalEval *temporal.TemporalEvaluator
-	hasher       *StateHasher
-	file         *ast.File // For enum type registration
-	stateMachine *exec.StateMachine // For checking action enabledness (fairness)
+	temporalEval     *temporal.TemporalEvaluator
+	hasher           *StateHasher
+	file             *ast.File // For enum type registration
+	stateMachine     *exec.StateMachine // For checking action enabledness (fairness)
+	violationCallback ViolationCallback // Optional callback for immediate violation reporting
 }
 
 // NewTemporalVerifier creates a new temporal verifier
@@ -25,12 +30,34 @@ func NewTemporalVerifier(hasher *StateHasher, file *ast.File) *TemporalVerifier 
 		hasher:       hasher,
 		file:         file,
 		stateMachine: nil, // Will be set if needed for fairness checking
+		violationCallback: nil, // Will be set if needed for immediate reporting
 	}
 }
 
 // SetStateMachine sets the state machine for fairness checking
 func (tv *TemporalVerifier) SetStateMachine(sm *exec.StateMachine) {
 	tv.stateMachine = sm
+}
+
+// SetViolationCallback sets a callback that will be called immediately when a violation is detected
+func (tv *TemporalVerifier) SetViolationCallback(callback ViolationCallback) {
+	tv.violationCallback = callback
+}
+
+// reportViolationImmediately calls the violation callback if set, with the violation details
+func (tv *TemporalVerifier) reportViolationImmediately(prop *state.TemporalPropertyInfo, desc string, violatingTrace *temporal.Trace) {
+	if tv.violationCallback != nil {
+		result := &TemporalVerificationResult{
+			PropertyName: prop.Name,
+			Holds:        false,
+			Violation: &TemporalViolation{
+				PropertyName: prop.Name,
+				Description:  desc,
+				Trace:        violatingTrace,
+			},
+		}
+		tv.violationCallback(result)
+	}
 }
 
 // TemporalVerificationResult represents the result of verifying a temporal property
@@ -210,6 +237,12 @@ func (tv *TemporalVerifier) verifyAlwaysStatePredicate(prop *state.TemporalPrope
 			if violatingState == nil {
 				violatingState = s
 				violatingTrace = trace.Copy()
+				// Report violation immediately
+				desc := fmt.Sprintf("Property '%s' violated in reachable state", prop.Name)
+				if prop.Description != "" {
+					desc = fmt.Sprintf("Property '%s' violated: (%s) property does not hold in some reachable state", prop.Name, prop.Description)
+				}
+				tv.reportViolationImmediately(prop, desc, violatingTrace)
 			}
 			return
 		}
@@ -283,6 +316,12 @@ func (tv *TemporalVerifier) verifyAlwaysLeadsTo(prop *state.TemporalPropertyInfo
 				if violatingPState == nil {
 					violatingPState = s
 					violatingTrace = trace.Copy()
+					// Report violation immediately
+					desc := fmt.Sprintf("Property '%s' violated: P holds but Q never becomes true", prop.Name)
+					if prop.Description != "" {
+						desc = fmt.Sprintf("Property '%s' violated: (%s) P holds but Q never becomes true", prop.Name, prop.Description)
+					}
+					tv.reportViolationImmediately(prop, desc, violatingTrace)
 				}
 				return
 			}
@@ -294,6 +333,12 @@ func (tv *TemporalVerifier) verifyAlwaysLeadsTo(prop *state.TemporalPropertyInfo
 				if violatingPState == nil {
 					violatingPState = s
 					violatingTrace = trace.Copy()
+					// Report violation immediately
+					desc := fmt.Sprintf("Property '%s' violated: P holds but Q never becomes true", prop.Name)
+					if prop.Description != "" {
+						desc = fmt.Sprintf("Property '%s' violated: (%s) P holds but Q never becomes true", prop.Name, prop.Description)
+					}
+					tv.reportViolationImmediately(prop, desc, violatingTrace)
 				}
 				return
 			}
@@ -356,6 +401,12 @@ func (tv *TemporalVerifier) verifyAlwaysEventually(prop *state.TemporalPropertyI
 			if violatingState == nil {
 				violatingState = s
 				violatingTrace = trace.Copy()
+				// Report violation immediately
+				desc := fmt.Sprintf("Property '%s' violated: eventually P does not hold from some state", prop.Name)
+				if prop.Description != "" {
+					desc = fmt.Sprintf("Property '%s' violated: (%s) eventually P does not hold from some state", prop.Name, prop.Description)
+				}
+				tv.reportViolationImmediately(prop, desc, violatingTrace)
 			}
 			return
 		}
@@ -424,6 +475,12 @@ func (tv *TemporalVerifier) verifyUntilWithInitial(prop *state.TemporalPropertyI
 			if violatingState == nil {
 				violatingState = s
 				violatingTrace = trace.Copy()
+				// Report violation immediately
+				desc := fmt.Sprintf("Property '%s' violated: P doesn't hold before Q", prop.Name)
+				if prop.Description != "" {
+					desc = fmt.Sprintf("Property '%s' violated: (%s) P doesn't hold before Q", prop.Name, prop.Description)
+				}
+				tv.reportViolationImmediately(prop, desc, violatingTrace)
 			}
 			return
 		}
@@ -524,6 +581,12 @@ func (tv *TemporalVerifier) verifyLeadsToWithInitial(prop *state.TemporalPropert
 				if violatingPState == nil {
 					violatingPState = s
 					violatingTrace = trace.Copy()
+					// Report violation immediately
+					desc := fmt.Sprintf("Property '%s' violated: P holds but Q never becomes true", prop.Name)
+					if prop.Description != "" {
+						desc = fmt.Sprintf("Property '%s' violated: (%s) P holds but Q never becomes true", prop.Name, prop.Description)
+					}
+					tv.reportViolationImmediately(prop, desc, violatingTrace)
 				}
 			}
 		}
@@ -593,11 +656,21 @@ func (tv *TemporalVerifier) findInitialStates(graph *TransitionGraph) []*state.S
 	// But if all states have incoming transitions (e.g., due to cycles), 
 	// we need to track which ones were actually initial from exploration
 	hasIncoming := make(map[string]bool)
-	for _, node := range graph.States {
+	
+	// Sort state hashes for deterministic iteration order
+	stateHashes := make([]string, 0, len(graph.States))
+	for hash := range graph.States {
+		stateHashes = append(stateHashes, hash)
+	}
+	sort.Strings(stateHashes)
+	
+	for _, hash := range stateHashes {
+		node := graph.States[hash]
 		hasIncoming[node.Hash] = len(node.Incoming) > 0
 	}
 	
-	for _, node := range graph.States {
+	for _, hash := range stateHashes {
+		node := graph.States[hash]
 		if !hasIncoming[node.Hash] {
 			initialStates = append(initialStates, node.State)
 		}
@@ -605,12 +678,9 @@ func (tv *TemporalVerifier) findInitialStates(graph *TransitionGraph) []*state.S
 	
 	// If no states found without incoming, use all states (fallback)
 	// This shouldn't happen in practice, but handle it gracefully
-	if len(initialStates) == 0 && len(graph.States) > 0 {
+	if len(initialStates) == 0 && len(stateHashes) > 0 {
 		// Return first state as fallback (should use actual initial states from exploration result)
-		for _, node := range graph.States {
-			initialStates = append(initialStates, node.State)
-			break
-		}
+		initialStates = append(initialStates, graph.States[stateHashes[0]].State)
 	}
 	
 	return initialStates
@@ -940,8 +1010,15 @@ func (tv *TemporalVerifier) filterFairPaths(graph *TransitionGraph, actionName s
 	// Create a new graph with only fair transitions
 	fairGraph := NewTransitionGraph()
 	
-	// Copy all states
-	for hash, node := range graph.States {
+	// Copy all states (sort for deterministic order)
+	stateHashes := make([]string, 0, len(graph.States))
+	for hash := range graph.States {
+		stateHashes = append(stateHashes, hash)
+	}
+	sort.Strings(stateHashes)
+	
+	for _, hash := range stateHashes {
+		node := graph.States[hash]
 		fairGraph.AddState(node.State, hash)
 	}
 	
@@ -1057,8 +1134,14 @@ func (tv *TemporalVerifier) filterFairPaths(graph *TransitionGraph, actionName s
 			}
 			// Rebuild the fair graph from the original graph
 			fairGraph = NewTransitionGraph()
-			// Copy all states
-			for hash, node := range graph.States {
+			// Copy all states (sort for deterministic order)
+			rebuildStateHashes := make([]string, 0, len(graph.States))
+			for hash := range graph.States {
+				rebuildStateHashes = append(rebuildStateHashes, hash)
+			}
+			sort.Strings(rebuildStateHashes)
+			for _, hash := range rebuildStateHashes {
+				node := graph.States[hash]
 				fairGraph.AddState(node.State, hash)
 			}
 			// Add only fair transitions
@@ -1236,6 +1319,12 @@ func (tv *TemporalVerifier) verifyAlwaysLeadsToOnFairGraph(prop *state.TemporalP
 				if violatingPState == nil {
 					violatingPState = s
 					violatingTrace = trace.Copy()
+					// Report violation immediately
+					desc := fmt.Sprintf("Property '%s' violated: P holds but Q never becomes true", prop.Name)
+					if prop.Description != "" {
+						desc = fmt.Sprintf("Property '%s' violated: (%s) P holds but Q never becomes true", prop.Name, prop.Description)
+					}
+					tv.reportViolationImmediately(prop, desc, violatingTrace)
 				}
 				return
 			}
@@ -1247,6 +1336,12 @@ func (tv *TemporalVerifier) verifyAlwaysLeadsToOnFairGraph(prop *state.TemporalP
 				if violatingPState == nil {
 					violatingPState = s
 					violatingTrace = trace.Copy()
+					// Report violation immediately
+					desc := fmt.Sprintf("Property '%s' violated: P holds but Q never becomes true", prop.Name)
+					if prop.Description != "" {
+						desc = fmt.Sprintf("Property '%s' violated: (%s) P holds but Q never becomes true", prop.Name, prop.Description)
+					}
+					tv.reportViolationImmediately(prop, desc, violatingTrace)
 				}
 				return
 			}
@@ -1310,6 +1405,12 @@ func (tv *TemporalVerifier) verifyGenericWithFairGraph(prop *state.TemporalPrope
 			if violatingState == nil {
 				violatingState = s
 				violatingTrace = trace.Copy()
+				// Report violation immediately
+				desc := fmt.Sprintf("Property '%s' violated under %s(%s) fairness constraint", prop.Name, fairnessType, actionName)
+				if prop.Description != "" {
+					desc = fmt.Sprintf("Property '%s' violated: (%s) property does not hold under %s(%s) fairness constraint", prop.Name, prop.Description, fairnessType, actionName)
+				}
+				tv.reportViolationImmediately(prop, desc, violatingTrace)
 			}
 			return
 		}

@@ -2,11 +2,20 @@ package explore
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/akkeshavan/spectre/internal/exec"
 	"github.com/akkeshavan/spectre/internal/state"
 )
+
+// InvariantViolationCallback is called immediately when an invariant violation is detected
+// Returns true if exploration should continue, false if it should stop
+type InvariantViolationCallback func(violation *Violation) bool
+
+// TemporalVerificationCallback is called periodically during exploration to check temporal properties incrementally
+// It receives the current transition graph and initial states, and should return true if exploration should continue
+type TemporalVerificationCallback func(graph *TransitionGraph, initialStates []*state.State) bool
 
 // Explorer explores the state space of a Spectre specification
 type Explorer struct {
@@ -20,6 +29,10 @@ type Explorer struct {
 	maxStates    int             // Maximum number of states to explore
 	detectCycles bool            // Whether to detect cycles
 	verbose      bool            // Whether to print verbose exploration details
+	invariantViolationCallback InvariantViolationCallback // Optional callback for immediate violation reporting
+	temporalVerificationCallback TemporalVerificationCallback // Optional callback for incremental temporal verification
+	shouldStopExploration bool // Flag to stop exploration if user wants to stop after violation
+	checkTemporalEvery int // Check temporal properties every N states (0 = never, 1 = every state)
 }
 
 // ExplorationStateNode represents a state in the exploration tree (during BFS/DFS)
@@ -91,6 +104,20 @@ type Violation struct {
 	Description string
 }
 
+// SetInvariantViolationCallback sets a callback that will be called immediately when an invariant violation is detected
+// The callback should return true if exploration should continue, false if it should stop
+func (e *Explorer) SetInvariantViolationCallback(callback InvariantViolationCallback) {
+	e.invariantViolationCallback = callback
+}
+
+// SetTemporalVerificationCallback sets a callback that will be called periodically during exploration
+// to check temporal properties incrementally. The checkInterval parameter specifies how often to check
+// (e.g., 1 = every state, 5 = every 5 states, 0 = disabled)
+func (e *Explorer) SetTemporalVerificationCallback(callback TemporalVerificationCallback, checkInterval int) {
+	e.temporalVerificationCallback = callback
+	e.checkTemporalEvery = checkInterval
+}
+
 // NewExplorer creates a new state space explorer
 func NewExplorer(stateMachine *exec.StateMachine) *Explorer {
 	hasher := NewStateHasher()
@@ -101,6 +128,7 @@ func NewExplorer(stateMachine *exec.StateMachine) *Explorer {
 		visited:      make(map[string]bool),
 		queue:        []*ExplorationStateNode{},
 		stack:        []*ExplorationStateNode{},
+		shouldStopExploration: false,
 		maxDepth:     100,  // Default max depth
 		maxStates:    1000, // Default max states
 		detectCycles: true, // Enable cycle detection by default
@@ -136,36 +164,56 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 	result := &ExplorationResult{
 		Violations:      []*Violation{},
 		ReachableStates: []*state.State{},
+		InitialStates:   initialStates, // Store initial states for temporal verification
 		Cycles:          []*Cycle{},
 		TransitionGraph: NewTransitionGraph(),
 	}
 
-	// Add initial states to queue
+	// Add initial states to queue - sort by hash for deterministic ordering (like TLC)
+	// First, collect initial states with their hashes
+	type initStateWithHash struct {
+		state *state.State
+		hash  string
+	}
+	initStatesWithHashes := make([]initStateWithHash, 0, len(initialStates))
 	for _, initState := range initialStates {
 		hash := e.hasher.HashState(initState)
 		if !e.visited[hash] {
-			e.visited[hash] = true
-			result.ReachableStates = append(result.ReachableStates, initState)
-			
-			// Add initial state to transition graph
-			result.TransitionGraph.AddState(initState, hash)
-			
-			// Update cycle detector with initial state
-			if e.detectCycles {
-				e.cycleDetector.PushState(initState)
-			}
-			
-			e.queue = append(e.queue, &ExplorationStateNode{
-				State: initState,
-				Depth: 0,
-				Path:  []*Transition{},
+			initStatesWithHashes = append(initStatesWithHashes, initStateWithHash{
+				state: initState,
+				hash:  hash,
 			})
 		}
+	}
+	
+	// Sort initial states by hash for deterministic ordering
+	sort.Slice(initStatesWithHashes, func(i, j int) bool {
+		return initStatesWithHashes[i].hash < initStatesWithHashes[j].hash
+	})
+	
+	// Add sorted initial states to queue
+	for _, item := range initStatesWithHashes {
+		e.visited[item.hash] = true
+		result.ReachableStates = append(result.ReachableStates, item.state)
+		
+		// Add initial state to transition graph
+		result.TransitionGraph.AddState(item.state, item.hash)
+		
+		// Update cycle detector with initial state
+		if e.detectCycles {
+			e.cycleDetector.PushState(item.state)
+		}
+		
+		e.queue = append(e.queue, &ExplorationStateNode{
+			State: item.state,
+			Depth: 0,
+			Path:  []*Transition{},
+		})
 	}
 
 	// BFS exploration
 	// -1 means unlimited
-	for len(e.queue) > 0 && (e.maxStates == -1 || result.StatesExplored < e.maxStates) {
+	for len(e.queue) > 0 && (e.maxStates == -1 || result.StatesExplored < e.maxStates) && !e.shouldStopExploration {
 		current := e.queue[0]
 		e.queue = e.queue[1:]
 
@@ -187,6 +235,15 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 		} else {
 			// Non-verbose mode: show simple progress
 			fmt.Printf("Exploring State %d\n", result.StatesExplored)
+		}
+
+		// Check temporal properties incrementally if callback is set
+		if e.temporalVerificationCallback != nil && e.checkTemporalEvery > 0 && result.StatesExplored % e.checkTemporalEvery == 0 {
+			// Use initial states from result (set during initialization)
+			if !e.temporalVerificationCallback(result.TransitionGraph, result.InitialStates) {
+				e.shouldStopExploration = true
+				break
+			}
 		}
 
 		// Validate current state
@@ -245,6 +302,11 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 					fmt.Printf("    [TRY] Executing action: %s\n", actionWithArgs.ActionName)
 				}
 			}
+			// Check if we should stop before executing action
+			if e.shouldStopExploration {
+				break
+			}
+			
 			nextState, err := e.stateMachine.ExecuteAction(actionWithArgs.ActionName, current.State, actionWithArgs.Args)
 			if err != nil {
 				// Action execution failed - check if it's due to invariant violations
@@ -257,12 +319,21 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 						violationDesc = errMsg[idx+2:]
 					}
 					
-					result.Violations = append(result.Violations, &Violation{
+					violation := &Violation{
 						State:       current.State,
 						Invariant:   "unknown", // We'll extract this from the error message if possible
 						Path:        current.Path,
 						Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionWithArgs.ActionName, violationDesc),
-					})
+					}
+					result.Violations = append(result.Violations, violation)
+					
+					// Call callback if set, and stop exploration if callback returns false
+					if e.invariantViolationCallback != nil {
+						if !e.invariantViolationCallback(violation) {
+							e.shouldStopExploration = true
+							break
+						}
+					}
 					
 					if e.verbose {
 						fmt.Printf("      [FAIL] Action %s failed: %s\n", actionWithArgs.ActionName, errMsg)
@@ -349,15 +420,45 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 				e.cycleDetector.PushState(nextState)
 			}
 
-			// Add to queue
-			e.queue = append(e.queue, &ExplorationStateNode{
+			// Add to queue in sorted position by state hash for deterministic ordering (like TLC)
+			// This ensures states are always explored in the same order regardless of discovery order
+			// Queue is maintained sorted: first by depth (BFS level), then by state hash within same depth
+			newNode := &ExplorationStateNode{
 				State:      nextState,
 				Depth:      current.Depth + 1,
 				Parent:     current,
 				Action:     actionWithArgs.ActionName,
 				ActionArgs: actionWithArgs.Args,
 				Path:       newPath,
-			})
+			}
+			
+			// Insert in sorted position: maintain queue sorted by depth, then by state hash
+			// This ensures deterministic exploration order like TLC
+			insertPos := len(e.queue)
+			nextStateHash := hash
+			nextDepth := current.Depth + 1
+			
+			for i, node := range e.queue {
+				nodeHash := e.hasher.HashState(node.State)
+				// Compare first by depth, then by hash within same depth
+				if node.Depth > nextDepth {
+					// Insert before nodes at deeper depth
+					insertPos = i
+					break
+				} else if node.Depth == nextDepth {
+					// Same depth: compare by hash
+					if nextStateHash < nodeHash {
+						insertPos = i
+						break
+					}
+				}
+				// If node.Depth < nextDepth, continue (insert after shallower states)
+			}
+			
+			// Insert at the determined position
+			e.queue = append(e.queue, nil) // Extend slice
+			copy(e.queue[insertPos+1:], e.queue[insertPos:])
+			e.queue[insertPos] = newNode
 
 			if current.Depth+1 > result.MaxDepth {
 				result.MaxDepth = current.Depth + 1
@@ -413,7 +514,7 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 
 	// DFS exploration
 	// -1 means unlimited
-	for len(e.stack) > 0 && (e.maxStates == -1 || result.StatesExplored < e.maxStates) {
+	for len(e.stack) > 0 && (e.maxStates == -1 || result.StatesExplored < e.maxStates) && !e.shouldStopExploration {
 		// Pop from stack
 		current := e.stack[len(e.stack)-1]
 		e.stack = e.stack[:len(e.stack)-1]
@@ -447,12 +548,26 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 				fmt.Printf("  [VIOLATION] Found %d invariant violation(s)\n", len(errors))
 			}
 			for _, validationError := range errors {
-				result.Violations = append(result.Violations, &Violation{
+				violation := &Violation{
 					State:       current.State,
 					Invariant:   validationError.Name,
 					Path:        current.Path,
 					Description: validationError.Message,
-				})
+				}
+				result.Violations = append(result.Violations, violation)
+				
+				// Call callback if set, and stop exploration if callback returns false
+				if e.invariantViolationCallback != nil {
+					if !e.invariantViolationCallback(violation) {
+						e.shouldStopExploration = true
+						break
+					}
+				}
+			}
+			
+			// Check if we should stop after processing violations
+			if e.shouldStopExploration {
+				break
 			}
 		}
 
@@ -464,6 +579,11 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 
 		// Explore each action (push in reverse order for DFS)
 		for i := len(availableActions) - 1; i >= 0; i-- {
+			// Check if we should stop before executing action
+			if e.shouldStopExploration {
+				break
+			}
+			
 			actionWithArgs := availableActions[i]
 			nextState, err := e.stateMachine.ExecuteAction(actionWithArgs.ActionName, current.State, actionWithArgs.Args)
 			if err != nil {
@@ -471,29 +591,38 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 				errMsg := err.Error()
 				if strings.Contains(errMsg, "violates invariants") {
 					// Extract invariant violation information from the error
-				// The error format is: "next state violates invariants: [validation error messages]"
-				// We need to parse this and create violation entries
-				violationDesc := errMsg
-				// Try to extract just the violation part
-				if idx := strings.Index(errMsg, ": "); idx > 0 {
-					violationDesc = errMsg[idx+2:]
-				}
-				
-				result.Violations = append(result.Violations, &Violation{
-					State:       current.State,
-					Invariant:   "unknown", // We'll extract this from the error message if possible
-					Path:        current.Path,
-					Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionWithArgs.ActionName, violationDesc),
-				})
-				
-				if e.verbose {
+					// The error format is: "next state violates invariants: [validation error messages]"
+					// We need to parse this and create violation entries
+					violationDesc := errMsg
+					// Try to extract just the violation part
+					if idx := strings.Index(errMsg, ": "); idx > 0 {
+						violationDesc = errMsg[idx+2:]
+					}
+					
+					violation := &Violation{
+						State:       current.State,
+						Invariant:   "unknown", // We'll extract this from the error message if possible
+						Path:        current.Path,
+						Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionWithArgs.ActionName, violationDesc),
+					}
+					result.Violations = append(result.Violations, violation)
+					
+					// Call callback if set, and stop exploration if callback returns false
+					if e.invariantViolationCallback != nil {
+						if !e.invariantViolationCallback(violation) {
+							e.shouldStopExploration = true
+							break
+						}
+					}
+					
+					if e.verbose {
+						fmt.Printf("      [FAIL] Action %s failed: %s\n", actionWithArgs.ActionName, errMsg)
+					}
+				} else if e.verbose {
 					fmt.Printf("      [FAIL] Action %s failed: %s\n", actionWithArgs.ActionName, errMsg)
 				}
-			} else if e.verbose {
-				fmt.Printf("      [FAIL] Action %s failed: %s\n", actionWithArgs.ActionName, errMsg)
+				continue
 			}
-			continue
-		}
 
 		hash := e.hasher.HashState(nextState)
 			

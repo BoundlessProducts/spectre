@@ -2,7 +2,7 @@
 
 **Last Updated**: January 2025  
 **Current Phase**: Production Ready ✅  
-**Recent Updates**: Distributed Message Queue Examples, Spectre Book Chapters (6 chapters), Invariant Violation Examples, Concurrent Systems Examples
+**Recent Updates**: State Space Exploration Improvements, Comprehensive Test Suite, Memory Optimization Planning, Module System Documentation
 
 ## Quick Status Summary
 
@@ -10,6 +10,8 @@
 - ✅ **Verification Engine**: Complete (invariants, temporal properties with cycle handling, fairness)
 - ✅ **CLI Tool**: Fully functional with parse, typecheck, and verify commands
 - ✅ **State Space Exploration**: BFS/DFS exploration with cycle detection, transition graph building, and counterexample generation
+- ✅ **Configurable Exploration Limits**: Command-line flags for --max-states and --max-depth with unlimited support
+- ✅ **Comprehensive Test Suite**: 14 test functions covering state space completeness, parameterized actions, and exploration correctness
 - ✅ **Error Reporting**: User-friendly error messages with descriptions and stack traces
 - ✅ **Collection Methods**: Set, List, and Map methods fully implemented
 - ✅ **Lambda Expressions**: Full support with type inference
@@ -17,14 +19,76 @@
 - ✅ **Enum Types**: Full support (declaration, parsing, evaluation, comparison)
 - ✅ **Temporal Verification**: Proper cycle handling and fairness support in temporal property verification
 
-**Test Status**: Core tests passing ✅  
+**Test Status**: Core tests passing ✅, Comprehensive test suite: 14/14 tests passing ✅  
 **Example Status**: 19 example files (including violation and corrected versions)  
+**Test Suite Status**: 10 test specifications, 14 test functions, all passing ✅  
 **Version**: 0.2.0  
-**Status**: Production Ready with comprehensive examples and documentation
+**Status**: Production Ready with comprehensive examples, documentation, and test suite
 
 ---
 
 ## Recent Work Completed
+
+### State Space Exploration Improvements (January 2025)
+
+**Completed**:
+1. ✅ **Configurable Exploration Limits**
+   - Added `--max-states` and `--max-depth` flags to verify command
+   - Increased default limits: 50 → 5,000 states, 10 → 100 depth
+   - Supports unlimited exploration via 'infinity', 'unlimited', or -1
+   - Added warning messages when unlimited exploration is enabled
+   - Explorer algorithms respect unlimited limits (-1 means no limit)
+
+2. ✅ **Comprehensive Test Suite**
+   - Created `test-suite/` directory with 10 test specifications
+   - 14 test functions covering state space exploration correctness
+   - Tests verify: known state counts, parameterized actions, cycle detection,
+     transition coverage, state hashing uniqueness, boundary conditions,
+     and invariant preservation
+   - All tests passing ✅
+   - Documentation: README.md and TEST_SUITE_SUMMARY.md
+
+3. ✅ **Documentation Updates**
+   - Added comprehensive "State Space Exploration" section to Chapter 2
+   - Explains default limits, custom limits, and unlimited exploration
+   - Includes best practices, use cases, and consequences of each option
+   - Provides examples for different system sizes
+
+4. ✅ **Memory Optimization Planning**
+   - Created `TODO-Memory-optimisation.md` document
+   - Outlines three priority optimization strategies:
+     - Hash-Only Visited Set with LRU Cache
+     - State Compression for Large Collections
+     - Selective Path Storage
+   - Comprehensive verification approaches for each optimization
+   - Success criteria and implementation priority
+
+**Key Files Added**:
+- `test-suite/` directory with 10 test specifications
+- `test-suite/state_space_test.go` - 14 test functions (526 lines)
+- `test-suite/README.md` - Test suite documentation
+- `test-suite/TEST_SUITE_SUMMARY.md` - Test coverage summary
+- `TODO-Memory-optimisation.md` - Memory optimization strategy document
+
+**Key Files Modified**:
+- `cmd/spectre/commands.go` - Added flag parsing for max-states/max-depth
+- `internal/explore/explorer.go` - Updated limit checking for unlimited support
+- `spectre_book/02-language-overview.md` - Added state space exploration section
+
+### Module System Documentation (January 2025)
+
+**Completed**:
+1. ✅ **Chapter 7: Modules and Code Organization**
+   - Comprehensive example using elevator controller system
+   - Demonstrates file-level module imports
+   - Shows module declaration, visibility, and member access
+   - Explains import syntax (name-based and path-based)
+
+2. ✅ **Chapter 2 Module Section Updates**
+   - Expanded module section with file-level module details
+   - Explained one module per file requirement
+   - Documented import syntax and module resolution rules
+   - Added reference to Chapter 7 for detailed example
 
 ### Documentation and Examples (January 2025)
 
@@ -484,16 +548,22 @@ ADDRESSES.forall(addr => balances[addr] >= 0)
 ## Next Steps / TODO
 
 ### High Priority
-1. **Fix remaining example files** (7 files)
+1. **Memory Optimizations** (See `TODO-Memory-optimisation.md`):
+   - Hash-Only Visited Set with LRU Cache (Phase 1)
+   - State Compression for Large Collections (Phase 2)
+   - Selective Path Storage (Phase 3)
+   - Expected memory reduction: 30-90% depending on optimization
+
+2. **Fix remaining example files** (7 files):
    - Fix type inference for field access in lambdas
    - Verify record literal support in all contexts
    - Fix any syntax issues
 
-2. **Improve Map.get()**:
+3. **Improve Map.get()**:
    - Return `Option<Value>` instead of error
    - Implement Option type fully if not already done
 
-3. **Add more Map methods** (optional):
+4. **Add more Map methods** (optional):
    - `keys()` - Get all keys as Set
    - `values()` - Get all values as List
    - `remove(key)` - Remove entry
@@ -567,6 +637,14 @@ spectre/
 
 **Total**: 600+ test cases, all passing ✅
 
+### State Space Exploration Test Suite ✅
+- **Location**: `test-suite/` directory
+- **Test Specifications**: 10 test files covering various exploration scenarios
+- **Test Functions**: 14 comprehensive tests
+- **Coverage**: Known state counts, parameterized actions, cycle detection,
+  transition coverage, state hashing, boundary conditions, invariant preservation
+- **Status**: All 14 tests passing ✅
+
 ### Integration Tests
 - Example file parsing: 12/12 parse successfully ✅
 - Example file typechecking: 5/12 pass ⚠️
@@ -584,18 +662,22 @@ spectre/
 - ✅ `PACKAGING.md` - Packaging and distribution
 - ✅ `STATUS.md` - This file
 
-### Spectre Book (6 Chapters)
+### Spectre Book (7 Chapters)
 - ✅ `spectre_book/01-getting-started.md` - Installation and examples
-- ✅ `spectre_book/02-language-overview.md` - All language elements
+- ✅ `spectre_book/02-language-overview.md` - All language elements, state space exploration
 - ✅ `spectre_book/03-invariants-and-violations.md` - Invariant violations and fixes
 - ✅ `spectre_book/04-temporal-and-fairness-properties.md` - Temporal properties and fairness
 - ✅ `spectre_book/05-concurrent-systems-and-locking.md` - Concurrent systems example
 - ✅ `spectre_book/06-distributed-message-queue.md` - Message queue example
+- ✅ `spectre_book/07-modules-and-code-organization.md` - Module system with elevator controller example
 
 ### Documentation Needs
 - ⚠️ Update examples with Map methods usage
 - ⚠️ Add Map methods to language spec
 - ⚠️ Add troubleshooting section for common type errors
+
+### Planning Documents
+- ✅ `TODO-Memory-optimisation.md` - Memory optimization strategies and verification approaches
 
 ---
 
@@ -681,20 +763,24 @@ go build -o spectre ./cmd/spectre
 5. ✅ **Map Operations**: Full support for Map.put(), Map.get(), and indexing
 6. ✅ **Lambda Expressions**: Full support with type inference
 7. ✅ **Collection Methods**: Complete Set, List, and Map method implementations
-8. ✅ **Spectre Book**: 6 comprehensive chapters with examples
+8. ✅ **Spectre Book**: 7 comprehensive chapters with examples
 9. ✅ **Teaching Examples**: Violation and corrected versions for learning
 10. ✅ **Distributed Systems Examples**: Message queue and concurrent locking systems
 11. ✅ **Invariant Violation Examples**: Bank account and inventory systems
 12. ✅ **600+ Tests**: Comprehensive test coverage
-13. ✅ **CLI Tool**: Fully functional with all commands
-14. ✅ **Error Reporting**: User-friendly messages with stack traces
-15. ✅ **Verification Behavior**: Properly fails on invariant and temporal violations
+13. ✅ **State Space Exploration Test Suite**: 14 tests covering exploration correctness
+14. ✅ **Configurable Exploration Limits**: Support for custom and unlimited exploration
+15. ✅ **CLI Tool**: Fully functional with all commands and exploration flags
+16. ✅ **Error Reporting**: User-friendly messages with stack traces
+17. ✅ **Verification Behavior**: Properly fails on invariant and temporal violations
+18. ✅ **Module System**: File-level modules with comprehensive documentation
+19. ✅ **Memory Optimization Planning**: Comprehensive strategy document
 
 ---
 
 ## Version History
 
-- **v0.2.0** (January 2025): Documentation, Examples, and Verification Improvements
+- **v0.2.0** (January 2025): Documentation, Examples, Verification Improvements, and Test Suite
   - Created Spectre Book with 6 comprehensive chapters
   - Added teaching examples with violation and corrected versions:
     - Bank account system (invariant violations)
@@ -712,6 +798,13 @@ go build -o spectre ./cmd/spectre
   - Fixed action executor to properly handle require/ensure statements
   - Enhanced verify command to check temporal properties
   - Added counter-corrected.spec and counter-with-fairness.spec examples
+  - Added configurable state space exploration limits (--max-states, --max-depth)
+  - Increased default exploration limits (5,000 states, 100 depth)
+  - Added unlimited exploration support (infinity/unlimited/-1)
+  - Created comprehensive test suite (14 tests, 10 specifications)
+  - Added Chapter 7: Modules and Code Organization
+  - Updated Chapter 2 with state space exploration documentation
+  - Created memory optimization strategy document (TODO-Memory-optimisation.md)
 
 - **v0.1.0** (January 2025): Map methods implementation
   - Added Map.put() and Map.get() methods

@@ -48,22 +48,28 @@ func (fp *FileProcessor) ProcessFiles(filenames []string, processor func(string)
 
 			err := processor(file)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error processing %s: %v\n", file, err)
-				errors = append(errors, fmt.Errorf("%s: %w", file, err))
+				// Check if it's a verification failure (violations found) vs actual error
+				// For verification failures, the processor already printed the report, so don't duplicate
+				errStr := err.Error()
+				if strings.Contains(errStr, "verification failed") {
+					// This is just a verification failure with violations - already reported, so treat as success for summary
+					successCount++
+					// Don't add to errors - we want clean output
+				} else {
+					// Actual processing error - report it
+					fmt.Fprintf(os.Stderr, "Error processing %s: %v\n", file, err)
+					errors = append(errors, fmt.Errorf("%s: %w", file, err))
+				}
 			} else {
 				successCount++
 			}
 		}
 	}
 
-	// Report summary
+	// Only report summary if there were actual processing errors (not just verification failures)
 	if len(errors) > 0 {
 		fmt.Fprintf(os.Stderr, "\nSummary: %d file(s) succeeded, %d file(s) failed\n", successCount, len(errors))
 		return fmt.Errorf("processing failed for %d file(s)", len(errors))
-	}
-
-	if len(filenames) > 1 || successCount > 1 {
-		fmt.Printf("\nSummary: Successfully processed %d file(s)\n", successCount)
 	}
 
 	return nil

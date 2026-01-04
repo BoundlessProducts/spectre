@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 const Version = "0.1.0"
@@ -34,6 +35,13 @@ func main() {
 	}
 
 	if err := cmd.Run(args); err != nil {
+		// Check if it's a verification failure - if so, already reported, just exit
+		errStr := err.Error()
+		if strings.Contains(errStr, "verification failed") {
+			// Verification failures are already reported with clean output
+			os.Exit(1)
+		}
+		// For actual errors, show the error message
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

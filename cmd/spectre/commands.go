@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/akkeshavan/spectre/internal/lexer"
 	"github.com/akkeshavan/spectre/internal/parser"
 	"github.com/akkeshavan/spectre/internal/semantic"
+	"github.com/akkeshavan/spectre/internal/state"
 	"github.com/akkeshavan/spectre/internal/types"
 	"github.com/akkeshavan/spectre/pkg/ast"
 )
@@ -945,6 +947,119 @@ func runVerify(args []string) error {
 	explorer.SetMaxStates(maxStates)
 	explorer.SetVerbose(verbose)
 	
+	// Track violations for immediate reporting
+	invariantViolationsSet := make(map[string]bool) // Track which invariants have been reported
+	
+	// Set callback to report violations immediately when detected during exploration
+	explorer.SetInvariantViolationCallback(func(violation *explore.Violation) bool {
+		// Create a unique key for this violation
+		violationKey := fmt.Sprintf("%s:%s", violation.Invariant, violation.Description)
+		
+		// Skip if already reported
+		if invariantViolationsSet[violationKey] {
+			return true // Continue exploration
+		}
+		invariantViolationsSet[violationKey] = true
+		
+		// Report immediately with flushed output
+		fmt.Fprintf(os.Stderr, "\n[VIOLATION DETECTED] Invariant: %s\n", violation.Invariant)
+		fmt.Fprintf(os.Stderr, "  %s\n", violation.Description)
+		if violation.Path != nil && len(violation.Path) > 0 {
+			fmt.Fprintf(os.Stderr, "  Counterexample trace:\n")
+			for j, trans := range violation.Path {
+				if trans.Action != "" {
+					fmt.Fprintf(os.Stderr, "    %d. %s\n", j+1, trans.Action)
+				}
+			}
+		}
+		os.Stderr.Sync() // Force immediate output flush
+		
+		// Ask user if they want to continue
+		fmt.Fprintf(os.Stderr, "\nContinue exploration? (y/n): ")
+		os.Stderr.Sync()
+		reader := bufio.NewReader(os.Stdin)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			// On error, default to continue
+			return true
+		}
+		response = strings.TrimSpace(strings.ToLower(response))
+		return (response == "y" || response == "yes")
+	})
+	
+	// Set up temporal verification callback for incremental checking
+	constraintModel := sm.GetConstraintModel()
+	temporalProps := constraintModel.GetTemporalProperties()
+	if len(temporalProps) > 0 {
+		hasher := explore.NewStateHasher()
+		temporalVerifier := explore.NewTemporalVerifier(hasher, file)
+		temporalVerifier.SetStateMachine(sm)
+		
+		// Track temporal violations for immediate reporting
+		temporalViolationsSet := make(map[string]bool)
+		shouldContinueTemporal := true
+		
+		// Set callback for immediate temporal violation reporting
+		temporalVerifier.SetViolationCallback(func(result *explore.TemporalVerificationResult) {
+			if temporalViolationsSet[result.PropertyName] {
+				return
+			}
+			temporalViolationsSet[result.PropertyName] = true
+			
+			// Report immediately with flushed output
+			fmt.Fprintf(os.Stderr, "\n[VIOLATION DETECTED] Temporal Property: %s\n", result.PropertyName)
+			fmt.Fprintf(os.Stderr, "  %s\n", result.Violation.Description)
+			if result.Violation.Trace != nil && result.Violation.Trace.Length() > 0 {
+				fmt.Fprintf(os.Stderr, "  Counterexample trace:\n")
+				for j := 0; j < result.Violation.Trace.Length(); j++ {
+					action := result.Violation.Trace.GetAction(j)
+					if action != "" {
+						fmt.Fprintf(os.Stderr, "    %d. %s\n", j+1, action)
+					}
+				}
+			}
+			os.Stderr.Sync()
+			
+			// Ask user if they want to continue
+			fmt.Fprintf(os.Stderr, "\nContinue exploration? (y/n): ")
+			os.Stderr.Sync()
+			reader := bufio.NewReader(os.Stdin)
+			response, err := reader.ReadString('\n')
+			if err != nil {
+				shouldContinueTemporal = true
+				return
+			}
+			response = strings.TrimSpace(strings.ToLower(response))
+			shouldContinueTemporal = (response == "y" || response == "yes")
+		})
+		
+		// Set incremental temporal verification callback (check every 5 states)
+		// Capture shouldContinueTemporal in closure to track user response
+		shouldContinueTemporalPtr := &shouldContinueTemporal
+		explorer.SetTemporalVerificationCallback(func(graph *explore.TransitionGraph, initialStates []*state.State) bool {
+			// Check each temporal property incrementally
+			for _, prop := range temporalProps {
+				// Skip if already found violation for this property
+				if temporalViolationsSet[prop.Name] {
+					continue
+				}
+				
+				verificationResult, err := temporalVerifier.VerifyTemporalProperty(prop, graph, initialStates)
+				if err != nil {
+					// Skip on error, continue checking
+					continue
+				}
+				
+				if !verificationResult.Holds {
+					// Violation detected - callback already handled reporting and user prompt
+					// Return the user's response (whether to continue)
+					return *shouldContinueTemporalPtr
+				}
+			}
+			return true // Continue exploration
+		}, 5) // Check every 5 states
+	}
+	
 	// Warn if unlimited exploration is enabled
 	if maxStates == -1 || maxDepth == -1 {
 		fmt.Fprintf(os.Stderr, "Warning: Unlimited exploration enabled (--max-states: %v, --max-depth: %v)\n", 
@@ -973,79 +1088,82 @@ func runVerify(args []string) error {
 	hasViolations := len(result.Violations) > 0
 	temporalViolations := []*explore.TemporalVerificationResult{}
 	
-	// Verify temporal properties
-	constraintModel := sm.GetConstraintModel()
-	temporalProps := constraintModel.GetTemporalProperties()
+	// Final verification of temporal properties (only if not already checked incrementally)
+	// Incremental verification during exploration already checks and reports violations,
+	// but we do a final check to catch any violations that might have been missed
+	// No user prompts in final verification - just collect violations for final report
 	if len(temporalProps) > 0 {
-		hasher := explore.NewStateHasher()
-		temporalVerifier := explore.NewTemporalVerifier(hasher, file)
-		temporalVerifier.SetStateMachine(sm) // Set state machine for fairness checking
+		hasherFinal := explore.NewStateHasher()
+		temporalVerifierFinal := explore.NewTemporalVerifier(hasherFinal, file)
+		temporalVerifierFinal.SetStateMachine(sm)
+		
+		// Track violations for final reporting (only report if not already reported incrementally)
+		temporalViolationsSetFinal := make(map[string]bool)
+		
+		// No callback for final verification - we just collect violations for the final report
+		// (No user prompts at the end)
 		
 		for _, prop := range temporalProps {
-			verificationResult, err := temporalVerifier.VerifyTemporalProperty(prop, result.TransitionGraph, result.InitialStates)
+			verificationResult, err := temporalVerifierFinal.VerifyTemporalProperty(prop, result.TransitionGraph, result.InitialStates)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error verifying temporal property %s: %v\n", prop.Name, err)
+				// Skip on error, continue checking
 				continue
 			}
 			if !verificationResult.Holds {
-				hasViolations = true
-				temporalViolations = append(temporalViolations, verificationResult)
+				// If not already reported incrementally, add it now for final report
+				if !temporalViolationsSetFinal[verificationResult.PropertyName] {
+					temporalViolationsSetFinal[verificationResult.PropertyName] = true
+					hasViolations = true
+					temporalViolations = append(temporalViolations, verificationResult)
+				}
 			}
 		}
 	}
 	
+	// Final report
+	fmt.Printf("Traversed %d states\n", result.StatesExplored)
+	
 	if hasViolations {
-		fmt.Fprintf(os.Stderr, "Verification failed: %d violation(s) found\n", len(result.Violations)+len(temporalViolations))
+		fmt.Printf("\nViolations:\n")
 		
 		// Report invariant violations
-		for i, violation := range result.Violations {
-			fmt.Fprintf(os.Stderr, "\nViolation %d (Invariant):\n", i+1)
-			fmt.Fprintf(os.Stderr, "  %s\n", violation.Description)
+		violationNum := 1
+		for _, violation := range result.Violations {
+			fmt.Printf("%d. Invariant: %s\n", violationNum, violation.Description)
 			if len(violation.Path) > 0 {
-				fmt.Fprintf(os.Stderr, "  Path:\n")
-				for j, transition := range violation.Path {
-					fmt.Fprintf(os.Stderr, "    %d. %s\n", j+1, transition.Action)
+				fmt.Printf("   Path: ")
+				actions := make([]string, 0, len(violation.Path))
+				for _, transition := range violation.Path {
+					if transition.Action != "" {
+						actions = append(actions, transition.Action)
+					}
 				}
+				fmt.Printf("%s\n", strings.Join(actions, " → "))
 			}
+			violationNum++
 		}
 		
 		// Report temporal property violations
-		for i, violation := range temporalViolations {
-			fmt.Fprintf(os.Stderr, "\nViolation %d (Temporal Property: %s):\n", len(result.Violations)+i+1, violation.PropertyName)
-			fmt.Fprintf(os.Stderr, "  %s\n", violation.Violation.Description)
+		for _, violation := range temporalViolations {
+			fmt.Printf("%d. Temporal Property (%s): %s\n", violationNum, violation.PropertyName, violation.Violation.Description)
 			if violation.Violation.Trace != nil && violation.Violation.Trace.Length() > 0 {
-				fmt.Fprintf(os.Stderr, "  Counterexample trace:\n")
+				fmt.Printf("   Counterexample: ")
+				actions := make([]string, 0, violation.Violation.Trace.Length())
 				for j := 0; j < violation.Violation.Trace.Length(); j++ {
-					state := violation.Violation.Trace.GetState(j)
 					action := violation.Violation.Trace.GetAction(j)
 					if action != "" {
-						fmt.Fprintf(os.Stderr, "    %d. %s\n", j+1, action)
-					}
-					if verbose && state != nil {
-						for name, value := range state.Variables {
-							fmt.Fprintf(os.Stderr, "       %s = %s\n", name, value.String())
-						}
+						actions = append(actions, action)
 					}
 				}
+				fmt.Printf("%s\n", strings.Join(actions, " → "))
 			}
-			if len(violation.Violation.Cycles) > 0 {
-				fmt.Fprintf(os.Stderr, "  Blocking cycles: %d\n", len(violation.Violation.Cycles))
-			}
+			violationNum++
 		}
 		
 		return fmt.Errorf("verification failed with %d violation(s)", len(result.Violations)+len(temporalViolations))
 	}
 
-	fmt.Printf("✓ Verification passed for %s\n", filename)
-	fmt.Printf("  Explored %d states\n", result.StatesExplored)
-	if len(temporalProps) > 0 {
-		fmt.Printf("  Verified %d temporal propert%s\n", len(temporalProps), func() string {
-			if len(temporalProps) == 1 {
-				return "y"
-			}
-			return "ies"
-		}())
-	}
+	fmt.Printf("Found no violations.\n")
 	return nil
 	})
 }

@@ -2,6 +2,7 @@ package exec
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/akkeshavan/spectre/internal/eval"
 	"github.com/akkeshavan/spectre/internal/state"
@@ -114,7 +115,14 @@ func (sm *StateMachine) GetAvailableActions(currentState *state.State) ([]string
 		eval.RegisterConstants(env, f, allFiles...)
 	}
 
+	// Extract and sort action names for deterministic iteration order
+	actionNames := make([]string, 0, len(sm.actionModel.Actions))
 	for actionName := range sm.actionModel.Actions {
+		actionNames = append(actionNames, actionName)
+	}
+	sort.Strings(actionNames)
+
+	for _, actionName := range actionNames {
 		actionInfo, exists := sm.actionModel.GetAction(actionName)
 		if !exists {
 			continue
@@ -175,7 +183,14 @@ func (sm *StateMachine) GetAvailableActionsWithArgs(currentState *state.State) (
 		eval.RegisterConstants(env, f, allFiles...)
 	}
 
+	// Extract and sort action names for deterministic iteration order
+	actionNames := make([]string, 0, len(sm.actionModel.Actions))
 	for actionName := range sm.actionModel.Actions {
+		actionNames = append(actionNames, actionName)
+	}
+	sort.Strings(actionNames)
+
+	for _, actionName := range actionNames {
 		actionInfo, exists := sm.actionModel.GetAction(actionName)
 		if !exists {
 			continue
