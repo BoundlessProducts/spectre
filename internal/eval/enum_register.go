@@ -5,15 +5,27 @@ import (
 )
 
 // RegisterEnumTypes registers all enum types from a parsed file into an environment
+// This includes enums from top-level declarations and from within modules
 func RegisterEnumTypes(env *Environment, file *ast.File) {
-	for _, decl := range file.Decls {
-		if enumDecl, ok := decl.(*ast.EnumDecl); ok {
+	var registerFromDecl func(ast.Decl)
+	registerFromDecl = func(d ast.Decl) {
+		switch decl := d.(type) {
+		case *ast.EnumDecl:
 			enumDef := &EnumTypeDef{
-				Name:   enumDecl.Name,
-				Values: enumDecl.Values,
+				Name:   decl.Name,
+				Values: decl.Values,
 			}
-			env.SetEnumType(enumDecl.Name, enumDef)
+			env.SetEnumType(decl.Name, enumDef)
+		case *ast.ModuleDecl:
+			// Also register enums from inside modules
+			for _, moduleDecl := range decl.Decls {
+				registerFromDecl(moduleDecl)
+			}
 		}
+	}
+	
+	for _, decl := range file.Decls {
+		registerFromDecl(decl)
 	}
 }
 

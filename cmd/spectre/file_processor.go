@@ -36,7 +36,8 @@ func (fp *FileProcessor) ProcessFiles(filenames []string, processor func(string)
 		// Expand if it's a directory
 		files, err := fp.expandFiles(filename)
 		if err != nil {
-			errors = append(errors, fmt.Errorf("error expanding %s: %w", filename, err))
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			errors = append(errors, err)
 			continue
 		}
 
@@ -47,6 +48,7 @@ func (fp *FileProcessor) ProcessFiles(filenames []string, processor func(string)
 
 			err := processor(file)
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error processing %s: %v\n", file, err)
 				errors = append(errors, fmt.Errorf("%s: %w", file, err))
 			} else {
 				successCount++
@@ -80,7 +82,7 @@ func (fp *FileProcessor) expandFiles(filename string) ([]string, error) {
 
 	// Check if file exists
 	if _, err := os.Stat(filename); err != nil {
-		return nil, fmt.Errorf("file not found: %s", filename)
+		return nil, fmt.Errorf("File not found - %s", filename)
 	}
 
 	// Check if it's a .spec file

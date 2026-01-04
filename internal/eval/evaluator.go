@@ -52,6 +52,8 @@ func (e *Evaluator) Eval(expr ast.Expr) (state.Value, error) {
 		return e.evalSetLiteral(ex)
 	case *ast.ListLiteral:
 		return e.evalListLiteral(ex)
+	case *ast.RecordLiteral:
+		return e.evalRecordLiteral(ex)
 	default:
 		return nil, fmt.Errorf("unsupported expression type: %T", expr)
 	}
@@ -639,9 +641,19 @@ func (e *Evaluator) evalSelectorExpr(expr *ast.SelectorExpr) (state.Value, error
 		return nil, fmt.Errorf("error evaluating object: %w", err)
 	}
 	
-	// For now, selector expressions are only used in method calls
-	// Field access (record.field) will be handled separately
-	// Return the selector expression wrapped so it can be called
+	// Check if this is record field access (record.field)
+	// Records are stored as MapValue with string keys
+	if mapVal, ok := obj.(*state.MapValue); ok {
+		// This is a record - extract the field value
+		fieldKey := state.NewStringValue(expr.Sel)
+		fieldValue, exists := mapVal.Get(fieldKey)
+		if !exists {
+			return nil, fmt.Errorf("field %s not found in record", expr.Sel)
+		}
+		return fieldValue, nil
+	}
+	
+	// Otherwise, this is a method call - return the selector expression wrapped so it can be called
 	return &SelectorValue{
 		Object: obj,
 		Method:  expr.Sel,

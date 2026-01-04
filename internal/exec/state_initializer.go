@@ -14,14 +14,28 @@ type StateInitializer struct {
 	initialStateModel *state.InitialStateModel
 	evaluator         *eval.Evaluator
 	file              *ast.File // Keep reference to file for enum type registration
+	additionalFiles   []*ast.File // Additional files (imported modules) for constant/enum registration
+}
+
+// getAllFiles returns all files including the main file and additional files
+func (si *StateInitializer) getAllFiles() []*ast.File {
+	return append([]*ast.File{si.file}, si.additionalFiles...)
 }
 
 // NewStateInitializer creates a new state initializer
-func NewStateInitializer(variableModel *state.VariableModel, initialStateModel *state.InitialStateModel, file *ast.File) *StateInitializer {
+// additionalFiles can be provided to register constants/enums from imported modules
+func NewStateInitializer(variableModel *state.VariableModel, initialStateModel *state.InitialStateModel, file *ast.File, additionalFiles ...*ast.File) *StateInitializer {
 	// Create an environment for evaluating initial state expressions
 	env := eval.NewEnvironment()
-	// Register enum types
-	eval.RegisterEnumTypes(env, file)
+	// Register enum types from all files
+	allFiles := append([]*ast.File{file}, additionalFiles...)
+	for _, f := range allFiles {
+		eval.RegisterEnumTypes(env, f)
+	}
+	// Register constants from all files
+	for _, f := range allFiles {
+		eval.RegisterConstants(env, f, allFiles...)
+	}
 	evaluator := eval.NewEvaluator(env)
 
 	return &StateInitializer{
@@ -29,6 +43,7 @@ func NewStateInitializer(variableModel *state.VariableModel, initialStateModel *
 		initialStateModel: initialStateModel,
 		evaluator:         evaluator,
 		file:              file,
+		additionalFiles:   additionalFiles,
 	}
 }
 
@@ -52,8 +67,12 @@ func (si *StateInitializer) generateDeterministicInitialState() ([]*state.State,
 
 	// Create an environment that can access state variables
 	env := eval.NewEnvironment()
-	// Register enum types
-	eval.RegisterEnumTypes(env, si.file)
+	// Register enum types and constants from all files
+	allFiles := si.getAllFiles()
+	for _, f := range allFiles {
+		eval.RegisterEnumTypes(env, f)
+		eval.RegisterConstants(env, f, allFiles...)
+	}
 
 	// Evaluate each assignment in the init block
 	for _, stmt := range initState.Body.Statements {
@@ -110,8 +129,12 @@ func (si *StateInitializer) generateOneOfInitialStates() ([]*state.State, error)
 
 		// Create an environment that can access state variables
 		env := eval.NewEnvironment()
-		// Register enum types
-		eval.RegisterEnumTypes(env, si.file)
+		// Register enum types and constants from all files
+		allFiles := si.getAllFiles()
+		for _, f := range allFiles {
+			eval.RegisterEnumTypes(env, f)
+			eval.RegisterConstants(env, f, allFiles...)
+		}
 
 		// Evaluate each assignment in this option
 		for _, stmt := range option.Statements {

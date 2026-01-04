@@ -15,13 +15,24 @@ type ActionExecutor struct {
 	constraintModel *state.ConstraintModel
 	evaluator       *eval.Evaluator
 	file            *ast.File // Keep reference to file for enum type registration
+	additionalFiles []*ast.File // Additional files (imported modules) for constant/enum registration
+}
+
+// getAllFiles returns all files including the main file and additional files
+func (ae *ActionExecutor) getAllFiles() []*ast.File {
+	return append([]*ast.File{ae.file}, ae.additionalFiles...)
 }
 
 // NewActionExecutor creates a new action executor
-func NewActionExecutor(variableModel *state.VariableModel, actionModel *state.ActionModel, constraintModel *state.ConstraintModel, file *ast.File) *ActionExecutor {
+// additionalFiles can be provided to register constants/enums from imported modules
+func NewActionExecutor(variableModel *state.VariableModel, actionModel *state.ActionModel, constraintModel *state.ConstraintModel, file *ast.File, additionalFiles ...*ast.File) *ActionExecutor {
 	env := eval.NewEnvironment()
-	// Register enum types
-	eval.RegisterEnumTypes(env, file)
+	// Register enum types and constants from all files
+	allFiles := append([]*ast.File{file}, additionalFiles...)
+	for _, f := range allFiles {
+		eval.RegisterEnumTypes(env, f)
+		eval.RegisterConstants(env, f, allFiles...)
+	}
 	evaluator := eval.NewEvaluator(env)
 
 	return &ActionExecutor{
@@ -30,6 +41,7 @@ func NewActionExecutor(variableModel *state.VariableModel, actionModel *state.Ac
 		constraintModel: constraintModel,
 		evaluator:       evaluator,
 		file:            file,
+		additionalFiles: additionalFiles,
 	}
 }
 
@@ -46,8 +58,12 @@ func (ae *ActionExecutor) ExecuteAction(actionName string, currentState *state.S
 
 	// Create an environment with current state values and action parameters
 	env := eval.NewEnvironment()
-	// Register enum types
-	eval.RegisterEnumTypes(env, ae.file)
+	// Register enum types and constants from all files
+	allFiles := ae.getAllFiles()
+	for _, f := range allFiles {
+		eval.RegisterEnumTypes(env, f)
+		eval.RegisterConstants(env, f, allFiles...)
+	}
 
 	// Add current state variables to environment
 	for varName, varValue := range currentState.Variables {
@@ -157,8 +173,12 @@ func (ae *ActionExecutor) CanExecute(actionName string, currentState *state.Stat
 
 	// Create environment with current state values
 	env := eval.NewEnvironment()
-	// Register enum types
-	eval.RegisterEnumTypes(env, ae.file)
+	// Register enum types and constants from all files
+	allFiles := ae.getAllFiles()
+	for _, f := range allFiles {
+		eval.RegisterEnumTypes(env, f)
+		eval.RegisterConstants(env, f, allFiles...)
+	}
 	for varName, varValue := range currentState.Variables {
 		env.SetVariable(varName, varValue)
 	}

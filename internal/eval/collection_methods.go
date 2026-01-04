@@ -482,6 +482,32 @@ func (e *Evaluator) evalSetLiteral(expr *ast.SetLiteral) (state.Value, error) {
 	return result, nil
 }
 
+// evalRecordLiteral evaluates a record literal: { field1: value1, field2: value2, ... }
+func (e *Evaluator) evalRecordLiteral(expr *ast.RecordLiteral) (state.Value, error) {
+	result := state.NewMapValue()
+	
+	for _, field := range expr.Fields {
+		if field.Spread {
+			// Handle spread fields: ...identifier
+			// For now, we don't support spread fields in evaluation
+			return nil, fmt.Errorf("spread fields in record literals not yet supported")
+		}
+		
+		// Evaluate the field value
+		value, err := e.Eval(field.Value)
+		if err != nil {
+			return nil, fmt.Errorf("error evaluating field %s: %w", field.Name, value)
+		}
+		
+		// Store as key-value pair in the map
+		// Key is a string literal for the field name
+		keyValue := state.NewStringValue(field.Name)
+		result.Put(keyValue, value)
+	}
+	
+	return result, nil
+}
+
 // evalListLiteral evaluates a list literal: [ value1, value2, ... ]
 func (e *Evaluator) evalListLiteral(expr *ast.ListLiteral) (state.Value, error) {
 	result := state.NewListValue()

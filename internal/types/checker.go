@@ -23,14 +23,21 @@ func (e *TypeError) Error() string {
 type Checker struct {
 	env    *Environment
 	errors []*TypeError
+	modules map[string]*ast.ModuleDecl // Module name -> Module declaration (for module-qualified access)
 }
 
 // NewChecker creates a new type checker with the given environment
 func NewChecker(env *Environment) *Checker {
 	return &Checker{
-		env:    env,
-		errors: []*TypeError{},
+		env:     env,
+		errors:  []*TypeError{},
+		modules: make(map[string]*ast.ModuleDecl),
 	}
+}
+
+// SetModules sets the modules map for module-qualified name resolution
+func (c *Checker) SetModules(modules map[string]*ast.ModuleDecl) {
+	c.modules = modules
 }
 
 // Errors returns all type errors found during checking
@@ -237,7 +244,16 @@ func (c *Checker) checkIdent(ident *ast.Ident) Type {
 	// Check if it's a variable
 	if typ, found := c.env.LookupVariable(name); found {
 		// Resolve any named types in the type (e.g., Set<User> -> Set<Record{...}>)
-		return c.resolveNamedTypesInType(typ)
+		// Multiple passes to ensure deep resolution
+		resolved := typ
+		for i := 0; i < 5; i++ {
+			prevResolved := resolved
+			resolved = c.resolveNamedTypesInType(resolved)
+			if resolved == prevResolved {
+				break
+			}
+		}
+		return resolved
 	}
 
 	// Check if it's a constant
@@ -363,57 +379,144 @@ func (c *Checker) checkUnaryExpr(expr *ast.UnaryExpr) Type {
 
 // checkCallExpr checks a function call expression
 func (c *Checker) checkCallExpr(expr *ast.CallExpr) Type {
-	// Check arguments first (before checking function, to get better error messages)
-	argTypes := make([]Type, len(expr.Args))
-	for i, arg := range expr.Args {
-		argTypes[i] = c.CheckExpression(arg)
-		if argTypes[i] == nil {
-			return nil // Error already reported
-		}
-	}
-
 	// Try to find function signature
 	// If Fun is a SelectorExpr, extract the method name
 	var funcName string
+	var receiverType Type
+	needsLambdaInference := false
+	var lambda *ast.LambdaExpr
+	
 	if sel, ok := expr.Fun.(*ast.SelectorExpr); ok {
 		funcName = sel.Sel
 		
 		// Check if it's a static method call (Set.empty(), Set.of(), etc.)
 		if ident, ok := sel.X.(*ast.Ident); ok {
 			if ident.Name == "Set" || ident.Name == "List" || ident.Name == "Map" || ident.Name == "Option" {
-				// Static method call on collection type
+				// Static method call on collection type - check arguments normally
+				argTypes := make([]Type, len(expr.Args))
+				for i, arg := range expr.Args {
+					argTypes[i] = c.CheckExpression(arg)
+					if argTypes[i] == nil {
+						return nil // Error already reported
+					}
+				}
 				return c.checkStaticMethodCall(ident.Name, funcName, argTypes, expr.Pos())
+			}
+			
+			// Check if it's a module-qualified function call (e.g., ControllerModule.distance(...))
+			if moduleDecl, found := c.modules[ident.Name]; found {
+				// Look for the function in the module's declarations
+				for _, decl := range moduleDecl.Decls {
+					if funcDecl, ok := decl.(*ast.FunctionDecl); ok {
+						if funcDecl.Name == funcName && funcDecl.Visibility == ast.Public {
+							// Build function signature
+							params := make([]Type, len(funcDecl.Parameters))
+							for i, param := range funcDecl.Parameters {
+								paramType, err := c.resolveType(param.Type)
+								if err == nil {
+									params[i] = paramType
+								}
+							}
+							returnType, err := c.resolveType(funcDecl.ReturnType)
+							if err == nil {
+								// Check arguments
+								argTypes := make([]Type, len(expr.Args))
+								for i, arg := range expr.Args {
+									argTypes[i] = c.CheckExpression(arg)
+									if argTypes[i] == nil {
+										return nil
+									}
+								}
+								
+								// Check argument count and types
+								if len(argTypes) != len(params) {
+									c.addError(expr.Pos(), "function %s.%s expects %d arguments, got %d",
+										ident.Name, funcName, len(params), len(argTypes))
+									return nil
+								}
+								
+								for i, argType := range argTypes {
+									if !IsAssignable(argType, params[i]) {
+										c.addError(expr.Pos(), "argument %d: cannot assign %s to %s",
+											i+1, argType.String(), params[i].String())
+										return nil
+									}
+								}
+								
+								return returnType
+							}
+						}
+					}
+				}
+				c.addError(expr.Pos(), "function %s not found in module %s or not public",
+					funcName, ident.Name)
+				return nil
 			}
 		}
 		
-		// Instance method call - check the receiver type
-		receiverType := c.CheckExpression(sel.X)
+		// Instance method call - check the receiver type first
+		receiverType = c.CheckExpression(sel.X)
 		if receiverType == nil {
 			return nil
 		}
 		
 		// Resolve any named types in the receiver type (e.g., Set<User> -> Set<Record{...}>)
-		receiverType = c.resolveNamedTypesInType(receiverType)
-		
-		// Handle method calls with lambda type inference
-		if len(expr.Args) > 0 {
-			// Check if first argument is a lambda that needs type inference
-			if lambda, ok := expr.Args[0].(*ast.LambdaExpr); ok {
-				// Infer lambda parameter types from method context
-				inferredLambdaType := c.inferLambdaTypeFromMethod(receiverType, funcName, lambda, argTypes[0])
-				if inferredLambdaType != nil {
-					// Re-check the lambda with inferred types
-					// Create a new checker with the same environment to re-check the lambda
-					lambdaChecker := &Checker{env: c.env, errors: []*TypeError{}}
-					recheckedLambdaType := lambdaChecker.checkLambdaExprWithExpected(lambda, inferredLambdaType)
-					// Merge errors from lambda re-checking
-					c.errors = append(c.errors, lambdaChecker.errors...)
-					// Update argTypes with the properly type-checked lambda
-					argTypes[0] = recheckedLambdaType
-				}
+		// Multiple passes to ensure deep resolution
+		for i := 0; i < 3; i++ {
+			resolved := c.resolveNamedTypesInType(receiverType)
+			if resolved == receiverType {
+				break
 			}
+			receiverType = resolved
 		}
 		
+		// Check if first argument is a lambda that needs type inference
+		if len(expr.Args) > 0 {
+			if lambdaExpr, ok := expr.Args[0].(*ast.LambdaExpr); ok {
+				needsLambdaInference = true
+				lambda = lambdaExpr
+			}
+		}
+	}
+	
+	// Check arguments - but if we need lambda inference, do it first
+	argTypes := make([]Type, len(expr.Args))
+	if needsLambdaInference && lambda != nil {
+		// Infer lambda parameter types from method context before checking arguments
+		inferredLambdaType := c.inferLambdaTypeFromMethod(receiverType, funcName, lambda, nil)
+		if inferredLambdaType != nil {
+			// Check the lambda with inferred types
+			lambdaChecker := &Checker{env: c.env, errors: []*TypeError{}}
+			recheckedLambdaType := lambdaChecker.checkLambdaExprWithExpected(lambda, inferredLambdaType)
+			// Merge errors from lambda re-checking
+			c.errors = append(c.errors, lambdaChecker.errors...)
+			// Use the properly type-checked lambda
+			argTypes[0] = recheckedLambdaType
+		} else {
+			// Fallback: check lambda without inference
+			argTypes[0] = c.CheckExpression(expr.Args[0])
+			if argTypes[0] == nil {
+				return nil
+			}
+		}
+		// Check remaining arguments normally
+		for i := 1; i < len(expr.Args); i++ {
+			argTypes[i] = c.CheckExpression(expr.Args[i])
+			if argTypes[i] == nil {
+				return nil // Error already reported
+			}
+		}
+	} else {
+		// No lambda inference needed - check all arguments normally
+		for i, arg := range expr.Args {
+			argTypes[i] = c.CheckExpression(arg)
+			if argTypes[i] == nil {
+				return nil // Error already reported
+			}
+		}
+	}
+	
+	if _, ok := expr.Fun.(*ast.SelectorExpr); ok {
 		// Handle known collection methods
 		return c.checkMethodCall(receiverType, funcName, argTypes, expr.Pos())
 	} else if ident, ok := expr.Fun.(*ast.Ident); ok {
@@ -473,6 +576,46 @@ func (c *Checker) checkCallExpr(expr *ast.CallExpr) Type {
 
 // checkSelectorExpr checks a field/method selection expression
 func (c *Checker) checkSelectorExpr(expr *ast.SelectorExpr) Type {
+	// First check if it's a module-qualified name (e.g., ControllerModule.sameDirection)
+	if ident, ok := expr.X.(*ast.Ident); ok {
+		if moduleDecl, found := c.modules[ident.Name]; found {
+			// Look for the member (constant or function) in the module's declarations
+			for _, decl := range moduleDecl.Decls {
+				switch d := decl.(type) {
+				case *ast.ConstantDecl:
+					if d.Name == expr.Sel && d.Visibility == ast.Public {
+						// Resolve the constant's type
+						resolvedType, err := c.resolveType(d.Type)
+						if err == nil {
+							return resolvedType
+						}
+					}
+				case *ast.FunctionDecl:
+					if d.Name == expr.Sel && d.Visibility == ast.Public {
+						// Build function signature
+						params := make([]Type, len(d.Parameters))
+						for i, param := range d.Parameters {
+							paramType, err := c.resolveType(param.Type)
+							if err == nil {
+								params[i] = paramType
+							}
+						}
+						returnType, err := c.resolveType(d.ReturnType)
+						if err == nil {
+							return &Function{
+								Params:     params,
+								ReturnType: returnType,
+							}
+						}
+					}
+				}
+			}
+			c.addError(expr.Pos(), "member %s not found in module %s or not public",
+				expr.Sel, ident.Name)
+			return nil
+		}
+	}
+
 	xType := c.CheckExpression(expr.X)
 
 	if xType == nil {
@@ -641,8 +784,14 @@ func (c *Checker) checkLambdaExprWithExpected(expr *ast.LambdaExpr, expectedType
 		} else if expectedType != nil && i < len(expectedType.Params) {
 			// Infer from expected type
 			paramType = expectedType.Params[i]
-			// Resolve any named types in the parameter type
-			paramType = c.resolveNamedTypesInType(paramType)
+			// Resolve any named types in the parameter type (multiple passes)
+			for j := 0; j < 5; j++ {
+				resolved := c.resolveNamedTypesInType(paramType)
+				if resolved == paramType {
+					break
+				}
+				paramType = resolved
+			}
 		} else {
 			// Cannot infer - this will cause an error later
 			// For now, use a placeholder
@@ -681,7 +830,15 @@ func (c *Checker) inferLambdaTypeFromMethod(receiverType Type, methodName string
 			// Set<T>.filter/map/etc. expects lambda: T => ...
 			if len(lambda.Params) == 1 && lambda.Params[0].Type == nil {
 				// Resolve the element type (in case it's a named type)
-				elementType := c.resolveNamedTypesInType(setType.Element)
+				// Multiple passes to ensure deep resolution
+				elementType := setType.Element
+				for i := 0; i < 3; i++ {
+					resolved := c.resolveNamedTypesInType(elementType)
+					if resolved == elementType {
+						break
+					}
+					elementType = resolved
+				}
 				// Infer parameter type from set element type
 				expectedFunc := &Function{
 					Params:     []Type{elementType},
@@ -698,7 +855,15 @@ func (c *Checker) inferLambdaTypeFromMethod(receiverType Type, methodName string
 			// List<T>.filter/map/etc. expects lambda: T => ...
 			if len(lambda.Params) == 1 && lambda.Params[0].Type == nil {
 				// Resolve the element type (in case it's a named type)
-				elementType := c.resolveNamedTypesInType(listType.Element)
+				// Multiple passes to ensure deep resolution
+				elementType := listType.Element
+				for i := 0; i < 3; i++ {
+					resolved := c.resolveNamedTypesInType(elementType)
+					if resolved == elementType {
+						break
+					}
+					elementType = resolved
+				}
 				expectedFunc := &Function{
 					Params:     []Type{elementType},
 					ReturnType: &Primitive{Kind: Bool},
@@ -1019,13 +1184,29 @@ func (c *Checker) resolveNamedTypesInType(typ Type) Type {
 	case *Named:
 		// If it's a named type, try to resolve it
 		if resolved, found := c.env.LookupType(t.Name); found {
-			return c.resolveNamedTypesInType(resolved)
+			// Resolve recursively to handle nested named types
+			// Use multiple passes to ensure deep resolution
+			resolvedType := resolved
+			for i := 0; i < 5; i++ {
+				prevResolved := resolvedType
+				resolvedType = c.resolveNamedTypesInType(resolvedType)
+				if resolvedType == prevResolved {
+					break
+				}
+			}
+			return resolvedType
 		}
-		// If not found in environment, it might be a primitive or built-in type
-		// Try to resolve it as a primitive
-		if prim, err := FromPrimitiveName(t.Name); err == nil {
-			return prim
+		// If it has a Base type, try resolving that
+		if t.Base != nil {
+			resolvedBase := c.resolveNamedTypesInType(t.Base)
+			if resolvedBase != t.Base {
+				return resolvedBase
+			}
 		}
+		// Don't try to resolve as primitive - if it's not in the environment,
+		// it should be reported as an error, not silently converted to int
+		// Return the original Named type if we can't resolve it
+		// This allows the error to be reported later during type checking
 		return typ
 	default:
 		// Primitive types, records, etc. don't need resolution

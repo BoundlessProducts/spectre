@@ -3,6 +3,7 @@ package exec
 import (
 	"fmt"
 
+	"github.com/akkeshavan/spectre/internal/eval"
 	"github.com/akkeshavan/spectre/internal/state"
 	"github.com/akkeshavan/spectre/pkg/ast"
 )
@@ -19,7 +20,8 @@ type StateMachine struct {
 }
 
 // NewStateMachine creates a new state machine from a parsed file
-func NewStateMachine(file *ast.File) (*StateMachine, error) {
+// additionalFiles can be provided to register constants/enums from imported modules
+func NewStateMachine(file *ast.File, additionalFiles ...*ast.File) (*StateMachine, error) {
 	vm := state.NewVariableModel(file)
 	ism, err := state.NewInitialStateModel(file)
 	if err != nil {
@@ -29,14 +31,17 @@ func NewStateMachine(file *ast.File) (*StateMachine, error) {
 	am := state.NewActionModel(file)
 	cm := state.NewConstraintModel(file, am)
 
+	// Pass all files (including imported modules) to components for constant/enum registration
+	allFiles := append([]*ast.File{file}, additionalFiles...)
+	
 	return &StateMachine{
 		variableModel:     vm,
 		initialStateModel: ism,
 		actionModel:       am,
 		constraintModel:   cm,
-		initializer:       NewStateInitializer(vm, ism, file),
-		executor:          NewActionExecutor(vm, am, cm, file),
-		validator:         NewStateValidator(cm, file),
+		initializer:       NewStateInitializer(vm, ism, file, allFiles...),
+		executor:          NewActionExecutor(vm, am, cm, file, allFiles...),
+		validator:         NewStateValidator(cm, file, allFiles...),
 	}, nil
 }
 
@@ -97,17 +102,121 @@ func (sm *StateMachine) ExecuteAction(actionName string, currentState *state.Sta
 }
 
 // GetAvailableActions returns all actions that can be executed in the current state
+// For parameterized actions, it generates argument combinations and checks which ones are valid
 func (sm *StateMachine) GetAvailableActions(currentState *state.State) ([]string, error) {
 	var available []string
 
-	for actionName := range sm.actionModel.Actions {
-		canExecute, err := sm.executor.CanExecute(actionName, currentState, nil)
-		if err != nil {
-			return nil, fmt.Errorf("error checking action %s: %w", actionName, err)
-		}
+	// Create environment to access constants for argument generation
+	env := eval.NewEnvironment()
+	allFiles := sm.executor.getAllFiles()
+	for _, f := range allFiles {
+		eval.RegisterEnumTypes(env, f)
+		eval.RegisterConstants(env, f, allFiles...)
+	}
 
-		if canExecute {
-			available = append(available, actionName)
+	for actionName := range sm.actionModel.Actions {
+		actionInfo, exists := sm.actionModel.GetAction(actionName)
+		if !exists {
+			continue
+		}
+		
+		if len(actionInfo.Parameters) == 0 {
+			// Non-parameterized action - check directly
+			canExecute, err := sm.executor.CanExecute(actionName, currentState, nil)
+			if err != nil {
+				return nil, fmt.Errorf("error checking action %s: %w", actionName, err)
+			}
+
+			if canExecute {
+				available = append(available, actionName)
+			}
+		} else {
+			// Parameterized action - generate argument combinations
+			argCombos := generateArgumentCombinations(actionInfo, env, sm.executor.file)
+			
+			// Check if at least one combination is valid
+			hasValidCombo := false
+			for _, args := range argCombos {
+				// Skip if any parameter has no possible values (empty combo)
+				if len(args) != len(actionInfo.Parameters) {
+					continue
+				}
+				
+				canExecute, err := sm.executor.CanExecute(actionName, currentState, args)
+				if err != nil {
+					// Skip this combination if there's an error
+					continue
+				}
+
+				if canExecute {
+					hasValidCombo = true
+					break
+				}
+			}
+			
+			if hasValidCombo {
+				available = append(available, actionName)
+			}
+		}
+	}
+
+	return available, nil
+}
+
+// GetAvailableActionsWithArgs returns all actions with their valid argument combinations
+func (sm *StateMachine) GetAvailableActionsWithArgs(currentState *state.State) ([]*ActionWithArgs, error) {
+	var available []*ActionWithArgs
+
+	// Create environment to access constants for argument generation
+	env := eval.NewEnvironment()
+	allFiles := sm.executor.getAllFiles()
+	for _, f := range allFiles {
+		eval.RegisterEnumTypes(env, f)
+		eval.RegisterConstants(env, f, allFiles...)
+	}
+
+	for actionName := range sm.actionModel.Actions {
+		actionInfo, exists := sm.actionModel.GetAction(actionName)
+		if !exists {
+			continue
+		}
+		
+		if len(actionInfo.Parameters) == 0 {
+			// Non-parameterized action - check directly
+			canExecute, err := sm.executor.CanExecute(actionName, currentState, nil)
+			if err != nil {
+				return nil, fmt.Errorf("error checking action %s: %w", actionName, err)
+			}
+
+			if canExecute {
+				available = append(available, &ActionWithArgs{
+					ActionName: actionName,
+					Args:       nil,
+				})
+			}
+		} else {
+			// Parameterized action - generate argument combinations
+			argCombos := generateArgumentCombinations(actionInfo, env, sm.executor.file)
+			
+			for _, args := range argCombos {
+				// Skip if any parameter has no possible values (empty combo)
+				if len(args) != len(actionInfo.Parameters) {
+					continue
+				}
+				
+				canExecute, err := sm.executor.CanExecute(actionName, currentState, args)
+				if err != nil {
+					// Skip this combination if there's an error
+					continue
+				}
+
+				if canExecute {
+					available = append(available, &ActionWithArgs{
+						ActionName: actionName,
+						Args:       args,
+					})
+				}
+			}
 		}
 	}
 

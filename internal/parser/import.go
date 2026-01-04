@@ -6,7 +6,7 @@ import (
 )
 
 // parseImportDecl parses an import declaration
-// Format: import ModuleName
+// Format: import ModuleName or import "path/to/module"
 func (p *Parser) parseImportDecl() ast.Decl {
 	pos := tokenPos(p.curToken)
 
@@ -17,17 +17,26 @@ func (p *Parser) parseImportDecl() ast.Decl {
 	}
 	p.nextToken() // consume "import"
 
-	// Parse module name
-	if !p.curTokenIs(lexer.IDENT) {
-		p.addErrorf("expected identifier after import, got %s", p.curToken.Type)
+	// Check if it's a string literal (path-based import) or identifier (module name)
+	if p.curTokenIs(lexer.STRING) {
+		// Path-based import: import "path/to/module"
+		path := p.curToken.Literal
+		p.nextToken() // consume string
+		return &ast.ImportDecl{
+			Position: pos,
+			Path:     path,
+		}
+	} else if p.curTokenIs(lexer.IDENT) {
+		// Module name import: import ModuleName (from same directory)
+		moduleName := p.curToken.Literal
+		p.nextToken() // consume module name
+		return &ast.ImportDecl{
+			Position: pos,
+			Module:   moduleName,
+		}
+	} else {
+		p.addErrorf("expected identifier or string after import, got %s", p.curToken.Type)
 		return nil
-	}
-	moduleName := p.curToken.Literal
-	p.nextToken() // consume module name
-
-	return &ast.ImportDecl{
-		Position: pos,
-		Module:   moduleName,
 	}
 }
 

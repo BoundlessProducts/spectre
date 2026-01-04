@@ -183,6 +183,9 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 			for name, value := range current.State.Variables {
 				fmt.Printf("  %s = %s\n", name, value.String())
 			}
+		} else {
+			// Non-verbose mode: show simple progress
+			fmt.Printf("Exploring State %d\n", result.StatesExplored)
 		}
 
 		// Validate current state
@@ -206,22 +209,42 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 			}
 		}
 
-		// Get available actions
-		availableActions, err := e.stateMachine.GetAvailableActions(current.State)
+		// Get available actions with their argument combinations
+		availableActions, err := e.stateMachine.GetAvailableActionsWithArgs(current.State)
 		if err != nil {
 			return nil, fmt.Errorf("error getting available actions: %w", err)
 		}
 
 		if e.verbose {
-			fmt.Printf("  [ACTIONS] Available actions: %v\n", availableActions)
+			actionNames := make([]string, len(availableActions))
+			for i, a := range availableActions {
+				if len(a.Args) > 0 {
+					argsStr := make([]string, len(a.Args))
+					for j, arg := range a.Args {
+						argsStr[j] = arg.String()
+					}
+					actionNames[i] = fmt.Sprintf("%s(%s)", a.ActionName, strings.Join(argsStr, ", "))
+				} else {
+					actionNames[i] = a.ActionName
+				}
+			}
+			fmt.Printf("  [ACTIONS] Available actions: %v\n", actionNames)
 		}
 
-		// Explore each action
-		for _, actionName := range availableActions {
+		// Explore each action with its arguments
+		for _, actionWithArgs := range availableActions {
 			if e.verbose {
-				fmt.Printf("    [TRY] Executing action: %s\n", actionName)
+				if len(actionWithArgs.Args) > 0 {
+					argsStr := make([]string, len(actionWithArgs.Args))
+					for i, arg := range actionWithArgs.Args {
+						argsStr[i] = arg.String()
+					}
+					fmt.Printf("    [TRY] Executing action: %s(%s)\n", actionWithArgs.ActionName, strings.Join(argsStr, ", "))
+				} else {
+					fmt.Printf("    [TRY] Executing action: %s\n", actionWithArgs.ActionName)
+				}
 			}
-			nextState, err := e.stateMachine.ExecuteAction(actionName, current.State, nil)
+			nextState, err := e.stateMachine.ExecuteAction(actionWithArgs.ActionName, current.State, actionWithArgs.Args)
 			if err != nil {
 				// Action execution failed - check if it's due to invariant violations
 				errMsg := err.Error()
@@ -237,14 +260,14 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 						State:       current.State,
 						Invariant:   "unknown", // We'll extract this from the error message if possible
 						Path:        current.Path,
-						Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionName, violationDesc),
+						Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionWithArgs.ActionName, violationDesc),
 					})
 					
 					if e.verbose {
-						fmt.Printf("      [FAIL] Action %s failed: %s\n", actionName, errMsg)
+						fmt.Printf("      [FAIL] Action %s failed: %s\n", actionWithArgs.ActionName, errMsg)
 					}
 				} else if e.verbose {
-					fmt.Printf("      [FAIL] Action %s failed: %v\n", actionName, err)
+					fmt.Printf("      [FAIL] Action %s failed: %v\n", actionWithArgs.ActionName, err)
 				}
 				// This could be due to preconditions not being met (shouldn't happen since
 				// GetAvailableActions filters them), postcondition violations, or invariant violations
@@ -258,8 +281,8 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 			transition := &Transition{
 				FromState: current.State,
 				ToState:   nextState,
-				Action:    actionName,
-				Args:      nil,
+				Action:    actionWithArgs.ActionName,
+				Args:      actionWithArgs.Args,
 			}
 			
 			currentHash := e.hasher.HashState(current.State)
@@ -300,7 +323,15 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 			result.ReachableStates = append(result.ReachableStates, nextState)
 			
 			if e.verbose {
-				fmt.Printf("      [SUCCESS] Action %s succeeded, next state:\n", actionName)
+				if len(actionWithArgs.Args) > 0 {
+					argsStr := make([]string, len(actionWithArgs.Args))
+					for i, arg := range actionWithArgs.Args {
+						argsStr[i] = arg.String()
+					}
+					fmt.Printf("      [SUCCESS] Action %s(%s) succeeded, next state:\n", actionWithArgs.ActionName, strings.Join(argsStr, ", "))
+				} else {
+					fmt.Printf("      [SUCCESS] Action %s succeeded, next state:\n", actionWithArgs.ActionName)
+				}
 				for name, value := range nextState.Variables {
 					fmt.Printf("        %s = %s\n", name, value.String())
 				}
@@ -322,8 +353,8 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 				State:      nextState,
 				Depth:      current.Depth + 1,
 				Parent:     current,
-				Action:     actionName,
-				ActionArgs: nil,
+				Action:     actionWithArgs.ActionName,
+				ActionArgs: actionWithArgs.Args,
 				Path:       newPath,
 			})
 
@@ -391,6 +422,17 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 
 		result.StatesExplored++
 
+		// Print current state info
+		if e.verbose {
+			fmt.Printf("\n[STATE %d] Exploring state (depth: %d):\n", result.StatesExplored, current.Depth)
+			for name, value := range current.State.Variables {
+				fmt.Printf("  %s = %s\n", name, value.String())
+			}
+		} else {
+			// Non-verbose mode: show simple progress
+			fmt.Printf("Exploring State %d\n", result.StatesExplored)
+		}
+
 		// Validate current state
 		errors, err := e.stateMachine.ValidateState(current.State)
 		if err != nil {
@@ -399,6 +441,9 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 
 		if len(errors) > 0 {
 			// Found invariant violation
+			if e.verbose {
+				fmt.Printf("  [VIOLATION] Found %d invariant violation(s)\n", len(errors))
+			}
 			for _, validationError := range errors {
 				result.Violations = append(result.Violations, &Violation{
 					State:       current.State,
@@ -409,16 +454,16 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 			}
 		}
 
-		// Get available actions
-		availableActions, err := e.stateMachine.GetAvailableActions(current.State)
+		// Get available actions with their argument combinations
+		availableActions, err := e.stateMachine.GetAvailableActionsWithArgs(current.State)
 		if err != nil {
 			return nil, fmt.Errorf("error getting available actions: %w", err)
 		}
 
 		// Explore each action (push in reverse order for DFS)
 		for i := len(availableActions) - 1; i >= 0; i-- {
-			actionName := availableActions[i]
-			nextState, err := e.stateMachine.ExecuteAction(actionName, current.State, nil)
+			actionWithArgs := availableActions[i]
+			nextState, err := e.stateMachine.ExecuteAction(actionWithArgs.ActionName, current.State, actionWithArgs.Args)
 			if err != nil {
 				// Action execution failed - check if it's due to invariant violations
 				errMsg := err.Error()
@@ -436,19 +481,30 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 					State:       current.State,
 					Invariant:   "unknown", // We'll extract this from the error message if possible
 					Path:        current.Path,
-					Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionName, violationDesc),
+					Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionWithArgs.ActionName, violationDesc),
 				})
 				
 				if e.verbose {
-					fmt.Printf("      [FAIL] Action %s failed: %s\n", actionName, errMsg)
+					fmt.Printf("      [FAIL] Action %s failed: %s\n", actionWithArgs.ActionName, errMsg)
 				}
 			} else if e.verbose {
-				fmt.Printf("      [FAIL] Action %s failed: %s\n", actionName, errMsg)
+				fmt.Printf("      [FAIL] Action %s failed: %s\n", actionWithArgs.ActionName, errMsg)
 			}
 			continue
 		}
 
 		hash := e.hasher.HashState(nextState)
+			
+			// Create transition
+			transition := &Transition{
+				FromState: current.State,
+				ToState:   nextState,
+				Action:    actionWithArgs.ActionName,
+				Args:      actionWithArgs.Args,
+			}
+			
+			currentHash := e.hasher.HashState(current.State)
+			result.TransitionGraph.AddTransition(transition, currentHash, hash)
 			
 			// Check for cycles if enabled
 			if e.detectCycles {
@@ -460,12 +516,7 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 						for i := 0; i < len(current.Path); i++ {
 							transitionPath = append(transitionPath, current.Path[i])
 						}
-						transitionPath = append(transitionPath, &Transition{
-							FromState: current.State,
-							ToState:   nextState,
-							Action:    actionName,
-							Args:      nil,
-						})
+						transitionPath = append(transitionPath, transition)
 						
 						result.Cycles = append(result.Cycles, &Cycle{
 							Path:        transitionPath,
@@ -484,8 +535,8 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 				transition := &Transition{
 					FromState: current.State,
 					ToState:   nextState,
-					Action:    actionName,
-					Args:      nil,
+					Action:    actionWithArgs.ActionName,
+					Args:      actionWithArgs.Args,
 				}
 
 				// Create new path
@@ -503,8 +554,8 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 					State:      nextState,
 					Depth:      current.Depth + 1,
 					Parent:     current,
-					Action:     actionName,
-					ActionArgs: nil,
+					Action:     actionWithArgs.ActionName,
+					ActionArgs: actionWithArgs.Args,
 					Path:       newPath,
 				})
 

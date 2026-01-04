@@ -101,6 +101,10 @@ func (p *Parser) parseModuleBody() []ast.Decl {
 			decl = p.parseTemporalDecl()
 		case lexer.IMPORT:
 			decl = p.parseImportDecl()
+		case lexer.TYPE:
+			decl = p.parseTypeAliasDecl()
+		case lexer.ENUM:
+			decl = p.parseEnumDecl()
 		case lexer.PUBLIC, lexer.PRIVATE:
 			// Parse visibility modifier followed by declaration
 			decl = p.parseVisibilityDecl()

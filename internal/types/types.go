@@ -246,7 +246,8 @@ func FromASTWithResolver(astType ast.Type, resolver TypeResolver) (Type, error) 
 	case *ast.SetType:
 		elem, err := FromASTWithResolver(t.Element, resolver)
 		if err != nil {
-			return nil, err
+			// If resolution fails, return error with context
+			return nil, fmt.Errorf("failed to resolve Set element type: %w", err)
 		}
 		return &Set{Element: elem}, nil
 	case *ast.MapType:

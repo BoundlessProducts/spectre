@@ -135,9 +135,11 @@ func (m *ModuleDecl) Pos() Position { return m.Position }
 func (m *ModuleDecl) declNode()     {}
 
 // ImportDecl represents an import declaration
+// Format: import ModuleName or import "path/to/module"
 type ImportDecl struct {
 	Position Position
-	Module   string // Name of the module to import
+	Module   string // Name of the module to import (when importing from same directory)
+	Path     string // File path to import from (when Path is set, Module is empty)
 }
 
 func (i *ImportDecl) Pos() Position { return i.Position }
