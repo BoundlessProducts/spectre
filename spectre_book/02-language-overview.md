@@ -549,6 +549,210 @@ temporal eventuallyProcess1Critical {
 
 ---
 
+## State Space Exploration
+
+When you run `spectre verify`, Spectre performs **state space exploration** to verify your specification. This section explains how state space exploration works and how to control it.
+
+### What is State Space Exploration?
+
+State space exploration is the process of systematically examining all possible states your system can reach. The verifier:
+
+1. **Starts from initial states**: Begins with all possible initial states (from `init` blocks or `oneOf` expressions)
+2. **Explores transitions**: For each state, tries all enabled actions to find the next possible states
+3. **Builds a transition graph**: Creates a graph of all reachable states and the transitions between them
+4. **Checks properties**: Verifies invariants and temporal properties against all explored states and paths
+
+This process ensures that your properties hold in **all possible execution scenarios**, not just one or two specific paths.
+
+### Exploration Limits
+
+Because some systems have an infinite or extremely large state space (millions or billions of states), Spectre uses limits to prevent exploration from running indefinitely:
+
+- **Max States**: Maximum number of unique states to explore
+- **Max Depth**: Maximum depth of the exploration tree (how many steps from the initial state)
+
+### Default Limits
+
+By default, Spectre uses these limits:
+
+- **Default Max States**: 5,000 states
+- **Default Max Depth**: 100 steps
+
+These defaults work well for most small to medium-sized specifications but may need adjustment for larger systems.
+
+### Setting Custom Limits
+
+You can customize the exploration limits using command-line flags:
+
+```bash
+# Set max states to 10,000
+./spectre verify my-spec.spec --max-states 10000
+
+# Set max depth to 200
+./spectre verify my-spec.spec --max-depth 200
+
+# Set both limits
+./spectre verify my-spec.spec --max-states 10000 --max-depth 200
+```
+
+**When to increase limits:**
+- Your spec has many state variables
+- You have parameterized actions that create many state combinations
+- You're using `oneOf` with many initial states
+- The verifier stops early with "explored N states" but you suspect more states exist
+
+**Example**: An elevator controller with 4 elevators, 20 floors, and up to 30 users has a very large state space. You might need:
+
+```bash
+./spectre verify elevator/ElevatorController.spec --max-states 50000 --max-depth 150
+```
+
+### Unlimited Exploration
+
+For exhaustive verification, you can set limits to **infinity** (unlimited). Spectre accepts three ways to specify unlimited:
+
+```bash
+# Using 'infinity'
+./spectre verify my-spec.spec --max-states infinity --max-depth infinity
+
+# Using 'unlimited'
+./spectre verify my-spec.spec --max-states unlimited --max-depth unlimited
+
+# Using -1
+./spectre verify my-spec.spec --max-states -1 --max-depth -1
+```
+
+All three forms are equivalent and mean "explore until the entire reachable state space is covered or memory is exhausted."
+
+**Warning**: When you enable unlimited exploration, you'll see:
+
+```
+Warning: Unlimited exploration enabled (--max-states: unlimited, --max-depth: unlimited)
+This may run until the state space is fully explored or memory is exhausted.
+```
+
+### Consequences of Different Limit Settings
+
+#### 1. Default Limits (5,000 states, 100 depth)
+
+**Pros:**
+- Fast verification (usually completes in seconds)
+- Good for most small to medium specs
+- Prevents accidental long-running verifications
+
+**Cons:**
+- May miss states in large specifications
+- May truncate exploration before finding all reachable states
+- May not fully verify temporal properties in complex systems
+
+**Use when:** You have a small to medium specification and want fast feedback during development.
+
+#### 2. Increased Custom Limits (e.g., 50,000 states, 200 depth)
+
+**Pros:**
+- More thorough exploration for larger specs
+- Better coverage of complex state spaces
+- Still has safety bounds to prevent runaway exploration
+
+**Cons:**
+- Takes longer to complete (minutes instead of seconds)
+- Uses more memory
+- May still not cover the entire state space for very large systems
+
+**Use when:** You have a large specification and the default limits are too restrictive.
+
+#### 3. Unlimited Exploration
+
+**Pros:**
+- **Complete verification**: Explores every reachable state
+- **Exhaustive property checking**: Verifies properties against all possible execution paths
+- **No artificial bounds**: Only limited by the actual state space size and available memory
+
+**Cons:**
+- ⚠️ **May run for a very long time**: Large specs can take hours or days
+- ⚠️ **May exhaust memory**: Systems with millions of states can use gigabytes of RAM
+- ⚠️ **No progress indication**: Until it completes, you don't know if it will finish
+
+**Use when:**
+- You need complete verification confidence
+- You're verifying critical safety properties
+- Your state space is bounded and you know it's finite
+- You have sufficient computational resources and time
+
+**Avoid when:**
+- Your system has an infinite state space (e.g., unbounded counters)
+- You're in active development and need fast feedback
+- You have limited computational resources
+
+### Best Practices
+
+1. **Start with defaults**: Begin verification with default limits. If verification completes quickly, you're done.
+
+2. **Increase incrementally**: If you suspect more states exist, increase limits incrementally (e.g., 10,000 → 50,000 → 100,000) to find the right balance.
+
+3. **Use unlimited sparingly**: Reserve unlimited exploration for:
+   - Final verification before release
+   - Critical safety properties
+   - Bounded systems where you know the state space is finite
+
+4. **Monitor resource usage**: When using large limits or unlimited, monitor CPU and memory usage. Stop the process if it's consuming excessive resources.
+
+5. **Understand your state space**: Try to estimate the size of your state space:
+   - How many state variables?
+   - What are their possible value ranges?
+   - How many parameterized actions?
+   - How many initial states (`oneOf`)?
+
+   This helps you choose appropriate limits.
+
+### Example: Choosing Limits
+
+For a **simple counter** (0-10 range):
+```bash
+# Default limits are more than enough
+./spectre verify counter.spec
+```
+
+For a **concurrent lock system** (2-3 processes):
+```bash
+# Default limits work well
+./spectre verify concurrent-lock.spec
+```
+
+For an **elevator controller** (4 elevators, 20 floors, 30 users):
+```bash
+# Needs increased limits
+./spectre verify elevator/ElevatorController.spec --max-states 50000 --max-depth 150
+```
+
+For a **small bounded system** where you need complete verification:
+```bash
+# Use unlimited for exhaustive checking
+./spectre verify critical-safety.spec --max-states infinity --max-depth infinity
+```
+
+### Verification Output
+
+The verifier reports how many states were explored:
+
+```
+✓ Verification passed for my-spec.spec
+  Explored 4,237 states
+  Verified 2 temporal properties
+```
+
+If exploration hits the limit before completing, you'll see:
+
+```
+✓ Verification passed for my-spec.spec
+  Explored 5,000 states  (max limit reached)
+  Verified 2 temporal properties
+```
+
+If you see "(max limit reached)", consider increasing the limits to ensure complete coverage.
+
+---
+
 ## Next Steps
 
 Now that you understand the overview of the Spectre language, you're ready to dive deeper into each element:

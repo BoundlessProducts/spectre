@@ -164,11 +164,12 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 	}
 
 	// BFS exploration
-	for len(e.queue) > 0 && result.StatesExplored < e.maxStates {
+	// -1 means unlimited
+	for len(e.queue) > 0 && (e.maxStates == -1 || result.StatesExplored < e.maxStates) {
 		current := e.queue[0]
 		e.queue = e.queue[1:]
 
-		if current.Depth >= e.maxDepth {
+		if e.maxDepth != -1 && current.Depth >= e.maxDepth {
 			if e.verbose {
 				fmt.Printf("[DEPTH LIMIT] Skipping state at depth %d (max: %d)\n", current.Depth, e.maxDepth)
 			}
@@ -411,12 +412,13 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 	}
 
 	// DFS exploration
-	for len(e.stack) > 0 && result.StatesExplored < e.maxStates {
+	// -1 means unlimited
+	for len(e.stack) > 0 && (e.maxStates == -1 || result.StatesExplored < e.maxStates) {
 		// Pop from stack
 		current := e.stack[len(e.stack)-1]
 		e.stack = e.stack[:len(e.stack)-1]
 
-		if current.Depth >= e.maxDepth {
+		if e.maxDepth != -1 && current.Depth >= e.maxDepth {
 			continue
 		}
 

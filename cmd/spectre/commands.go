@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/akkeshavan/spectre/internal/errors"
@@ -15,6 +16,11 @@ import (
 	"github.com/akkeshavan/spectre/internal/types"
 	"github.com/akkeshavan/spectre/pkg/ast"
 )
+
+// parseInt parses a string to int
+func parseInt(s string) (int, error) {
+	return strconv.Atoi(s)
+}
 
 // Command represents a CLI command
 type Command struct {
@@ -504,15 +510,56 @@ func runTypecheck(args []string) error {
 
 // runVerify verifies a Spectre specification
 func runVerify(args []string) error {
-	// Check for verbose flag
+	// Check for flags
 	verbose := false
+	maxStates := 5000  // Default: increased for large specs like elevator controller
+	maxDepth := 100    // Default: increased for deep state spaces
 	filteredArgs := []string{}
-	for _, arg := range args {
-		if arg == "--verbose" || arg == "-v" {
+	
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		switch arg {
+		case "--verbose", "-v":
 			verbose = true
-		} else {
+		case "--max-states":
+			if i+1 < len(args) {
+				value := args[i+1]
+				// Check for special values: infinity, unlimited, or -1
+				if value == "infinity" || value == "unlimited" || value == "-1" {
+					maxStates = -1 // -1 means unlimited
+				} else if n, err := parseInt(value); err == nil && n > 0 {
+					maxStates = n
+				} else if n, err := parseInt(value); err == nil && n == -1 {
+					maxStates = -1
+				} else {
+					return fmt.Errorf("invalid value for --max-states: %s (must be a positive integer, 'infinity', 'unlimited', or -1)", value)
+				}
+				i++ // Skip next argument as it's the value
+			} else {
+				return fmt.Errorf("--max-states requires a value")
+			}
+		case "--max-depth":
+			if i+1 < len(args) {
+				value := args[i+1]
+				// Check for special values: infinity, unlimited, or -1
+				if value == "infinity" || value == "unlimited" || value == "-1" {
+					maxDepth = -1 // -1 means unlimited
+				} else if n, err := parseInt(value); err == nil && n > 0 {
+					maxDepth = n
+				} else if n, err := parseInt(value); err == nil && n == -1 {
+					maxDepth = -1
+				} else {
+					return fmt.Errorf("invalid value for --max-depth: %s (must be a positive integer, 'infinity', 'unlimited', or -1)", value)
+				}
+				i++ // Skip next argument as it's the value
+			} else {
+				return fmt.Errorf("--max-depth requires a value")
+			}
+		default:
 			filteredArgs = append(filteredArgs, arg)
 		}
+		i++
 	}
 	args = filteredArgs
 	
@@ -894,9 +941,27 @@ func runVerify(args []string) error {
 
 	// Explore state space
 	explorer := explore.NewExplorer(sm)
-	explorer.SetMaxDepth(10)
-	explorer.SetMaxStates(50)
+	explorer.SetMaxDepth(maxDepth)
+	explorer.SetMaxStates(maxStates)
 	explorer.SetVerbose(verbose)
+	
+	// Warn if unlimited exploration is enabled
+	if maxStates == -1 || maxDepth == -1 {
+		fmt.Fprintf(os.Stderr, "Warning: Unlimited exploration enabled (--max-states: %v, --max-depth: %v)\n", 
+			func() string {
+				if maxStates == -1 {
+					return "unlimited"
+				}
+				return fmt.Sprintf("%d", maxStates)
+			}(),
+			func() string {
+				if maxDepth == -1 {
+					return "unlimited"
+				}
+				return fmt.Sprintf("%d", maxDepth)
+			}())
+		fmt.Fprintf(os.Stderr, "This may run until the state space is fully explored or memory is exhausted.\n\n")
+	}
 
 	result, err := explorer.ExploreBFS()
 	if err != nil {
@@ -997,6 +1062,13 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  spectre parse examples/counter.spec\n")
 	fmt.Fprintf(os.Stderr, "  spectre typecheck examples/counter.spec\n")
 	fmt.Fprintf(os.Stderr, "  spectre verify examples/counter.spec\n")
+	fmt.Fprintf(os.Stderr, "  spectre verify examples/counter.spec --max-states 10000 --max-depth 200\n")
+	fmt.Fprintf(os.Stderr, "\nFlags for verify command:\n")
+	fmt.Fprintf(os.Stderr, "  --verbose, -v           Enable verbose output\n")
+	fmt.Fprintf(os.Stderr, "  --max-states <number>   Maximum number of states to explore (default: 5000)\n")
+	fmt.Fprintf(os.Stderr, "                         Use 'infinity', 'unlimited', or -1 for unlimited\n")
+	fmt.Fprintf(os.Stderr, "  --max-depth <number>    Maximum exploration depth (default: 100)\n")
+	fmt.Fprintf(os.Stderr, "                         Use 'infinity', 'unlimited', or -1 for unlimited\n")
 }
 
 // findSpecFiles finds all .spec files in a directory
