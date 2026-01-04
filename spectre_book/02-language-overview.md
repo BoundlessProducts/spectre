@@ -177,9 +177,14 @@ const MAX_VALUE: int = 100
 
 ### 7. Modules
 
-Modules help organize your specifications into reusable components:
+Modules help organize your specifications into reusable components and enable code sharing between files. Spectre supports file-level modules where each file contains exactly one module.
+
+#### Module Declaration
+
+A module is declared in a file with the following structure:
 
 ```spectre
+// File: Counter.spec
 module Counter {
   description "Tracks a numeric counter value"
   var counter: int
@@ -187,16 +192,103 @@ module Counter {
   public action increment {
     counter' = counter + 1
   }
+  
+  action decrement {
+    counter' = counter - 1
+  }
 }
-
-// Later, import and use:
-import Counter
 ```
 
-Modules support:
-- **Inheritance**: Modules can extend other modules
-- **Visibility**: `public` and `private` modifiers
-- **Super calls**: Call parent module methods
+**Important Rules:**
+- Each file must contain exactly one module declaration
+- The module name must match the file name (without extension)
+- Files use PascalCase naming (e.g., `Counter.spec`, `ElevatorModule.spec`)
+- Module names use PascalCase (e.g., `module Counter`, `module ElevatorModule`)
+
+#### Visibility Modifiers
+
+Members within a module can be marked as `public` or have no modifier (private by default):
+
+```spectre
+module ExampleModule {
+  public var publicVar: int      // Accessible from other modules
+  var privateVar: int            // Only accessible within this module
+  
+  public action publicAction { ... }
+  action privateAction { ... }
+  
+  public const PUBLIC_CONST: int = 10
+  const PRIVATE_CONST: int = 20
+  
+  public fun publicFunction(): int { ... }
+  fun privateFunction(): int { ... }
+}
+```
+
+- **Public members** (`public var`, `public action`, `public const`, etc.) are accessible from modules that import this module
+- **Private members** (no modifier) are only accessible within the module
+
+#### Importing Modules
+
+To use a module in another file, you import it using one of two syntaxes:
+
+**Import from Same Directory:**
+```spectre
+import Counter
+```
+This imports `Counter` from `Counter.spec` in the same directory.
+
+**Import from Path:**
+```spectre
+import "path/to/ModuleName"
+```
+This imports a module from a relative path. The path should point to the file (without extension).
+
+**Examples:**
+```spectre
+// Import from same directory
+import ElevatorModule
+import UserModule
+
+// Import from subdirectory
+import "elevator/ElevatorModule"
+
+// Import from parent directory
+import "../common/Utils"
+```
+
+#### Accessing Module Members
+
+When you import a module, you access its public members using dot notation:
+
+```spectre
+import ControllerModule
+
+// Access constants
+const maxUsers = ControllerModule.MAX_USERS
+
+// Call functions
+let distance = ControllerModule.distance(5, 10)
+
+// Use types (types are automatically available)
+var elevator: Elevator  // Type from ElevatorModule
+```
+
+#### Module Resolution Rules
+
+1. **No circular dependencies**: If module A imports module B, module B cannot import module A (directly or indirectly)
+2. **Module name matching**: The module declaration name must exactly match the file name (case-sensitive)
+3. **One module per file**: Each `.spec` file must contain exactly one module
+
+#### Benefits of Modules
+
+Modules provide several benefits:
+- **Code reuse**: Share modules across multiple specifications
+- **Separation of concerns**: Organize code into logical units
+- **Maintainability**: Changes to one module don't affect others (as long as public interface remains stable)
+- **Testability**: Modules can be tested independently
+
+For a comprehensive example of using modules to build a large system, see **Chapter 7: Modules and Code Organization**, which demonstrates building an elevator controller system using multiple modules.
 
 ---
 
