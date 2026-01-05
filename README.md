@@ -1,7 +1,7 @@
 # IMPORTANT: This is still under construction. It has been made public only to test installations etc. No PRs WILL BE ENTERTAINED. This is an experimental Vibe coding project to push the limits of LLM!! This may have bugs and hence it is not recommended for commercial use.
 
 ## Methodology
-This project was built totally using vibe coding techniques in cursor and auto mode. It took approximately 24 hours over two weekends to develop whihc is remarkable for a deep CS based system like a formal verification system!! The specifcations were generated using Google  Gemini in deep research mode.
+This project was built totally using vibe coding techniques in cursor and auto mode. It took approximately 24 hours over two weekends to develop which is remarkable for a deep CS based system like a formal verification system!! The specifcations were generated using Google  Gemini in deep research mode.
 
 Even the documentation and spectre book has been generated using LLMs. Not a single line of code has been written by hand!!
 
