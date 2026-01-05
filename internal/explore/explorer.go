@@ -58,6 +58,7 @@ type ExplorationResult struct {
 	StatesExplored  int
 	StatesVisited   int
 	Violations      []*Violation
+	Stuttering      []*Stuttering // Self-loops where a state transitions back to itself
 	ReachableStates []*state.State
 	InitialStates   []*state.State // Initial states from which exploration started
 	MaxDepth        int
@@ -101,6 +102,14 @@ type Violation struct {
 	State       *state.State
 	Invariant   string
 	Path        []*Transition
+	Description string
+}
+
+// Stuttering represents a stuttering step where a state transitions back to itself
+type Stuttering struct {
+	State       *state.State
+	Action      string
+	Args        []state.Value
 	Description string
 }
 
@@ -348,6 +357,47 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 			}
 
 			hash := e.hasher.HashState(nextState)
+			currentHash := e.hasher.HashState(current.State)
+			
+			// Check for stuttering (self-loop: state transitions back to itself)
+			if currentHash == hash {
+				// Check if we've already reported this stuttering (same state + action + args)
+				alreadyReported := false
+				for _, existingStutter := range result.Stuttering {
+					existingHash := e.hasher.HashState(existingStutter.State)
+					if existingHash == currentHash && existingStutter.Action == actionWithArgs.ActionName {
+						// Check if args match
+						argsMatch := len(existingStutter.Args) == len(actionWithArgs.Args)
+						if argsMatch {
+							for i, arg := range existingStutter.Args {
+								if i < len(actionWithArgs.Args) && arg.String() != actionWithArgs.Args[i].String() {
+									argsMatch = false
+									break
+								}
+							}
+						}
+						if argsMatch {
+							alreadyReported = true
+							break
+						}
+					}
+				}
+				
+				if !alreadyReported {
+					// Stuttering detected: state transitions to itself
+					stuttering := &Stuttering{
+						State:       current.State,
+						Action:      actionWithArgs.ActionName,
+						Args:        actionWithArgs.Args,
+						Description: fmt.Sprintf("State stutters via action '%s' (state transitions back to itself)", actionWithArgs.ActionName),
+					}
+					result.Stuttering = append(result.Stuttering, stuttering)
+				}
+				
+				if e.verbose {
+					fmt.Printf("      [STUTTERING] Action %s causes state to transition back to itself\n", actionWithArgs.ActionName)
+				}
+			}
 			
 			// Create transition (even if already visited, to build complete graph)
 			transition := &Transition{
@@ -356,8 +406,6 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 				Action:    actionWithArgs.ActionName,
 				Args:      actionWithArgs.Args,
 			}
-			
-			currentHash := e.hasher.HashState(current.State)
 			
 			// Add to transition graph (even for cycles - we want complete graph)
 			result.TransitionGraph.AddTransition(transition, currentHash, hash)
@@ -625,6 +673,47 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 			}
 
 		hash := e.hasher.HashState(nextState)
+		currentHash := e.hasher.HashState(current.State)
+			
+			// Check for stuttering (self-loop: state transitions back to itself)
+			if currentHash == hash {
+				// Check if we've already reported this stuttering (same state + action + args)
+				alreadyReported := false
+				for _, existingStutter := range result.Stuttering {
+					existingHash := e.hasher.HashState(existingStutter.State)
+					if existingHash == currentHash && existingStutter.Action == actionWithArgs.ActionName {
+						// Check if args match
+						argsMatch := len(existingStutter.Args) == len(actionWithArgs.Args)
+						if argsMatch {
+							for i, arg := range existingStutter.Args {
+								if i < len(actionWithArgs.Args) && arg.String() != actionWithArgs.Args[i].String() {
+									argsMatch = false
+									break
+								}
+							}
+						}
+						if argsMatch {
+							alreadyReported = true
+							break
+						}
+					}
+				}
+				
+				if !alreadyReported {
+					// Stuttering detected: state transitions to itself
+					stuttering := &Stuttering{
+						State:       current.State,
+						Action:      actionWithArgs.ActionName,
+						Args:        actionWithArgs.Args,
+						Description: fmt.Sprintf("State stutters via action '%s' (state transitions back to itself)", actionWithArgs.ActionName),
+					}
+					result.Stuttering = append(result.Stuttering, stuttering)
+				}
+				
+				if e.verbose {
+					fmt.Printf("      [STUTTERING] Action %s causes state to transition back to itself\n", actionWithArgs.ActionName)
+				}
+			}
 			
 			// Create transition
 			transition := &Transition{
@@ -634,7 +723,6 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 				Args:      actionWithArgs.Args,
 			}
 			
-			currentHash := e.hasher.HashState(current.State)
 			result.TransitionGraph.AddTransition(transition, currentHash, hash)
 			
 			// Check for cycles if enabled

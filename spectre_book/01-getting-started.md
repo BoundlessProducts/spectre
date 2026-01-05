@@ -71,6 +71,111 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
 ---
 
+## Building from Source
+
+If you prefer to build Spectre from source (useful for development or if you want the latest code), follow these steps:
+
+### Prerequisites
+
+- **Go 1.21 or later** ([download](https://go.dev/dl/))
+- **Git** (for cloning the repository)
+
+### Build Steps
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/akkeshavan/spectre.git
+   cd spectre
+   ```
+
+2. **Build the CLI tool**:
+   ```bash
+   go build -o spectre ./cmd/spectre
+   ```
+   
+   This creates a `spectre` executable in the current directory.
+
+3. **Test the build**:
+   ```bash
+   ./spectre --help
+   ```
+   
+   You should see usage information for the Spectre CLI.
+
+4. **Run tests** (optional):
+   ```bash
+   go test ./...
+   ```
+   
+   This runs the full test suite to ensure everything works correctly.
+
+5. **Install globally** (optional):
+   ```bash
+   go install ./cmd/spectre
+   ```
+   
+   This installs `spectre` to your `$GOPATH/bin` or `$HOME/go/bin` directory. Make sure this directory is in your `PATH` environment variable.
+
+### Using the Built Executable
+
+After building, you can use the `spectre` executable directly:
+
+```bash
+# From the project root directory
+./spectre parse examples/counter.spec
+./spectre typecheck examples/counter.spec
+./spectre verify examples/counter.spec
+```
+
+If you installed globally with `go install`, you can use `spectre` from anywhere:
+
+```bash
+spectre parse examples/counter.spec
+spectre typecheck examples/counter.spec
+spectre verify examples/counter.spec
+```
+
+### Accessing Examples
+
+When you clone the repository, all example files are included in the `examples/` directory:
+
+```bash
+# List all examples
+ls examples/
+
+# Use an example directly
+./spectre verify examples/counter.spec
+
+# Or copy examples to a working directory
+mkdir -p ~/my-spectre-examples
+cp examples/*.spec ~/my-spectre-examples/
+cd ~/my-spectre-examples
+./spectre verify counter.spec
+```
+
+### Development Setup
+
+If you're planning to contribute or modify the code:
+
+1. **Fork the repository** on GitHub
+2. **Clone your fork**:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/spectre.git
+   cd spectre
+   ```
+3. **Set up the upstream remote**:
+   ```bash
+   git remote add upstream https://github.com/akkeshavan/spectre.git
+   ```
+4. **Run tests** to ensure everything works:
+   ```bash
+   go test ./...
+   ```
+
+For more details on development workflow, see [README_DEV.md](../README_DEV.md).
+
+---
+
 ## Finding Example Files After Installation
 
 When you install Spectre using Homebrew (macOS) or the installation script (Linux), **example files are automatically included** with the installation and placed in standard system directories.

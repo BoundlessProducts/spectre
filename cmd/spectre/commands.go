@@ -1124,7 +1124,7 @@ func runVerify(args []string) error {
 	fmt.Printf("Traversed %d states\n", result.StatesExplored)
 	
 	if hasViolations {
-		fmt.Printf("\nViolations:\n")
+		fmt.Printf("Violations:\n")
 		
 		// Report invariant violations
 		violationNum := 1
@@ -1160,7 +1160,51 @@ func runVerify(args []string) error {
 			violationNum++
 		}
 		
+		// Report stuttering warnings even when there are violations
+		if len(result.Stuttering) > 0 {
+			fmt.Printf("\nWarnings (Stuttering):\n")
+			fmt.Printf("Found %d stuttering step(s) where a state transitions back to itself.\n", len(result.Stuttering))
+			fmt.Printf("Stuttering can indicate missing fairness constraints or incomplete specifications.\n")
+			if verbose {
+				// In verbose mode, show details of each stuttering
+				for i, stutter := range result.Stuttering {
+					fmt.Printf("  %d. %s\n", i+1, stutter.Description)
+					if len(stutter.Args) > 0 {
+						argsStr := make([]string, len(stutter.Args))
+						for j, arg := range stutter.Args {
+							argsStr[j] = arg.String()
+						}
+						fmt.Printf("     Action: %s(%s)\n", stutter.Action, strings.Join(argsStr, ", "))
+					} else {
+						fmt.Printf("     Action: %s\n", stutter.Action)
+					}
+				}
+			}
+		}
+		
 		return fmt.Errorf("verification failed with %d violation(s)", len(result.Violations)+len(temporalViolations))
+	}
+
+	// Report stuttering warnings when there are no violations
+	if len(result.Stuttering) > 0 {
+		fmt.Printf("\nWarnings (Stuttering):\n")
+		fmt.Printf("Found %d stuttering step(s) where a state transitions back to itself.\n", len(result.Stuttering))
+		fmt.Printf("Stuttering can indicate missing fairness constraints or incomplete specifications.\n")
+		if verbose {
+			// In verbose mode, show details of each stuttering
+			for i, stutter := range result.Stuttering {
+				fmt.Printf("  %d. %s\n", i+1, stutter.Description)
+				if len(stutter.Args) > 0 {
+					argsStr := make([]string, len(stutter.Args))
+					for j, arg := range stutter.Args {
+						argsStr[j] = arg.String()
+					}
+					fmt.Printf("     Action: %s(%s)\n", stutter.Action, strings.Join(argsStr, ", "))
+				} else {
+					fmt.Printf("     Action: %s\n", stutter.Action)
+				}
+			}
+		}
 	}
 
 	fmt.Printf("Found no violations.\n")

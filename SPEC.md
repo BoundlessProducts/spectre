@@ -1604,6 +1604,67 @@ The Spectre verifier checks:
 - **Liveness Checking**: Verify temporal properties (eventually, always, etc.)
 - **Initial State Exploration**: When `oneOf` is used, verify properties starting from each initial state
 
+### Stuttering Detection
+
+Spectre automatically detects and reports **stuttering** during state space exploration. Stuttering occurs when an action causes a state to transition back to itself, creating a self-loop with no progress.
+
+**What is Stuttering?**
+- A **stuttering step** is a transition where executing an action results in the same state (no state change)
+- Each unique combination of (state, action) that causes stuttering is counted as one stuttering step
+- Stuttering is reported as warnings, not errors (verification can still pass)
+
+**Example of Stuttering:**
+```spectre
+var counter: int
+
+action noop {
+  counter' = counter  // ❌ This causes stuttering - state doesn't change!
+}
+
+action increment {
+  counter' = counter + 1  // ✅ This makes progress - state changes
+}
+```
+
+**Stuttering Detection:**
+- Automatically detected during state space exploration (both BFS and DFS)
+- Each stuttering step is recorded with the state, action, and arguments
+- Deduplication ensures each unique (state, action, args) combination is reported once
+- Reports show the total count of stuttering steps found
+
+**Stuttering Warnings:**
+- Reported in the final verification output after exploration completes
+- Shows the total number of stuttering steps detected
+- In verbose mode, shows detailed information about each stuttering (action name, arguments)
+- Includes explanatory message about what stuttering indicates
+
+**Output Example:**
+```
+Traversed 50 states
+
+Warnings (Stuttering):
+Found 51 stuttering step(s) where a state transitions back to itself.
+Stuttering can indicate missing fairness constraints or incomplete specifications.
+```
+
+**What Stuttering Indicates:**
+- **Missing Fairness**: Actions that should make progress may never execute (may need WF/SF)
+- **Incomplete Specifications**: Actions that don't model real system behavior
+- **Unnecessary Actions**: "No-op" actions that don't contribute to system behavior
+
+**When Stuttering is Acceptable:**
+- Intentional idle steps when the system is already in a stable state
+- When fairness constraints ensure progress actions eventually execute
+- When explicitly modeling that a system can remain in a state
+
+**Reducing Stuttering:**
+- Remove unnecessary stuttering actions
+- Add preconditions to restrict when stuttering actions can execute
+- Add fairness constraints (WF/SF) to ensure progress actions eventually execute
+- Modify actions to actually change state when progress should be made
+
+For detailed examples and best practices, see **Chapter 8: Stuttering and Ensuring Progress** in the Spectre Book.
+
 ### Error Reporting
 
 When verification fails, the verifier provides:
@@ -1611,6 +1672,7 @@ When verification fails, the verifier provides:
 - **Execution Traces**: Full stack traces showing the sequence of actions leading to the error
 - **State Snapshots**: Complete state information at each step
 - **Context Information**: Which invariants, temporal properties, or preconditions were violated
+- **Stuttering Warnings**: Information about states that transition back to themselves (warnings, not errors)
 
 ---
 

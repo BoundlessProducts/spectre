@@ -1,8 +1,19 @@
 # IMPORTANT: This is still under construction. It has been made public only to test installations etc. No PRs WILL BE ENTERTAINED. This is an experimental Vibe coding project to push the limits of LLM!! This may have bugs and hence it is not recommended for commercial use.
 
+## Methodology
+This project was built totally using vibe coding techniques in cursor and auto mode. It took approximately 24 hours over two weekends to develop whihc is remarkable for a deep CS based system like a formal verification system!! The specifcations were generated using Google  Gemini in deep research mode.
+
+Even the documentation and spectre book has been generated using LLMs. Not a single line of code has been written by hand!!
+
+Open question: how to verify a verification system?
+Although there is a test suite for checking the state space traversal- is there a fool proof way of assessing whether ALL the state spaces for ALL the specs are being explored?
+
+
 # Spectre Language
 
 A programmer-friendly specification language inspired by TLA+ and Quint, designed specifically for Java and TypeScript developers.
+
+The best way to understand the  Spectre language is to study the chapters in the **[📖 The Spectre Language Book](./spectre_book/)**
 
 ## What is Spectre?
 
@@ -60,6 +71,8 @@ The book is organized into chapters:
 - **[Chapter 4: Temporal and Fairness Properties](./spectre_book/04-temporal-and-fairness-properties.md)** - Temporal logic and fairness constraints
 - **[Chapter 5: Concurrent Systems and Locking](./spectre_book/05-concurrent-systems-and-locking.md)** - Modeling concurrent systems
 - **[Chapter 6: Distributed Message Queue](./spectre_book/06-distributed-message-queue.md)** - Message queue system example
+- **[Chapter 7: Modules and Code Organization](./spectre_book/07-modules-and-code-organization.md)** - Module system and elevator controller example
+- **[Chapter 8: Stuttering and Ensuring Progress](./spectre_book/08-stuttering-and-progress.md)** - Understanding stuttering and fixing progress issues
 
 ## Building from Source
 

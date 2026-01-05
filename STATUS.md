@@ -2,14 +2,14 @@
 
 **Last Updated**: January 2025  
 **Current Phase**: Production Ready ✅  
-**Recent Updates**: State Space Exploration Improvements, Comprehensive Test Suite, Memory Optimization Planning, Module System Documentation
+**Recent Updates**: State Space Exploration Improvements, Comprehensive Test Suite, Memory Optimization Planning, Module System Documentation, Stuttering Detection and Reporting
 
 ## Quick Status Summary
 
 - ✅ **Core Language**: Fully implemented (lexer, parser, type system, semantic analysis)
 - ✅ **Verification Engine**: Complete (invariants, temporal properties with cycle handling, fairness)
 - ✅ **CLI Tool**: Fully functional with parse, typecheck, and verify commands
-- ✅ **State Space Exploration**: BFS/DFS exploration with cycle detection, transition graph building, and counterexample generation
+- ✅ **State Space Exploration**: BFS/DFS exploration with cycle detection, transition graph building, counterexample generation, and stuttering detection
 - ✅ **Configurable Exploration Limits**: Command-line flags for --max-states and --max-depth with unlimited support
 - ✅ **Comprehensive Test Suite**: 14 test functions covering state space completeness, parameterized actions, and exploration correctness
 - ✅ **Error Reporting**: User-friendly error messages with descriptions and stack traces
@@ -18,6 +18,7 @@
 - ✅ **Map Operations**: Map.put(), Map.get(), and map[key] indexing support
 - ✅ **Enum Types**: Full support (declaration, parsing, evaluation, comparison)
 - ✅ **Temporal Verification**: Proper cycle handling and fairness support in temporal property verification
+- ✅ **Stuttering Detection**: Automatic detection and reporting of stuttering steps during state space exploration
 
 **Test Status**: Core tests passing ✅, Comprehensive test suite: 14/14 tests passing ✅  
 **Example Status**: 19 example files (including violation and corrected versions)  
@@ -28,6 +29,52 @@
 ---
 
 ## Recent Work Completed
+
+### Stuttering Detection and Reporting (January 2025)
+
+**Completed**:
+1. ✅ **Stuttering Detection**
+   - Automatically detects when actions cause states to transition back to themselves (self-loops)
+   - Tracks stuttering steps per unique (state, action) combination
+   - Deduplicates stuttering warnings to report each unique stuttering once
+   - Detection works in both BFS and DFS exploration algorithms
+
+2. ✅ **Stuttering Warnings**
+   - Reports stuttering warnings in final verification output
+   - Shows count of stuttering steps detected
+   - Includes explanatory message about what stuttering indicates
+   - Verbose mode shows detailed information about each stuttering (action name, arguments)
+   - Warnings appear even when there are violations (not hidden)
+
+3. ✅ **Chapter 8: Stuttering and Ensuring Progress**
+   - Comprehensive documentation on stuttering concept
+   - Explains what stuttering means and why it's important
+   - Demonstrates reducing stuttering from 51 to 1 (98% reduction)
+   - Three complete examples:
+     - Simple counter with stuttering (and fixes)
+     - Process system with stuttering (and fixes)
+     - Resource allocation with stuttering (and fixes)
+   - Explains when stuttering is acceptable vs problematic
+   - Best practices for fixing stuttering
+
+4. ✅ **Example Files**
+   - `examples/stuttering-counter.spec` - Counter with noop action causing stuttering
+   - `examples/stuttering-counter-fixed.spec` - Fixed version with noop removed
+   - `examples/stuttering-counter-with-fairness.spec` - Version with fairness constraints
+   - `examples/stuttering-process.spec` - Process system with stuttering
+   - `examples/stuttering-process-fixed.spec` - Fixed version with restricted noop
+
+**Key Files Modified**:
+- `internal/explore/explorer.go` - Added Stuttering type and detection logic in BFS/DFS
+- `cmd/spectre/commands.go` - Added stuttering warning reporting in final output
+
+**Key Files Added**:
+- `spectre_book/08-stuttering-and-progress.md` - Comprehensive chapter on stuttering
+- `examples/stuttering-counter.spec` - Stuttering example
+- `examples/stuttering-counter-fixed.spec` - Fixed version
+- `examples/stuttering-counter-with-fairness.spec` - Fairness version
+- `examples/stuttering-process.spec` - Process system example
+- `examples/stuttering-process-fixed.spec` - Fixed process system
 
 ### State Space Exploration Improvements (January 2025)
 
@@ -376,6 +423,7 @@
 - ✅ Counterexample generation
 - ✅ Transition graph building
 - ✅ Temporal property verification
+- ✅ Stuttering detection and reporting
 
 **Key Files**:
 - `internal/exec/state_initializer.go`
@@ -662,7 +710,7 @@ spectre/
 - ✅ `PACKAGING.md` - Packaging and distribution
 - ✅ `STATUS.md` - This file
 
-### Spectre Book (7 Chapters)
+### Spectre Book (8 Chapters)
 - ✅ `spectre_book/01-getting-started.md` - Installation and examples
 - ✅ `spectre_book/02-language-overview.md` - All language elements, state space exploration
 - ✅ `spectre_book/03-invariants-and-violations.md` - Invariant violations and fixes
@@ -670,6 +718,7 @@ spectre/
 - ✅ `spectre_book/05-concurrent-systems-and-locking.md` - Concurrent systems example
 - ✅ `spectre_book/06-distributed-message-queue.md` - Message queue example
 - ✅ `spectre_book/07-modules-and-code-organization.md` - Module system with elevator controller example
+- ✅ `spectre_book/08-stuttering-and-progress.md` - Stuttering detection and fixing progress issues
 
 ### Documentation Needs
 - ⚠️ Update examples with Map methods usage
@@ -780,13 +829,14 @@ go build -o spectre ./cmd/spectre
 
 ## Version History
 
-- **v0.2.0** (January 2025): Documentation, Examples, Verification Improvements, and Test Suite
-  - Created Spectre Book with 6 comprehensive chapters
+- **v0.2.0** (January 2025): Documentation, Examples, Verification Improvements, Test Suite, and Stuttering Detection
+  - Created Spectre Book with 8 comprehensive chapters
   - Added teaching examples with violation and corrected versions:
     - Bank account system (invariant violations)
     - Inventory system (invariant violations)
     - Concurrent locking system (invariant and temporal violations)
     - Distributed message queue (temporal violations)
+    - Stuttering examples (counter and process systems)
   - Fixed verification to properly fail on invariant violations
   - Improved fairness filtering with transition hashing (includes action names)
   - Enhanced error reporting with descriptions in violation messages
@@ -803,8 +853,11 @@ go build -o spectre ./cmd/spectre
   - Added unlimited exploration support (infinity/unlimited/-1)
   - Created comprehensive test suite (14 tests, 10 specifications)
   - Added Chapter 7: Modules and Code Organization
+  - Added Chapter 8: Stuttering and Ensuring Progress
   - Updated Chapter 2 with state space exploration documentation
   - Created memory optimization strategy document (TODO-Memory-optimisation.md)
+  - Implemented stuttering detection and reporting during state space exploration
+  - Added stuttering warnings with detailed information in verbose mode
 
 - **v0.1.0** (January 2025): Map methods implementation
   - Added Map.put() and Map.get() methods
