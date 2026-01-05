@@ -1,4 +1,4 @@
-# IMPORTANT: This is still under construction. It has been made public only to test installations etc. No PRs WILL BE ENTERTAINED.
+# IMPORTANT: This is still under construction. It has been made public only to test installations etc. No PRs WILL BE ENTERTAINED. This is an experimental Vibe coding project to push the limits of LLM!! This may have bugs and hence it is not recommended for commercial use.
 
 # Spectre Language
 
