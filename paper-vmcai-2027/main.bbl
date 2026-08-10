@@ -34,10 +34,11 @@ Ernst, M.D., Perkins, J.H., Guo, P.J., McCamant, S., Pacheco, C., Tschantz,
   M.S., Xiao, C.: The daikon system for dynamic detection of likely invariants.
   Science of Computer Programming  \textbf{69},  35--45 (2007)
 
-\bibitem{flanagan2002extended}
+\bibitem{flanagan2001houdini}
 Flanagan, C., Leino, K.R.M.: Houdini, an annotation assistant for {ESC/Java}.
-  In: Formal Methods Europe (FME). LNCS, vol.~2021, pp. 500--517. Springer
-  (2001)
+  In: FME 2001: Formal Methods for Increasing Software Productivity. Lecture
+  Notes in Computer Science, vol.~2021, pp. 500--517. Springer (2001).
+  \doi{10.1007/3-540-45251-6_29}
 
 \bibitem{holzmann2003spin}
 Holzmann, G.J.: The {SPIN} Model Checker: Primer and Reference Manual.
