@@ -108,6 +108,8 @@ func (p *Parser) parseModuleBody() []ast.Decl {
 		case lexer.PUBLIC, lexer.PRIVATE:
 			// Parse visibility modifier followed by declaration
 			decl = p.parseVisibilityDecl()
+		case lexer.PARAM:
+			decl = p.parseParamDecl()
 		default:
 			// Skip unknown tokens (comments, etc.)
 			p.nextToken()

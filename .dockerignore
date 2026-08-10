@@ -1,0 +1,30 @@
+# Build artifacts
+spectre
+spectre-mine-rs
+dist/
+coverage.out
+coverage.html
+
+# Rust build cache (large; Docker rebuild handles this)
+rust/*/target/
+
+# Go cache
+vendor/
+
+# LaTeX paper build artifacts
+paper-vmcai-2027/*.aux
+paper-vmcai-2027/*.log
+paper-vmcai-2027/*.pdf
+paper-vmcai-2027/*.bbl
+paper-vmcai-2027/*.blg
+paper-vmcai-2027/*.out
+paper-vmcai-2027/*.toc
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Git internals (keep .gitignore but not objects)
+.git/

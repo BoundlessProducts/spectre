@@ -111,3 +111,40 @@ func (p *Parser) parseConstantDecl() ast.Decl {
 	}
 }
 
+// parseParamDecl parses a specification parameter declaration.
+// Format: param <name>: <type>
+// Parameters are read-only integer variables bound via --param Name=Value at run time.
+func (p *Parser) parseParamDecl() ast.Decl {
+	pos := tokenPos(p.curToken)
+
+	if !p.curTokenIs(lexer.PARAM) {
+		p.addErrorf("expected param, got %s", p.curToken.Type)
+		return nil
+	}
+	p.nextToken() // consume "param"
+
+	if !p.curTokenIs(lexer.IDENT) {
+		p.addErrorf("expected identifier after param, got %s", p.curToken.Type)
+		return nil
+	}
+	name := p.curToken.Literal
+	p.nextToken() // consume identifier
+
+	if !p.curTokenIs(lexer.COLON) {
+		p.addErrorf("expected : after param name, got %s", p.curToken.Type)
+		return nil
+	}
+	p.nextToken() // consume ":"
+
+	paramType := p.parseType()
+	if paramType == nil {
+		return nil
+	}
+
+	return &ast.ParamDecl{
+		Position: pos,
+		Name:     name,
+		Type:     paramType,
+	}
+}
+

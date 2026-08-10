@@ -74,6 +74,7 @@ const (
 	WHEN        TokenType = "WHEN"
 	SUPER       TokenType = "SUPER"
 	WITH        TokenType = "WITH"
+	PARAM       TokenType = "PARAM"
 
 	// Temporal operators
 	ALWAYS    TokenType = "ALWAYS"
@@ -133,6 +134,7 @@ func LookupIdent(ident string) TokenType {
 		"when":        WHEN,
 		"super":       SUPER,
 		"with":        WITH,
+		"param":       PARAM,
 		"always":      ALWAYS,
 		"eventually":  EVENTUALLY,
 		"until":       UNTIL,

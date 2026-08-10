@@ -331,8 +331,9 @@ func (p *Parser) parseGroupedOrLambda() ast.Expr {
 
 	// Check if it looks like lambda parameters (identifier optionally with type)
 	// A lambda must have: (param) => or (param1, param2) => or (param: Type) =>
-	// Quick check: if next token after IDENT is = (assignment) or == (equality), it's definitely not a lambda
-	if p.curTokenIs(lexer.IDENT) && !p.peekTokenIs(lexer.ASSIGN) && !p.peekTokenIs(lexer.EQ) {
+	// Only try lambda detection when peek is ), :, or , — the only valid lambda parameter separators.
+	// Any other peek token (arithmetic/comparison operators) means it's a grouped expression.
+	if p.curTokenIs(lexer.IDENT) && (p.peekTokenIs(lexer.RPAREN) || p.peekTokenIs(lexer.COLON) || p.peekTokenIs(lexer.COMMA)) {
 		// Could be a lambda - try to parse as lambda parameters
 		// We check if we can parse parameters and then see ) followed by =>
 		params, isLambda := p.tryParseLambdaParams()

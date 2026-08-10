@@ -1,0 +1,120 @@
+\relax 
+\citation{newcombe2015amazon}
+\citation{wing1990specifier}
+\@writefile{toc}{\contentsline {title}{Spectre: Closed-Loop Refinement, Repair, and Conformance for Rust}{1}{}\protected@file@percent }
+\@writefile{toc}{\authcount {1}}
+\@writefile{toc}{\contentsline {author}{Anonymous Author(s)}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{}\protected@file@percent }
+\newlabel{sec:intro}{{1}{1}{}{section.1}{}}
+\citation{clarke1986automatic}
+\citation{pnueli1977temporal}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Source-Derived Refinement Architecture}{2}{}\protected@file@percent }
+\newlabel{sec:arch}{{2}{2}{}{section.2}{}}
+\@writefile{toc}{\contentsline {paragraph}{Kripke Structures and Bounded Checking.}{2}{}\protected@file@percent }
+\citation{syncratedoc}
+\citation{solar2008program,alur2013syntax}
+\citation{dijkstra1976discipline}
+\@writefile{toc}{\contentsline {paragraph}{The Refinement Map.}{3}{}\protected@file@percent }
+\newlabel{prop:refine}{{1}{3}{}{proposition.1.1}{}}
+\@writefile{toc}{\contentsline {paragraph}{Source Derivation.}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Spectre Language.}{3}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Feature comparison of formal specification tools (open-source/core toolchains; commercial services excluded).}}{4}{}\protected@file@percent }
+\newlabel{tab:comparison}{{1}{4}{}{table.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Counterexample-Guided Repair with Trace-Preservation Validation}{4}{}\protected@file@percent }
+\newlabel{sec:cegis}{{3}{4}{}{section.3}{}}
+\@writefile{toc}{\contentsline {paragraph}{Algorithm.}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Extended Synthesis.}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Formal Guarantees.}{4}{}\protected@file@percent }
+\newlabel{prop:wp}{{2}{4}{}{proposition.1.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Spectre architecture. \texttt  {spectre mine} produces both the Spectre model and the Refinement Map (\texttt  {.driver.json}) from the Rust AST. The model checker feeds violations to CEGIS repair and traces to conformance testing; \texttt  {sync} and \texttt  {drift} use the Refinement Map for incremental re-verification.}}{5}{}\protected@file@percent }
+\newlabel{fig:arch}{{1}{5}{}{figure.1}{}}
+\newlabel{cor:repair}{{1}{5}{}{corollary.1.1}{}}
+\@writefile{toc}{\contentsline {paragraph}{Causal Diagnosis.}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Incremental Synchronisation and Verification}{5}{}\protected@file@percent }
+\newlabel{sec:sync}{{4}{5}{}{section.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{Bidirectional Drift Detection (\texttt  {spectre drift}).}{5}{}\protected@file@percent }
+\citation{apalache-itf}
+\@writefile{toc}{\contentsline {paragraph}{Incremental Synchronisation (\texttt  {spectre sync}).}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Cached and Incremental Re-verification.}{6}{}\protected@file@percent }
+\newlabel{prop:cache}{{3}{6}{}{proposition.1.3}{}}
+\newlabel{prop:incremental}{{4}{6}{}{proposition.1.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Generated Conformance Testing}{6}{}\protected@file@percent }
+\newlabel{sec:conformance}{{5}{6}{}{section.5}{}}
+\@writefile{toc}{\contentsline {paragraph}{Refinement Checking.}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Coverage-Guided ITF Traces.}{7}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Coverage-mode comparison on \texttt  {bank-account-corrected} (20-transition budget). ``Trace steps'' counts the initial state plus transitions. ``Boundary steps'' = steps with \texttt  {aliceBalance}$=0$. \emph  {action} mode stops early once all actions are covered.}}{7}{}\protected@file@percent }
+\newlabel{tab:coverage}{{2}{7}{}{table.2}{}}
+\@writefile{toc}{\contentsline {paragraph}{Near-Zero-Driver MBT and Regression Tests.}{7}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Evaluation}{7}{}\protected@file@percent }
+\newlabel{sec:eval}{{6}{7}{}{section.6}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Spec mining and refinement map derivation across 10 Rust components. ``Guards'' = \texttt  {require} clauses in the mined spec (manually verified correct); ``Correct?'' = guards semantically correct vs.\ source intent.}}{8}{}\protected@file@percent }
+\newlabel{tab:mining}{{3}{8}{}{table.3}{}}
+\@writefile{toc}{\contentsline {paragraph}{RQ1: How accurately does Spectre derive the Rust\,--\,model correspondence?}{8}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{RQ2: How effectively does repair synthesise safe, trace-preserving guards?}{8}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{RQ3: How effectively do generated tests detect implementation divergence?}{8}{}\protected@file@percent }
+\citation{ongaro2014raft}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces WP repair benchmark across assignment forms. ``CEs'' = CEGIS iterations; ``E2E time'' = end-to-end repair time (synthesis + re-exploration).}}{9}{}\protected@file@percent }
+\newlabel{tab:repair}{{4}{9}{}{table.4}{}}
+\@writefile{toc}{\contentsline {paragraph}{RQ4: How much does caching and incremental re-verification reduce cost?}{9}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Near-zero-driver MBT and generated test evaluation. ``Import LOC'' = \texttt  {use} imports (1 per component); ``Adapter LOC'' = non-generated serialization code (0 except CircuitBreaker enum); ``Positive trace'' = ITF replay success; ``Injected fault'' = fault detected.}}{10}{}\protected@file@percent }
+\newlabel{tab:mbt}{{5}{10}{}{table.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Incremental re-verification vs.\ cold BFS (same platform). \emph  {Pruned} = states removed as unreachable without the changed action (deterministic); \emph  {new BFS} = newly BFS-expanded states (varies $\pm $2 across runs due to hash-map iteration order). Total states always equals the original count (verified by hash).}}{10}{}\protected@file@percent }
+\newlabel{tab:incr}{{6}{10}{}{table.6}{}}
+\@writefile{toc}{\contentsline {paragraph}{Case Study: Raft Election Safety.}{10}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{RQ5: How does Spectre scale from exhaustive to simulation?}{10}{}\protected@file@percent }
+\citation{lamport2002specifying,kuppe2019tla}
+\citation{quint2023}
+\citation{quintconnect}
+\citation{tlaconnect}
+\citation{apalache-itf}
+\citation{cirstea2024validating}
+\citation{maliuginas2024elixir}
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Verification results. $^\dagger $State limit hit; result is \emph  {No CE found (bounded)}, not exhaustive. $^\ddagger $Capped at 100; unbounded resource var makes BFS impractical. $^\S  $3-node cluster; per-node skeleton mined from Rust.}}{11}{}\protected@file@percent }
+\newlabel{tab:verif}{{7}{11}{}{table.7}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces 3-/5-/7-node Raft scalability. BFS limit = 50{,}000 states. Simulation = \texttt  {spectre simulate -\!\!-traces~1000}.}}{11}{}\protected@file@percent }
+\newlabel{tab:scaling}{{8}{11}{}{table.8}{}}
+\@writefile{toc}{\contentsline {paragraph}{Runtime Monitor.}{11}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Related Work}{11}{}\protected@file@percent }
+\newlabel{sec:related}{{7}{11}{}{section.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{Specification-First vs.\ Implementation-First.}{11}{}\protected@file@percent }
+\citation{solar2008program}
+\citation{alur2013syntax}
+\citation{flanagan2002extended}
+\citation{ernst2007daikon}
+\citation{padon2016ivy}
+\citation{holzmann2003spin}
+\citation{holzmann2001modex}
+\citation{leino2010dafny}
+\citation{chen2007mop}
+\citation{jin2012javamop}
+\bibstyle{splncs04}
+\bibdata{references}
+\bibcite{alur2013syntax}{1}
+\@writefile{toc}{\contentsline {paragraph}{Verification Languages and Guard Synthesis.}{12}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{12}{}\protected@file@percent }
+\newlabel{sec:conclusion}{{8}{12}{}{section.8}{}}
+\bibcite{chen2007mop}{2}
+\bibcite{cirstea2024validating}{3}
+\bibcite{clarke1986automatic}{4}
+\bibcite{dijkstra1976discipline}{5}
+\bibcite{ernst2007daikon}{6}
+\bibcite{flanagan2002extended}{7}
+\bibcite{holzmann2003spin}{8}
+\bibcite{holzmann2001modex}{9}
+\bibcite{jin2012javamop}{10}
+\bibcite{apalache-itf}{11}
+\bibcite{kuppe2019tla}{12}
+\bibcite{lamport2002specifying}{13}
+\bibcite{leino2010dafny}{14}
+\bibcite{maliuginas2024elixir}{15}
+\bibcite{newcombe2015amazon}{16}
+\bibcite{ongaro2014raft}{17}
+\bibcite{padon2016ivy}{18}
+\bibcite{pnueli1977temporal}{19}
+\bibcite{quint2023}{20}
+\bibcite{quintconnect}{21}
+\bibcite{solar2008program}{22}
+\bibcite{tlaconnect}{23}
+\bibcite{syncratedoc}{24}
+\bibcite{wing1990specifier}{25}
+\gdef \@abspage@last{14}

@@ -98,6 +98,18 @@ type OneOfInitDecl struct {
 func (o *OneOfInitDecl) Pos() Position { return o.Position }
 func (o *OneOfInitDecl) declNode()     {}
 
+// ParamDecl declares a specification parameter (e.g. `param N: int`).
+// Parameters are bound at verification time via --param Name=Value flags.
+// They behave as read-only integer variables during exploration.
+type ParamDecl struct {
+	Position Position
+	Name     string
+	Type     Type
+}
+
+func (p *ParamDecl) Pos() Position { return p.Position }
+func (p *ParamDecl) declNode()     {}
+
 // InvariantDecl represents an invariant declaration
 type InvariantDecl struct {
 	Position    Position

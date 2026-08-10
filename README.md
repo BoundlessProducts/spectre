@@ -1,128 +1,486 @@
-# IMPORTANT: This is still under construction. It has been made public only to test installations etc. No PRs WILL BE ENTERTAINED. This is an experimental Vibe coding project to push the limits of LLM!! This may have bugs and hence it is not recommended for commercial use.
+> **⚠️ Under Construction** —  This is a research project. Not intended for commercial use. No PRs are encouarged at this point.
+>
+> The entire codebase, documentation, and Spectre Book were generated using LLMs (Cursor + Gemini deep research + Claude). Not a single line of code was written by hand. Build time: ~24 hours across two weekends.
 
-## Methodology
-This project was built totally using vibe coding techniques in cursor and auto mode. It took approximately 24 hours over two weekends to develop which is remarkable for a deep CS based system like a formal verification system!! The specifcations were generated using Google  Gemini in deep research mode.
+---
 
-Even the documentation and spectre book has been generated using LLMs. Not a single line of code has been written by hand!!
+# Spectre
 
-Open question: how to verify a verification system?
-Although there is a test suite for checking the state space traversal- is there a fool proof way of assessing whether ALL the state spaces for ALL the specs are being explored?
+A programmer-friendly formal specification language and Rust verification toolchain inspired by TLA+ and Quint, designed for developers who want to verify system correctness without a PhD in formal methods.
 
+Model your system as a state machine, write invariants and temporal properties, and let Spectre exhaustively explore every reachable state. A source-derived refinement map connects your Rust implementation to the formal model throughout the development lifecycle — covering verification, counterexample-guided repair, conformance testing, drift detection, incremental re-verification, and runtime monitoring.
 
-# Spectre Language
+```spectre
+var balance: int
+var frozen: bool
 
-A programmer-friendly specification language inspired by TLA+ and Quint, designed specifically for Java and TypeScript developers.
+init { balance = 0  frozen = false }
 
-The best way to understand the  Spectre language is to study the chapters in the **[📖 The Spectre Language Book](./spectre_book/)**
+action deposit(amount: int) {
+  require amount > 0
+  balance' = balance + amount
+}
+action withdraw(amount: int) {
+  require amount > 0
+  require balance >= amount
+  require frozen == false
+  balance' = balance - amount
+}
+action freeze   { require frozen == false  frozen' = true  }
+action unfreeze { require frozen == true   frozen' = false }
+
+invariant solvency { balance >= 0 }
+temporal eventuallyUnfreeze { always (frozen == true -> eventually frozen == false) }
+```
+
+---
+
+## Table of Contents
+
+1. [What is Spectre?](#what-is-spectre)
+2. [Installation — macOS](#installation--macos)
+3. [Installation — Linux](#installation--linux)
+4. [Installation — Windows](#installation--windows)
+5. [Running the Examples](#running-the-examples)
+6. [CLI Reference](#cli-reference)
+7. [Advanced Workflows](#advanced-workflows)
+8. [Documentation](#documentation)
+
+---
 
 ## What is Spectre?
 
-Spectre is a formal specification language that makes it easy to model systems as state machines and verify their correctness. Unlike traditional formal methods that can be intimidating, Spectre provides:
+Spectre is a formal specification language for modelling systems as state machines and verifying their correctness properties. It explores your system's entire reachable state space and reports exactly which sequence of actions leads to a bug.
 
-- **Familiar syntax** similar to Java and TypeScript
-- **Strong typing** with type inference
-- **Clear semantics** for state machines and transitions
-- **Comprehensive verification** tools for invariants and temporal properties
-- **Excellent error messages** with descriptions and execution traces
+**Key capabilities:**
 
-## Key Features
+| Feature | Description |
+|---------|-------------|
+| State machines | Declare state variables, an initial state, and actions that transition between states |
+| Invariant checking | Assert properties that must hold in *every* reachable state |
+| Temporal logic | Express liveness (`eventually`), safety (`always`), and response (`→` leads-to) properties |
+| Fairness | Weak (`WF`) and strong (`SF`) fairness conditions for concurrent systems |
+| CEGIS repair | Automatic weakest-precondition guard suggestions when an invariant is violated |
+| Spec mining | Extract a Spectre skeleton from existing Rust source — fields, actions, guards, and init values |
+| Drift detection | `spectre sync` compares your Rust source against the mined spec and classifies every change |
+| Incremental re-verification | When one action changes, `--incremental` re-verifies only that action — 3–7× faster than a cold BFS |
+| State caching | `--use-cache` restores a previous BFS graph in milliseconds (33× faster for Raft) |
+| Model-based testing | Generate Rust test drivers and ITF trace replay; five coverage modes including property-directed |
+| Rust monitor generation | Emit a self-contained `monitor.rs` that checks spec invariants in production |
+| Simulation | Direct path sampling via `spectre simulate` — covers 5-/7-node Raft beyond exhaustive BFS scale |
 
-- ✅ **Type System**: Primitive and compound types (records, sets, maps, lists, enums, options)
-- ✅ **State Management**: Explicit state variables with prime notation (`'`) for next-state
-- ✅ **Non-determinism**: `oneOf` operator for multiple initial states
-- ✅ **Pure Functions**: Reusable computational helpers without side effects
-- ✅ **Temporal Logic**: `always`, `eventually`, `until`, `leads-to` operators
-- ✅ **Fairness**: Weak Fairness (WF) and Strong Fairness (SF) conditions for concurrent systems
-- ✅ **Modules**: Code organization with imports and inheritance
-- ✅ **Descriptions**: Human-readable context in error messages
+---
 
-## Quick Example
+## Installation — macOS
 
-```spectre
-description "Tracks a numeric counter value"
-var counter: int
+### Step 1 — Install Go
 
-description "System starts with counter initialized to zero"
-init {
-  counter = 0
-}
+Spectre requires **Go 1.21 or later**.
 
-description "Increments the counter by one"
-action increment {
-  counter' = counter + 1
-}
+**Option A: Official installer (recommended)**
 
-description "Ensures counter never becomes negative"
-invariant nonNegative {
-  counter >= 0
-}
+1. Go to [https://go.dev/dl/](https://go.dev/dl/) and download the latest `.pkg` for macOS (arm64 for Apple Silicon, amd64 for Intel).
+2. Open the downloaded `.pkg` and follow the installer.
+3. Open a new terminal and verify:
+
+```bash
+go version
+# Expected: go version go1.24.x darwin/arm64  (or amd64)
 ```
+
+**Option B: Homebrew**
+
+```bash
+brew install go
+go version
+```
+
+### Step 2 — Clone the repository
+
+```bash
+git clone https://github.com/akkeshavan/spectre.git
+cd spectre
+```
+
+### Step 3 — Build the CLI
+
+```bash
+go build -o spectre ./cmd/spectre
+./spectre
+```
+
+### Step 4 — (Optional) Install globally
+
+```bash
+go install ./cmd/spectre
+```
+
+Add Go's bin directory to your shell PATH if it isn't already:
+
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+# Add to ~/.zshrc or ~/.bash_profile to persist
+```
+
+### Step 5 — Run the test suite (optional)
+
+```bash
+go test ./...
+# All 13 packages should pass
+```
+
+---
+
+## Installation — Linux
+
+### Step 1 — Install Go
+
+**Debian / Ubuntu**
+
+```bash
+wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+go version
+```
+
+> For ARM64 (e.g., Raspberry Pi, AWS Graviton): replace `amd64` with `arm64` in the filename.
+
+**Fedora / RHEL / CentOS**
+
+```bash
+sudo dnf install -y golang
+go version
+```
+
+**Arch Linux**
+
+```bash
+sudo pacman -S go
+go version
+```
+
+### Step 2 — Clone, build, install
+
+```bash
+git clone https://github.com/akkeshavan/spectre.git
+cd spectre
+go build -o spectre ./cmd/spectre
+go install ./cmd/spectre   # optional: install globally
+go test ./...              # optional: run test suite
+```
+
+---
+
+## Installation — Windows
+
+### Step 1 — Install Go
+
+1. Go to [https://go.dev/dl/](https://go.dev/dl/) and download the latest **Windows installer** (`.msi`).
+2. Run the installer. It adds Go to your `PATH` automatically.
+3. Open a new **Command Prompt** or **PowerShell** and verify:
+
+```powershell
+go version
+```
+
+**Alternative — winget**
+
+```powershell
+winget install GoLang.Go
+```
+
+### Step 2 — Clone, build, install
+
+```powershell
+git clone https://github.com/akkeshavan/spectre.git
+cd spectre
+go build -o spectre.exe ./cmd/spectre
+.\spectre.exe
+go install ./cmd/spectre   # optional: install globally
+```
+
+> **Windows note:** All commands below use `./spectre` (macOS/Linux). On Windows substitute `.\spectre.exe` (PowerShell) or `./spectre.exe` (Git Bash).
+
+---
+
+## Running the Examples
+
+All examples are in the `examples/` directory.
+
+---
+
+### Example 1 — Hello World: Counter
+
+```bash
+./spectre verify examples/counter.spec
+```
+
+The counter's `reset` action prevents it from ever reaching 10, so the temporal property is violated. Spectre shows the counterexample trace.
+
+```bash
+./spectre verify examples/counter-corrected.spec   # should pass
+```
+
+---
+
+### Example 2 — Missing Guard: Bank Account
+
+```bash
+./spectre verify examples/bank-account-violation.spec
+# Finds invariant violation in one step: withdrawing before depositing
+```
+
+```bash
+./spectre verify examples/bank-account-corrected.spec
+# Passes: no violations found within the exploration bounds
+```
+
+**With parameterized actions (used for MBT and monitoring):**
+
+```bash
+./spectre verify examples/bank-account-parameterized.spec
+# 3,745 states exhaustively explored; no violations
+```
+
+---
+
+### Example 3 — Mutual Exclusion
+
+```bash
+./spectre verify examples/concurrent-lock-violation.spec
+./spectre verify examples/concurrent-lock-corrected.spec
+# Corrected version: 1,928 states, no violations
+```
+
+---
+
+### Example 4 — Raft Election Safety (3-node cluster)
+
+Spectre mines the Raft per-node state machine from Rust source and composes a 3-node cluster spec.
+
+```bash
+./spectre verify examples/raft-election-safety.spec --max-states 30000
+# Exhaustively explores 22,432 states; no violations of
+# electionSafety, leaderMajority, or candidateSelfVote
+```
+
+**Cache restore (unchanged spec, 33× faster):**
+
+```bash
+./spectre verify examples/raft-election-safety.spec --max-states 30000 --use-cache
+# Restored state graph from cache (22432 states)
+```
+
+**Incremental re-verification when one action changes:**
+
+```bash
+./spectre verify examples/raft-election-safety.spec --max-states 30000 \
+    --use-cache --incremental --changed-action vote2for1
+# Re-verifies only vote2for1; ~3× faster than cold BFS
+```
+
+---
+
+### Example 5 — Stuttering and Fairness
+
+```bash
+./spectre verify examples/stuttering-counter.spec
+# Reports stuttering warnings for actions that self-loop
+
+./spectre verify examples/stuttering-counter-with-fairness.spec
+# Fairness constraints resolve the liveness issue
+```
+
+---
+
+### Example 6 — Coverage-Guided Model-Based Testing
+
+```bash
+# Property-directed: steers traces toward invariant boundaries
+./spectre verify examples/bank-account-parameterized.spec \
+    --emit-traces trace.itf.json --coverage-mode property
+
+# Other modes: action | transition-pair | boundary | rare-action
+./spectre verify examples/bank-account-parameterized.spec \
+    --emit-traces trace.itf.json --coverage-mode boundary
+```
+
+---
+
+### Example 7 — Exploration Limits
+
+```bash
+# Explore up to 50,000 states
+./spectre verify examples/bank-account-corrected.spec --max-states 50000
+
+# No state limit (for small specs only)
+./spectre verify examples/counter.spec --max-states unlimited
+
+# Parameterised model (e.g., 5-node Raft)
+./spectre verify examples/raft-election-safety-5node.spec --max-states 50000
+
+# Direct simulation (no full graph): 1,000 random paths on 7-node Raft
+./spectre simulate examples/raft-election-safety-7node.spec --traces 1000
+```
+
+---
+
+## CLI Reference
+
+```
+spectre <command> [flags] <file>
+```
+
+| Command | Description |
+|---------|-------------|
+| `parse <file>` | Check syntax — report parse errors |
+| `typecheck <file>` | Check types — report type mismatches |
+| `verify <file>` | BFS state exploration, invariant and temporal property checking |
+| `simulate <file>` | Random path sampling without building the full state graph |
+| `mine --lang rust <source.rs>` | Mine a Spectre spec skeleton from Rust source |
+| `sync <source.rs>` | Diff Rust source against the mined spec; classify changes as safe / unsafe / update-required |
+| `drift <spec> <source.rs>` | Detect bidirectional staleness between a spec and its Rust implementation |
+| `generate-driver --lang rust <file>` | Generate a Rust MBT driver skeleton |
+| `generate-monitor --lang rust <file>` | Generate an embedded Rust runtime monitor |
+| `check-refinement <file>` | Check that ITF traces conform to the spec via the refinement mapping |
+| `diff-conformance <file>` | Replay an ITF trace against two spec versions and report divergences |
+
+### `verify` flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--verbose`, `-v` | off | Show detailed state dumps in traces |
+| `--max-states <n>` | 5000 | Stop after exploring `n` states. Use `unlimited` for no limit |
+| `--max-depth <n>` | 100 | Stop BFS at depth `n`. Use `unlimited` for no limit |
+| `--param Name=Value` | — | Bind a spec parameter (e.g., `--param N=3`). Repeatable |
+| `--emit-traces <file>` | — | Write an ITF execution trace to `<file>` for MBT replay |
+| `--coverage-mode <mode>` | `action` | Trace coverage strategy: `action`, `transition-pair`, `boundary`, `rare-action`, `property` |
+| `--use-cache` | off | Restore a previously cached BFS graph; run fresh BFS and save cache if absent |
+| `--incremental` | off | Re-verify only the changed action (requires `--use-cache` and `--changed-action`) |
+| `--changed-action <name>` | — | Name of the action whose semantics changed |
+
+### `simulate` flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--traces <n>` | 100 | Number of random paths to sample |
+| `--max-depth <n>` | 100 | Maximum steps per path |
+
+### `mine` flags
+
+| Flag | Description |
+|------|-------------|
+| `--lang rust` | Source language (only `rust` supported) |
+| `--output`, `-o <file>` | Write mined spec to file instead of stdout |
+| `--ai` | Enhance with LLM (requires `ANTHROPIC_API_KEY` env var) |
+
+---
+
+## Advanced Workflows
+
+### Spec Mining + Drift Detection
+
+Extract a spec from Rust source, then keep it in sync as the code evolves:
+
+```bash
+# 1. Mine the spec
+./spectre mine --lang rust src/account.rs -o account.spec
+
+# 2. Verify it
+./spectre verify account.spec
+
+# 3. After code changes, check for drift
+./spectre sync src/account.rs
+# Output: classify each change as structurally unchanged / spec-update-required / possibly-unsafe
+
+# 4. For bidirectional drift (spec also may have changed)
+./spectre drift account.spec src/account.rs
+```
+
+`spectre sync` compares fields, actions, guard counts, and normalised assignment expressions. It detected **30/35** injected mutations in evaluation (85.7%), missing only semantic polarity inversions not representable in assignment-body comparison.
+
+---
+
+### Incremental Re-verification
+
+After `spectre sync` flags an action as **possibly-unsafe**, re-verify only that action without re-running the full BFS:
+
+```bash
+# First run: build and cache the state graph
+./spectre verify raft.spec --max-states 30000 --use-cache
+
+# After modifying vote2for1's guard:
+./spectre verify raft.spec --max-states 30000 \
+    --use-cache --incremental --changed-action vote2for1
+```
+
+The algorithm: prune stale transitions → recompute reachability → remove now-unreachable states → re-execute the changed action → BFS-expand new states up to the original bound. On Raft (22,432 states), incremental is **3× faster** than cold BFS; cache restore for an unchanged spec is **33× faster**.
+
+---
+
+### Coverage-Guided Model-Based Testing
+
+```bash
+# 1. Generate a property-directed trace (steers toward invariant boundaries)
+./spectre verify examples/bank-account-parameterized.spec \
+    --emit-traces trace.itf.json --coverage-mode property
+
+# 2. Generate a Rust driver
+./spectre generate-driver --lang rust examples/bank-account-parameterized.spec \
+    --output src/spec_driver.rs
+
+# 3. Fill in the action implementations in spec_driver.rs, then replay:
+./spectre check-refinement examples/bank-account-parameterized.spec \
+    --traces trace.itf.json
+```
+
+**Coverage modes:**
+
+| Mode | Strategy |
+|------|---------|
+| `action` | Prefers actions not yet covered in the current trace |
+| `transition-pair` | Prefers (prev-action, next-action) pairs not yet seen |
+| `boundary` | Steers toward the maximum boundary of integer variables |
+| `rare-action` | Prefers globally least-executed actions |
+| `property` | Steers toward states where the minimum integer variable is lowest (closest to invariant boundary) |
+
+In evaluation on bank-account, `property` mode achieved **52% boundary-state coverage** vs 5–25% for other modes.
+
+---
+
+### Embedded Runtime Monitor
+
+```bash
+# 1. Generate the monitor
+./spectre generate-monitor --lang rust myspec.spec -o src/monitor.rs
+
+# 2. In your Rust code, call after every transition:
+#    monitor.step("action_name", new_state);
+
+# 3. At shutdown, check liveness:
+#    monitor.unmet_liveness_properties()
+```
+
+The generated monitor checks all invariants in O(k) time (k = number of invariants) with no external dependencies.
+
+---
 
 ## Documentation
 
-For complete installation instructions, usage guide, language reference, and examples, please see:
+| Document | Description |
+|----------|-------------|
+| [docs/spec.md](./docs/spec.md) | Full language specification and API reference |
+| [docs/language_definition.md](./docs/language_definition.md) | Formal grammar (EBNF) and operational semantics |
+| [docs/spectre_book.md](./docs/spectre_book.md) | The Spectre Language Book — tutorials and worked examples |
+| [spectre_book/09-spec-mining-from-rust.md](./spectre_book/09-spec-mining-from-rust.md) | Spec mining from Rust and drift detection |
+| [spectre_book/10-model-based-testing.md](./spectre_book/10-model-based-testing.md) | Model-based testing and ITF trace replay |
+| [spectre_book/11-runtime-monitoring.md](./spectre_book/11-runtime-monitoring.md) | Embedded runtime monitoring |
 
-**[📖 The Spectre Language Book](./spectre_book/)**
-
-The book is organized into chapters:
-- **[Chapter 1: Getting Started](./spectre_book/01-getting-started.md)** - Installation instructions and examples
-- **[Chapter 2: Language Overview](./spectre_book/02-language-overview.md)** - All language elements and concepts
-- **[Chapter 3: Invariants and Violations](./spectre_book/03-invariants-and-violations.md)** - Understanding and fixing invariant violations
-- **[Chapter 4: Temporal and Fairness Properties](./spectre_book/04-temporal-and-fairness-properties.md)** - Temporal logic and fairness constraints
-- **[Chapter 5: Concurrent Systems and Locking](./spectre_book/05-concurrent-systems-and-locking.md)** - Modeling concurrent systems
-- **[Chapter 6: Distributed Message Queue](./spectre_book/06-distributed-message-queue.md)** - Message queue system example
-- **[Chapter 7: Modules and Code Organization](./spectre_book/07-modules-and-code-organization.md)** - Module system and elevator controller example
-- **[Chapter 8: Stuttering and Ensuring Progress](./spectre_book/08-stuttering-and-progress.md)** - Understanding stuttering and fixing progress issues
-
-## Building from Source
-
-To build Spectre from source, you'll need:
-
-- **Go 1.21 or later** ([download](https://go.dev/dl/))
-
-### Build Steps
-
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd spectre
-   ```
-
-2. **Build the CLI tool**:
-   ```bash
-   go build -o spectre ./cmd/spectre
-   ```
-
-   This creates a `spectre` executable in the current directory.
-
-3. **Test the build**:
-   ```bash
-   ./spectre --help
-   ```
-
-4. **Run tests** (optional):
-   ```bash
-   go test ./...
-   ```
-
-5. **Install globally** (optional):
-   ```bash
-   go install ./cmd/spectre
-   ```
-
-   This installs `spectre` to your `$GOPATH/bin` or `$HOME/go/bin` directory.
-
-### Development Setup
-
-For development setup and workflow, see **[README_DEV.md](./README_DEV.md)**.
-
-## Additional Resources
-
-- **[SPEC.md](./SPEC.md)** - Complete language specification
-- **[USAGE.md](./USAGE.md)** - CLI usage guide
-- **[README_DEV.md](./README_DEV.md)** - Development setup and workflow
-- **[STATUS.md](./STATUS.md)** - Implementation status and progress
+---
 
 ## License
 
-(To be determined)
+To be determined.

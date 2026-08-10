@@ -189,6 +189,8 @@ func (p *Parser) ParseFile() *ast.File {
 			decl = p.parseTypeAliasDecl()
 		case lexer.ENUM:
 			decl = p.parseEnumDecl()
+		case lexer.PARAM:
+			decl = p.parseParamDecl()
 		default:
 			// Skip unknown tokens (comments, whitespace, etc.)
 			p.nextToken()

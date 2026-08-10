@@ -18,6 +18,7 @@ type StateMachine struct {
 	initializer       *StateInitializer
 	executor          *ActionExecutor
 	validator         *StateValidator
+	params            map[string]int64 // spec params bound via --param flags
 }
 
 // NewStateMachine creates a new state machine from a parsed file
@@ -44,11 +45,6 @@ func NewStateMachine(file *ast.File, additionalFiles ...*ast.File) (*StateMachin
 		executor:          NewActionExecutor(vm, am, cm, file, allFiles...),
 		validator:         NewStateValidator(cm, file, allFiles...),
 	}, nil
-}
-
-// GetInitialStates returns all possible initial states
-func (sm *StateMachine) GetInitialStates() ([]*state.State, error) {
-	return sm.initializer.GenerateInitialStates()
 }
 
 // ExecuteAction executes an action on a state and returns the next state
@@ -78,6 +74,7 @@ func (sm *StateMachine) ExecuteAction(actionName string, currentState *state.Sta
 	if err != nil {
 		return nil, fmt.Errorf("error executing action: %w", err)
 	}
+	sm.injectParams(nextState)
 
 	// Validate next state invariants
 	errors, err = sm.validator.ValidateState(nextState)
@@ -246,5 +243,36 @@ func (sm *StateMachine) ValidateState(s *state.State) ([]*ValidationError, error
 // GetConstraintModel returns the constraint model
 func (sm *StateMachine) GetConstraintModel() *state.ConstraintModel {
 	return sm.constraintModel
+}
+
+// SetParam binds a spec parameter to a concrete integer value.
+// The parameter becomes visible as a read-only variable in all initial states,
+// which makes it accessible during invariant and guard evaluation.
+func (sm *StateMachine) SetParam(name string, value int64) {
+	if sm.params == nil {
+		sm.params = make(map[string]int64)
+	}
+	sm.params[name] = value
+}
+
+// injectParams adds bound spec parameters into a state's variable map.
+// It is called by GetInitialStates so that params are available throughout exploration.
+func (sm *StateMachine) injectParams(s *state.State) {
+	for k, v := range sm.params {
+		n := v
+		s.Variables[k] = &state.PrimitiveValue{TypeName: "int", IntValue: &n}
+	}
+}
+
+// GetInitialStates returns all possible initial states with params injected.
+func (sm *StateMachine) GetInitialStates() ([]*state.State, error) {
+	states, err := sm.initializer.GenerateInitialStates()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range states {
+		sm.injectParams(s)
+	}
+	return states, nil
 }
 
