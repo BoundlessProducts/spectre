@@ -1,16 +1,22 @@
 package main
 
 import (
-	"bufio"
+	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/akkeshavan/spectre/internal/codegen"
+	"github.com/akkeshavan/spectre/internal/diagnose"
+	"github.com/akkeshavan/spectre/internal/mine"
 	"github.com/akkeshavan/spectre/internal/errors"
 	"github.com/akkeshavan/spectre/internal/exec"
 	"github.com/akkeshavan/spectre/internal/explore"
+	"github.com/akkeshavan/spectre/internal/itf"
 	"github.com/akkeshavan/spectre/internal/lexer"
 	"github.com/akkeshavan/spectre/internal/parser"
 	"github.com/akkeshavan/spectre/internal/semantic"
@@ -47,6 +53,26 @@ var Commands = map[string]*Command{
 		Name:        "verify",
 		Description: "Verify a Spectre specification (check invariants and temporal properties)",
 		Run:         runVerify,
+	},
+	"generate-driver": {
+		Name:        "generate-driver",
+		Description: "Generate a Rust driver skeleton for model-based testing via spectre-connect",
+		Run:         runGenerateDriver,
+	},
+	"generate-monitor": {
+		Name:        "generate-monitor",
+		Description: "Generate an embedded Rust runtime monitor that checks spec invariants in production",
+		Run:         runGenerateMonitor,
+	},
+	"mine": {
+		Name:        "mine",
+		Description: "Mine a Spectre spec skeleton from Rust source code",
+		Run:         runMine,
+	},
+	"check-refinement": {
+		Name:        "check-refinement",
+		Description: "Check that ITF traces conform to the spec via the driver.json refinement mapping",
+		Run:         runCheckRefinement,
 	},
 }
 
@@ -510,20 +536,144 @@ func runTypecheck(args []string) error {
 	})
 }
 
+// printStutterAnalysis prints repair suggestions for detected stuttering steps.
+func printStutterAnalysis(stuttering []*explore.Stuttering, file *ast.File, sm *exec.StateMachine) {
+	repairs := diagnose.AnalyzeStuttering(stuttering, file, sm)
+	if len(repairs) == 0 {
+		return
+	}
+	// Cap output to avoid flooding for specs with many stutter conditions.
+	if len(repairs) > 3 {
+		repairs = repairs[:3]
+	}
+	fmt.Printf("\n  Stutter Analysis:\n")
+	for i, r := range repairs {
+		fmt.Printf("  [%d] %s\n", i+1, r.NoOpSummary)
+		for j, opt := range r.Options {
+			fmt.Printf("      Option %d — %s\n", j+1, opt.Title)
+			fmt.Printf("        %s\n", opt.Explanation)
+			for _, line := range strings.Split(opt.SpectreCode, "\n") {
+				fmt.Printf("        %s\n", line)
+			}
+		}
+	}
+}
+
+// verifyCEGISFix temporarily injects a require guard into an action, re-runs BFS, and
+// returns true if the named invariant is no longer violated.  Always restores the action.
+func verifyCEGISFix(
+	file *ast.File,
+	allFiles []*ast.File,
+	actionName string,
+	wpExpr ast.Expr,
+	invariantName string,
+	maxStates, maxDepth int,
+) bool {
+	// Find the action declaration (top-level or inside a module).
+	var actionDecl *ast.ActionDecl
+outer:
+	for _, d := range file.Decls {
+		if a, ok := d.(*ast.ActionDecl); ok && a.Name == actionName {
+			actionDecl = a
+			break
+		}
+		if m, ok := d.(*ast.ModuleDecl); ok {
+			for _, md := range m.Decls {
+				if a, ok := md.(*ast.ActionDecl); ok && a.Name == actionName {
+					actionDecl = a
+					break outer
+				}
+			}
+		}
+	}
+	if actionDecl == nil || actionDecl.Body == nil {
+		return false
+	}
+
+	// Temporarily prepend the synthesized guard.
+	origStmts := actionDecl.Body.Statements
+	actionDecl.Body.Statements = append(
+		[]ast.Stmt{&ast.RequireStmt{Condition: wpExpr}},
+		origStmts...,
+	)
+	defer func() { actionDecl.Body.Statements = origStmts }()
+
+	// Build a fresh state machine with the fix in place.
+	newSM, err := exec.NewStateMachine(file, allFiles...)
+	if err != nil {
+		return false
+	}
+
+	// Re-run BFS silently — no progress output, no interactive callbacks.
+	exp := explore.NewExplorer(newSM)
+	exp.SetSilent(true)
+	exp.SetMaxStates(maxStates)
+	exp.SetMaxDepth(maxDepth)
+	fixedResult, err := exp.ExploreBFS()
+	if err != nil {
+		return false
+	}
+
+	for _, v := range fixedResult.Violations {
+		if v.Invariant == invariantName {
+			return false
+		}
+	}
+	return true
+}
+
 // runVerify verifies a Spectre specification
 func runVerify(args []string) error {
 	// Check for flags
 	verbose := false
 	maxStates := 5000  // Default: increased for large specs like elevator controller
 	maxDepth := 100    // Default: increased for deep state spaces
+	emitTraces := ""   // Output file for ITF trace (empty = disabled)
+	emitRustTests := "" // Output file for Rust regression tests (empty = disabled)
+	coverageMode := "action" // action | transition-pair | boundary | rare-action | property
+	useCache := false        // --use-cache: skip BFS if spec hash matches cached graph
+	incremental := false     // --incremental: re-verify only the changed action (requires --changed-action)
+	changedAction := ""      // --changed-action NAME: action whose semantics changed
+	checkRepairMinimal := false // --check-repair-minimal: verify guards don't block valid traces
+	params := map[string]int64{} // --param Name=Value spec parameter bindings
 	filteredArgs := []string{}
-	
+
 	i := 0
 	for i < len(args) {
 		arg := args[i]
 		switch arg {
 		case "--verbose", "-v":
 			verbose = true
+		case "--emit-traces":
+			if i+1 < len(args) {
+				emitTraces = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--emit-traces requires a file path")
+			}
+		case "--emit-rust-tests":
+			if i+1 < len(args) {
+				emitRustTests = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--emit-rust-tests requires a file path")
+			}
+		case "--coverage-mode":
+			if i+1 < len(args) {
+				coverageMode = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--coverage-mode requires a value (action|transition-pair|boundary|rare-action|property)")
+			}
+		case "--incremental":
+			incremental = true
+		case "--changed-action":
+			if i+1 < len(args) {
+				changedAction = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--changed-action requires an action name")
+			}
 		case "--max-states":
 			if i+1 < len(args) {
 				value := args[i+1]
@@ -557,6 +707,27 @@ func runVerify(args []string) error {
 				i++ // Skip next argument as it's the value
 			} else {
 				return fmt.Errorf("--max-depth requires a value")
+			}
+		case "--use-cache":
+			useCache = true
+		case "--check-repair-minimal":
+			checkRepairMinimal = true
+		case "--param":
+			if i+1 < len(args) {
+				kv := args[i+1]
+				i++
+				eqIdx := strings.Index(kv, "=")
+				if eqIdx < 0 {
+					return fmt.Errorf("--param requires Name=Value format, got %q", kv)
+				}
+				pName := kv[:eqIdx]
+				pVal, parseErr := strconv.ParseInt(kv[eqIdx+1:], 10, 64)
+				if parseErr != nil {
+					return fmt.Errorf("--param value must be an integer: %v", parseErr)
+				}
+				params[pName] = pVal
+			} else {
+				return fmt.Errorf("--param requires a Name=Value argument")
 			}
 		default:
 			filteredArgs = append(filteredArgs, arg)
@@ -941,6 +1112,11 @@ func runVerify(args []string) error {
 		return fmt.Errorf("error creating state machine: %w", err)
 	}
 
+	// Bind spec params supplied via --param flags.
+	for pName, pVal := range params {
+		sm.SetParam(pName, pVal)
+	}
+
 	// Explore state space
 	explorer := explore.NewExplorer(sm)
 	explorer.SetMaxDepth(maxDepth)
@@ -961,7 +1137,7 @@ func runVerify(args []string) error {
 		}
 		invariantViolationsSet[violationKey] = true
 		
-		// Report immediately with flushed output
+		// Report immediately
 		fmt.Fprintf(os.Stderr, "\n[VIOLATION DETECTED] Invariant: %s\n", violation.Invariant)
 		fmt.Fprintf(os.Stderr, "  %s\n", violation.Description)
 		if violation.Path != nil && len(violation.Path) > 0 {
@@ -972,19 +1148,8 @@ func runVerify(args []string) error {
 				}
 			}
 		}
-		os.Stderr.Sync() // Force immediate output flush
-		
-		// Ask user if they want to continue
-		fmt.Fprintf(os.Stderr, "\nContinue exploration? (y/n): ")
 		os.Stderr.Sync()
-		reader := bufio.NewReader(os.Stdin)
-		response, err := reader.ReadString('\n')
-		if err != nil {
-			// On error, default to continue
-			return true
-		}
-		response = strings.TrimSpace(strings.ToLower(response))
-		return (response == "y" || response == "yes")
+		return true // always continue exploration
 	})
 	
 	// Set up temporal verification callback for incremental checking
@@ -1019,18 +1184,7 @@ func runVerify(args []string) error {
 				}
 			}
 			os.Stderr.Sync()
-			
-			// Ask user if they want to continue
-			fmt.Fprintf(os.Stderr, "\nContinue exploration? (y/n): ")
-			os.Stderr.Sync()
-			reader := bufio.NewReader(os.Stdin)
-			response, err := reader.ReadString('\n')
-			if err != nil {
-				shouldContinueTemporal = true
-				return
-			}
-			response = strings.TrimSpace(strings.ToLower(response))
-			shouldContinueTemporal = (response == "y" || response == "yes")
+			shouldContinueTemporal = true // always continue exploration
 		})
 		
 		// Set incremental temporal verification callback (check every 5 states)
@@ -1078,10 +1232,43 @@ func runVerify(args []string) error {
 		fmt.Fprintf(os.Stderr, "This may run until the state space is fully explored or memory is exhausted.\n\n")
 	}
 
-	result, err := explorer.ExploreBFS()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error exploring state space in %s: %v\n", filename, err)
-		return fmt.Errorf("error exploring state space: %w", err)
+	// Build the cache configuration key from params + exploration limits.
+	cacheCfg := explore.CacheConfig{
+		Params:    params,
+		MaxStates: maxStates,
+		MaxDepth:  maxDepth,
+	}
+
+	// Try to restore from cache when --use-cache is set and spec+config unchanged.
+	var result *explore.ExplorationResult
+	if useCache {
+		if cache, cacheErr := explore.LoadCache(filename, cacheCfg); cache != nil {
+			fmt.Printf("Restored state graph from cache (%d states).\n", len(cache.States))
+			result = explore.RestoreResult(cache)
+			if incremental && changedAction != "" {
+				// Re-verify only the changed action, leaving all other transitions intact.
+				hasher := explore.NewStateHasher()
+				result, err = explore.IncrementalReverify(result, changedAction, sm, hasher, verbose)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: incremental re-verify failed, falling back to full BFS: %v\n", err)
+					result = nil
+				}
+			}
+		} else if cacheErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: cache read error: %v\n", cacheErr)
+		}
+	}
+	if result == nil {
+		result, err = explorer.ExploreBFS()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error exploring state space in %s: %v\n", filename, err)
+			return fmt.Errorf("error exploring state space: %w", err)
+		}
+		if useCache {
+			if saveErr := explore.SaveCache(filename, result, content, cacheCfg); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not save cache: %v\n", saveErr)
+			}
+		}
 	}
 
 	// Report results
@@ -1120,9 +1307,86 @@ func runVerify(args []string) error {
 		}
 	}
 	
+	// Emit ITF trace if requested (always, regardless of violations).
+	if emitTraces != "" {
+		var trace *itf.Trace
+		if len(result.Violations) > 0 {
+			trace = itf.FromViolation(filename, result.Violations[0])
+		} else {
+			hasher := explore.NewStateHasher()
+			rng := rand.New(rand.NewSource(42))
+			switch coverageMode {
+			case "transition-pair":
+				trace = itf.TransitionPairWalk(filename, result.TransitionGraph, result.InitialStates, 20, rng, hasher)
+			case "boundary":
+				trace = itf.BoundaryCoverageWalk(filename, result.TransitionGraph, result.InitialStates, 20, rng, hasher)
+			case "rare-action":
+				trace = itf.RareActionWalk(filename, result.TransitionGraph, result.InitialStates, 20, rng, hasher)
+			case "property":
+				trace = itf.PropertyDirectedWalk(filename, result.TransitionGraph, result.InitialStates, 20, rng, hasher)
+			default: // "action" or unrecognised
+				trace = itf.RandomWalk(filename, result.TransitionGraph, result.InitialStates, 20, rng, hasher)
+			}
+		}
+		if trace != nil {
+			data, jsonErr := json.MarshalIndent(trace, "", "  ")
+			if jsonErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not marshal ITF trace: %v\n", jsonErr)
+			} else if writeErr := os.WriteFile(emitTraces, data, 0644); writeErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not write ITF trace to %s: %v\n", emitTraces, writeErr)
+			} else {
+				fmt.Printf("ITF trace written to %s\n", emitTraces)
+			}
+		}
+	}
+
+	// Emit Rust regression tests if requested (only when violations exist).
+	if emitRustTests != "" && len(result.Violations) > 0 {
+		specBase := strings.TrimSuffix(filepath.Base(filename), ".spec")
+		metaPath := codegen.MetaPath(filename)
+		meta, _ := codegen.LoadDriverMeta(metaPath)
+		var testCases []codegen.RustTestCase
+		for _, v := range result.Violations {
+			tc := codegen.RustTestCase{
+				InvariantName: v.Invariant,
+			}
+			var initVars map[string]interface{}
+			if len(v.Path) > 0 && v.Path[0].FromState != nil {
+				initVars = make(map[string]interface{})
+				for k, val := range v.Path[0].FromState.Variables {
+					initVars[k] = val.String()
+				}
+			} else if v.State != nil {
+				initVars = make(map[string]interface{})
+				for k, val := range v.State.Variables {
+					initVars[k] = val.String()
+				}
+			}
+			tc.InitVars = initVars
+			for _, trans := range v.Path {
+				tc.ActionPath = append(tc.ActionPath, trans.Action)
+				step := codegen.RustTestStep{Action: trans.Action}
+				if trans.ToState != nil {
+					step.Expected = make(map[string]interface{})
+					for k, val := range trans.ToState.Variables {
+						step.Expected[k] = val.String()
+					}
+				}
+				tc.Steps = append(tc.Steps, step)
+			}
+			testCases = append(testCases, tc)
+		}
+		rustCode := codegen.EmitRustTests(specBase, meta, testCases)
+		if writeErr := os.WriteFile(emitRustTests, []byte(rustCode), 0644); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write Rust tests to %s: %v\n", emitRustTests, writeErr)
+		} else {
+			fmt.Printf("Rust regression tests written to %s (%d test(s))\n", emitRustTests, len(testCases))
+		}
+	}
+
 	// Final report
 	fmt.Printf("Traversed %d states\n", result.StatesExplored)
-	
+
 	if hasViolations {
 		fmt.Printf("Violations:\n")
 		
@@ -1160,13 +1424,87 @@ func runVerify(args []string) error {
 			violationNum++
 		}
 		
+		// CEGIS repair suggestions for invariant violations
+		if len(result.Violations) > 0 {
+			cegisRepairs := diagnose.SynthesizeCEGIS(result.Violations, file)
+			if len(cegisRepairs) > 0 {
+				fmt.Printf("\nCEGIS Repair Suggestions:\n")
+				for _, repair := range cegisRepairs {
+					fmt.Printf("\n  Invariant `%s` violated via action `%s`", repair.InvariantName, repair.ActionName)
+					if len(repair.ActionArgs) > 0 {
+						argStrs := make([]string, len(repair.ActionArgs))
+						for i, a := range repair.ActionArgs {
+							argStrs[i] = a.String()
+						}
+						fmt.Printf("(%s)", strings.Join(argStrs, ", "))
+					}
+					fmt.Printf(":\n")
+					if repair.PreState != nil {
+						pairs := make([]string, 0, len(repair.PreState.Variables))
+						for k, v := range repair.PreState.Variables {
+							pairs = append(pairs, k+" = "+v.String())
+						}
+						sort.Strings(pairs)
+						fmt.Printf("    Pre-state: {%s}\n", strings.Join(pairs, ", "))
+					}
+					if len(repair.CounterexPath) > 0 {
+						fmt.Printf("    Counterexample: %s\n", strings.Join(repair.CounterexPath, " → "))
+					}
+					// Structured explanation.
+					{
+						var repairPtr *diagnose.CEGISRepair
+						repairPtr = &repair
+						// find the matching violation for this repair
+						for _, viol := range result.Violations {
+							if viol.Invariant == repair.InvariantName {
+								expl := diagnose.Explain(viol, repairPtr, file)
+								fmt.Printf("%s", diagnose.PrintExplanation(expl))
+								break
+							}
+						}
+					}
+					if len(repair.Guards) == 0 {
+						fmt.Printf("    (Could not synthesize an automatic repair for this violation)\n")
+						continue
+					}
+					for i, guard := range repair.Guards {
+						fmt.Printf("    Option %d — weakest precondition for `%s' = %s`:\n", i+1, guard.VarName, guard.AssignRHS)
+						fmt.Printf("      %s\n", diagnose.RootCauseDesc(guard, repair.PreState, repair.ActionArgs))
+						for _, line := range strings.Split(guard.SpectreCode, "\n") {
+							fmt.Printf("      %s\n", line)
+						}
+						verified := verifyCEGISFix(file, allFiles, repair.ActionName, guard.WPExpr, repair.InvariantName, maxStates, maxDepth)
+						if verified {
+							fmt.Printf("      ✓ Verified: re-explored with this guard applied — invariant holds\n")
+						} else {
+							fmt.Printf("      ! Apply and re-run `spectre verify` to check for remaining violations\n")
+						}
+						if checkRepairMinimal {
+							rng := rand.New(rand.NewSource(42))
+							hasher := explore.NewStateHasher()
+							posWalk := itf.RandomWalk(filename, result.TransitionGraph, result.InitialStates, 50, rng, hasher)
+							if posWalk != nil {
+								rawTrace := posWalk.RawStates()
+								blocked := diagnose.CheckGuardMinimality(guard, repair.ActionName, rawTrace, file)
+								if len(blocked) > 0 {
+									fmt.Printf("      ! Guard may be over-restrictive: blocks %d valid %q step(s) in a positive trace\n",
+										len(blocked), repair.ActionName)
+								} else {
+									fmt.Printf("      ✓ Minimality: guard does not block any valid %q steps\n", repair.ActionName)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
 		// Report stuttering warnings even when there are violations
 		if len(result.Stuttering) > 0 {
 			fmt.Printf("\nWarnings (Stuttering):\n")
 			fmt.Printf("Found %d stuttering step(s) where a state transitions back to itself.\n", len(result.Stuttering))
 			fmt.Printf("Stuttering can indicate missing fairness constraints or incomplete specifications.\n")
 			if verbose {
-				// In verbose mode, show details of each stuttering
 				for i, stutter := range result.Stuttering {
 					fmt.Printf("  %d. %s\n", i+1, stutter.Description)
 					if len(stutter.Args) > 0 {
@@ -1180,8 +1518,9 @@ func runVerify(args []string) error {
 					}
 				}
 			}
+			printStutterAnalysis(result.Stuttering, file, sm)
 		}
-		
+
 		return fmt.Errorf("verification failed with %d violation(s)", len(result.Violations)+len(temporalViolations))
 	}
 
@@ -1191,7 +1530,6 @@ func runVerify(args []string) error {
 		fmt.Printf("Found %d stuttering step(s) where a state transitions back to itself.\n", len(result.Stuttering))
 		fmt.Printf("Stuttering can indicate missing fairness constraints or incomplete specifications.\n")
 		if verbose {
-			// In verbose mode, show details of each stuttering
 			for i, stutter := range result.Stuttering {
 				fmt.Printf("  %d. %s\n", i+1, stutter.Description)
 				if len(stutter.Args) > 0 {
@@ -1205,11 +1543,398 @@ func runVerify(args []string) error {
 				}
 			}
 		}
+		printStutterAnalysis(result.Stuttering, file, sm)
 	}
 
 	fmt.Printf("Found no violations.\n")
 	return nil
 	})
+}
+
+// runGenerateDriver generates a Rust driver skeleton for a Spectre spec.
+func runGenerateDriver(args []string) error {
+	lang := "rust"
+	output := ""
+	filteredArgs := []string{}
+
+	i := 0
+	for i < len(args) {
+		switch args[i] {
+		case "--lang":
+			if i+1 < len(args) {
+				lang = args[i+1]
+				i++
+			}
+		case "--output", "-o":
+			if i+1 < len(args) {
+				output = args[i+1]
+				i++
+			}
+		default:
+			filteredArgs = append(filteredArgs, args[i])
+		}
+		i++
+	}
+
+	if len(filteredArgs) == 0 {
+		return fmt.Errorf("no spec file specified")
+	}
+	if lang != "rust" {
+		return fmt.Errorf("unsupported language %q (only 'rust' is supported)", lang)
+	}
+
+	filename := filteredArgs[0]
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("error reading %s: %w", filename, err)
+	}
+
+	l := lexer.New(string(content))
+	p := parser.New(l)
+	file := p.ParseFile()
+	if len(p.Errors()) > 0 {
+		return fmt.Errorf("parse errors in %s: %s", filename, strings.Join(p.Errors(), "; "))
+	}
+
+	specName := filepath.Base(filename)
+	driver := codegen.ExtractFromAST(file, specName)
+
+	// Load mining sidecar for zero-driver generation; fall back to stub skeleton.
+	metaPath := codegen.MetaPath(filename)
+	meta, metaErr := codegen.LoadDriverMeta(metaPath)
+	if metaErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not read driver sidecar %s: %v\n", metaPath, metaErr)
+	}
+	var code string
+	if meta != nil {
+		code = driver.GenerateWithMeta(meta)
+		fmt.Fprintf(os.Stderr, "Using mining sidecar %s (struct: %s) — apply_action and current_state fully generated.\n",
+			metaPath, meta.StructName)
+	} else {
+		code = driver.Generate()
+	}
+
+	if output == "" {
+		fmt.Print(code)
+		return nil
+	}
+	if err := os.WriteFile(output, []byte(code), 0644); err != nil {
+		return fmt.Errorf("error writing driver to %s: %w", output, err)
+	}
+	fmt.Printf("Rust driver written to %s\n", output)
+	return nil
+}
+
+// runGenerateMonitor generates an embedded Rust runtime monitor for a Spectre spec.
+func runGenerateMonitor(args []string) error {
+	lang := "rust"
+	output := ""
+	filteredArgs := []string{}
+
+	i := 0
+	for i < len(args) {
+		switch args[i] {
+		case "--lang":
+			if i+1 < len(args) {
+				lang = args[i+1]
+				i++
+			}
+		case "--output", "-o":
+			if i+1 < len(args) {
+				output = args[i+1]
+				i++
+			}
+		default:
+			filteredArgs = append(filteredArgs, args[i])
+		}
+		i++
+	}
+
+	if len(filteredArgs) == 0 {
+		return fmt.Errorf("no spec file specified")
+	}
+	if lang != "rust" {
+		return fmt.Errorf("unsupported language %q (only 'rust' is supported)", lang)
+	}
+
+	filename := filteredArgs[0]
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("error reading %s: %w", filename, err)
+	}
+
+	l := lexer.New(string(content))
+	p := parser.New(l)
+	file := p.ParseFile()
+	if len(p.Errors()) > 0 {
+		return fmt.Errorf("parse errors in %s: %s", filename, strings.Join(p.Errors(), "; "))
+	}
+
+	specName := strings.TrimSuffix(filepath.Base(filename), ".spec")
+	mon := codegen.ExtractMonitorFromAST(file, specName)
+	code := mon.Generate()
+
+	if output == "" {
+		fmt.Print(code)
+		return nil
+	}
+	if err := os.WriteFile(output, []byte(code), 0644); err != nil {
+		return fmt.Errorf("error writing monitor to %s: %w", output, err)
+	}
+	fmt.Printf("Rust runtime monitor written to %s\n", output)
+	fmt.Printf("  Drop monitor.rs into your project and call monitor.step(action, new_state) after every transition.\n")
+	if len(mon.Liveness) > 0 {
+		fmt.Printf("  Call monitor.unmet_liveness_properties() at shutdown to check liveness obligations.\n")
+	}
+	return nil
+}
+
+// runMine mines a Spectre spec skeleton from Rust source code.
+func runMine(args []string) error {
+	lang := "rust"
+	output := ""
+	specName := ""
+	useAI := false
+	filteredArgs := []string{}
+
+	i := 0
+	for i < len(args) {
+		switch args[i] {
+		case "--lang":
+			if i+1 < len(args) {
+				lang = args[i+1]
+				i++
+			}
+		case "--output", "-o":
+			if i+1 < len(args) {
+				output = args[i+1]
+				i++
+			}
+		case "--spec-name", "--name":
+			if i+1 < len(args) {
+				specName = args[i+1]
+				i++
+			}
+		case "--ai":
+			useAI = true
+		default:
+			filteredArgs = append(filteredArgs, args[i])
+		}
+		i++
+	}
+
+	if len(filteredArgs) == 0 {
+		return fmt.Errorf("no Rust source file specified")
+	}
+	if lang != "rust" {
+		return fmt.Errorf("unsupported language %q (only 'rust' is supported)", lang)
+	}
+
+	filename := filteredArgs[0]
+
+	if specName == "" {
+		specName = strings.TrimSuffix(filepath.Base(filename), ".rs")
+	}
+
+	mined, err := mine.MineFromRustFile(filename, specName)
+	if err != nil {
+		return fmt.Errorf("error reading %s: %w", filename, err)
+	}
+
+	var suggestions *mine.LLMSuggestions
+	if useAI {
+		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			fmt.Fprintf(os.Stderr, "Warning: --ai requires ANTHROPIC_API_KEY to be set; running without LLM enhancement.\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "Enhancing with LLM (model: claude-haiku)...\n")
+			suggestions, err = mine.EnhanceWithLLM(mined, apiKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: LLM enhancement failed: %v; continuing with static analysis.\n", err)
+				suggestions = nil
+			}
+		}
+	}
+
+	specText := mined.Generate(suggestions)
+
+	if output == "" {
+		fmt.Print(specText)
+		return nil
+	}
+	if err := os.WriteFile(output, []byte(specText), 0644); err != nil {
+		return fmt.Errorf("error writing spec to %s: %w", output, err)
+	}
+
+	// Write driver sidecar alongside the spec so generate-driver can emit
+	// a fully-connected adapter without any manual edits.
+	sidecarPath := codegen.MetaPath(output)
+	meta := buildDriverMeta(mined, filename)
+	if metaData, err := json.Marshal(meta); err == nil {
+		if writeErr := os.WriteFile(sidecarPath, metaData, 0644); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write driver sidecar %s: %v\n", sidecarPath, writeErr)
+		}
+	}
+
+	fmt.Printf("Mined spec written to %s\n", output)
+	fmt.Printf("  Structs found:    %d fields from %s\n", len(mined.Fields), mined.StructName)
+	fmt.Printf("  Enums found:      %d\n", len(mined.Enums))
+	fmt.Printf("  Actions mined:    %d\n", len(mined.Methods))
+	if useAI && suggestions != nil {
+		fmt.Printf("  LLM invariants:   %d\n", len(suggestions.ExtraInvariants))
+		fmt.Printf("  LLM temporals:    %d\n", len(suggestions.ExtraTemporal))
+	}
+	fmt.Printf("  Driver sidecar:   %s\n", sidecarPath)
+	fmt.Printf("  Edit %s and run: spectre verify %s\n", output, output)
+	fmt.Printf("  Zero-driver:      spectre generate-driver %s\n", output)
+	return nil
+}
+
+// buildDriverMeta converts a MinedSpec into the sidecar JSON that
+// generate-driver uses to emit a fully-connected Rust adapter.
+func buildDriverMeta(mined *mine.MinedSpec, sourceFile string) *codegen.DriverMeta {
+	meta := &codegen.DriverMeta{
+		StructName: mined.StructName,
+		SourceFile: sourceFile,
+	}
+	for _, f := range mined.Fields {
+		meta.Fields = append(meta.Fields, codegen.MetaField{
+			SpecVar:     f.Name,
+			RustField:   f.Name,
+			RustType:    f.RustType,
+			SpectreType: f.SpectreType,
+		})
+	}
+	for _, m := range mined.Methods {
+		if !m.MutSelf {
+			continue
+		}
+		action := codegen.MetaAction{
+			SpecAction: m.Name,
+			RustMethod: m.Name,
+		}
+		for _, p := range m.Params {
+			rt := spectreParamToRust(p.SpectreType)
+			action.Params = append(action.Params, codegen.MetaParam{
+				Name:        p.Name,
+				SpectreType: p.SpectreType,
+				RustType:    rt,
+			})
+		}
+		meta.Actions = append(meta.Actions, action)
+	}
+	return meta
+}
+
+// spectreParamToRust maps a Spectre type string to a Rust primitive type.
+func spectreParamToRust(t string) string {
+	switch t {
+	case "int":
+		return "i64"
+	case "bool":
+		return "bool"
+	case "str":
+		return "String"
+	case "float":
+		return "f64"
+	default:
+		return t
+	}
+}
+
+// runCheckRefinement checks that ITF trace files conform to the spec via the
+// driver.json mapping.  Usage: spectre check-refinement [--traces f.itf.json,...] spec.spec
+func runCheckRefinement(args []string) error {
+	var traceFiles []string
+	filteredArgs := []string{}
+
+	i := 0
+	for i < len(args) {
+		switch args[i] {
+		case "--traces":
+			if i+1 < len(args) {
+				for _, t := range strings.Split(args[i+1], ",") {
+					traceFiles = append(traceFiles, strings.TrimSpace(t))
+				}
+				i++
+			} else {
+				return fmt.Errorf("--traces requires a comma-separated list of ITF JSON files")
+			}
+		default:
+			filteredArgs = append(filteredArgs, args[i])
+		}
+		i++
+	}
+
+	if len(filteredArgs) == 0 {
+		return fmt.Errorf("no spec file specified")
+	}
+
+	specFile := filteredArgs[0]
+	content, err := os.ReadFile(specFile)
+	if err != nil {
+		return fmt.Errorf("error reading %s: %w", specFile, err)
+	}
+
+	l := lexer.New(string(content))
+	p := parser.New(l)
+	file := p.ParseFile()
+	if len(p.Errors()) > 0 {
+		return fmt.Errorf("parse errors in %s: %s", specFile, strings.Join(p.Errors(), "; "))
+	}
+
+	metaPath := codegen.MetaPath(specFile)
+	meta, metaErr := codegen.LoadDriverMeta(metaPath)
+	if metaErr != nil || meta == nil {
+		return fmt.Errorf("could not load driver sidecar %s: %v\nRun `spectre mine --output` first to generate it", metaPath, metaErr)
+	}
+
+	// Load trace files.
+	var traces [][]map[string]interface{}
+	for _, tf := range traceFiles {
+		data, readErr := os.ReadFile(tf)
+		if readErr != nil {
+			return fmt.Errorf("error reading trace file %s: %w", tf, readErr)
+		}
+		var root map[string]interface{}
+		if jsonErr := json.Unmarshal(data, &root); jsonErr != nil {
+			return fmt.Errorf("invalid JSON in trace file %s: %w", tf, jsonErr)
+		}
+		statesRaw, ok := root["states"].([]interface{})
+		if !ok {
+			return fmt.Errorf("trace file %s has no 'states' array", tf)
+		}
+		var states []map[string]interface{}
+		for _, s := range statesRaw {
+			if m, ok2 := s.(map[string]interface{}); ok2 {
+				states = append(states, m)
+			}
+		}
+		traces = append(traces, states)
+	}
+
+	if len(traces) == 0 {
+		return fmt.Errorf("no trace files loaded; use --traces f1.itf.json,f2.itf.json")
+	}
+
+	report := codegen.CheckRefinement(file, meta, traces)
+	fmt.Printf("Refinement check: %s (struct: %s)\n", specFile, report.StructName)
+	fmt.Printf("  Transitions checked: %d\n", report.CheckedTransitions)
+	fmt.Printf("  Legal steps:         %d\n", report.LegalSteps)
+	fmt.Printf("  Stutter steps:       %d\n", report.StutterSteps)
+	fmt.Printf("  Violations:          %d\n", len(report.Violations))
+
+	if len(report.Violations) > 0 {
+		fmt.Printf("\nViolations:\n")
+		for i, v := range report.Violations {
+			fmt.Printf("  %d. trace[%d] step %d action=%q\n", i+1, v.TraceIndex, v.StepIndex, v.Action)
+			fmt.Printf("     %s\n", v.Reason)
+		}
+		return fmt.Errorf("refinement check failed: %d violation(s)", len(report.Violations))
+	}
+
+	fmt.Printf("\n✓ All transitions are legal or stutter steps.\n")
+	return nil
 }
 
 // printUsage prints usage information
@@ -1231,6 +1956,31 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "                         Use 'infinity', 'unlimited', or -1 for unlimited\n")
 	fmt.Fprintf(os.Stderr, "  --max-depth <number>    Maximum exploration depth (default: 100)\n")
 	fmt.Fprintf(os.Stderr, "                         Use 'infinity', 'unlimited', or -1 for unlimited\n")
+	fmt.Fprintf(os.Stderr, "  --emit-traces <file>    Write an ITF execution trace to <file> for use\n")
+	fmt.Fprintf(os.Stderr, "                         with spectre-connect Rust model-based testing\n")
+	fmt.Fprintf(os.Stderr, "\nFlags for generate-driver command:\n")
+	fmt.Fprintf(os.Stderr, "  --lang rust             Target language (only 'rust' is supported)\n")
+	fmt.Fprintf(os.Stderr, "  --output, -o <file>     Write driver to <file> instead of stdout\n")
+	fmt.Fprintf(os.Stderr, "\nFlags for generate-monitor command:\n")
+	fmt.Fprintf(os.Stderr, "  --lang rust             Target language (only 'rust' is supported)\n")
+	fmt.Fprintf(os.Stderr, "  --output, -o <file>     Write monitor to <file> instead of stdout\n")
+	fmt.Fprintf(os.Stderr, "\nModel-based testing workflow:\n")
+	fmt.Fprintf(os.Stderr, "  1. spectre verify myspec.spec --emit-traces trace.itf.json\n")
+	fmt.Fprintf(os.Stderr, "  2. spectre generate-driver --lang rust myspec.spec -o driver.rs\n")
+	fmt.Fprintf(os.Stderr, "  3. Fill in driver.rs, then: cargo run -- trace.itf.json\n")
+	fmt.Fprintf(os.Stderr, "\nRuntime monitoring workflow:\n")
+	fmt.Fprintf(os.Stderr, "  1. spectre generate-monitor myspec.spec -o src/monitor.rs\n")
+	fmt.Fprintf(os.Stderr, "  2. Call monitor.step(action, new_state) after every state transition\n")
+	fmt.Fprintf(os.Stderr, "  3. Call monitor.unmet_liveness_properties() at shutdown\n")
+	fmt.Fprintf(os.Stderr, "\nFlags for mine command:\n")
+	fmt.Fprintf(os.Stderr, "  --lang rust             Source language (only 'rust' is supported)\n")
+	fmt.Fprintf(os.Stderr, "  --output, -o <file>     Write mined spec to <file> instead of stdout\n")
+	fmt.Fprintf(os.Stderr, "  --spec-name <name>      Override spec name (default: filename without .rs)\n")
+	fmt.Fprintf(os.Stderr, "  --ai                    Enhance with LLM (requires ANTHROPIC_API_KEY env var)\n")
+	fmt.Fprintf(os.Stderr, "\nSpec mining workflow:\n")
+	fmt.Fprintf(os.Stderr, "  1. spectre mine --lang rust src/account.rs -o account.spec\n")
+	fmt.Fprintf(os.Stderr, "  2. Review and refine account.spec\n")
+	fmt.Fprintf(os.Stderr, "  3. spectre verify account.spec\n")
 }
 
 // findSpecFiles finds all .spec files in a directory

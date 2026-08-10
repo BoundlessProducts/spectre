@@ -496,7 +496,7 @@ func (e *Evaluator) evalRecordLiteral(expr *ast.RecordLiteral) (state.Value, err
 		// Evaluate the field value
 		value, err := e.Eval(field.Value)
 		if err != nil {
-			return nil, fmt.Errorf("error evaluating field %s: %w", field.Name, value)
+			return nil, fmt.Errorf("error evaluating field %s: %w", field.Name, err)
 		}
 		
 		// Store as key-value pair in the map

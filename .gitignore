@@ -30,18 +30,4 @@ go.work
 .DS_Store
 Thumbs.db
 
-TLA+_FEATURE_ANALYSIS_private.md
-SPECTRE_VS_QUINT_private.md
-DEVELOPMENT_PLAN_private.md
-PARSER_FEATURES_REPORT.md
-.gitignore
-COMPARISON_OPERATOR_FIX.md
-EXAMPLE_TEST_REPORT.md
-.gitignore
-.gitignore
-.gitignore
-.gitignore
-FINAL_STATUS_REPORT.md
-PARSER_FIX_STATUS.md
-TEST_SUMMARY.md
-PACKAGING-private.md
+notes/

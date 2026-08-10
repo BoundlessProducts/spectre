@@ -2,12 +2,15 @@ package explore
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/akkeshavan/spectre/internal/exec"
 	"github.com/akkeshavan/spectre/internal/state"
 )
+
+var reInvariantName = regexp.MustCompile(`invariant (\w+) violated`)
 
 // InvariantViolationCallback is called immediately when an invariant violation is detected
 // Returns true if exploration should continue, false if it should stop
@@ -29,6 +32,7 @@ type Explorer struct {
 	maxStates    int             // Maximum number of states to explore
 	detectCycles bool            // Whether to detect cycles
 	verbose      bool            // Whether to print verbose exploration details
+	silent       bool            // Whether to suppress all output (for programmatic re-verification)
 	invariantViolationCallback InvariantViolationCallback // Optional callback for immediate violation reporting
 	temporalVerificationCallback TemporalVerificationCallback // Optional callback for incremental temporal verification
 	shouldStopExploration bool // Flag to stop exploration if user wants to stop after violation
@@ -144,6 +148,11 @@ func NewExplorer(stateMachine *exec.StateMachine) *Explorer {
 	}
 }
 
+// SetSilent disables all progress/diagnostic output, useful for programmatic re-verification.
+func (e *Explorer) SetSilent(silent bool) {
+	e.silent = silent
+}
+
 // SetMaxDepth sets the maximum exploration depth
 func (e *Explorer) SetMaxDepth(depth int) {
 	e.maxDepth = depth
@@ -236,14 +245,15 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 		result.StatesExplored++
 
 		// Print current state info
-		if e.verbose {
-			fmt.Printf("\n[STATE %d] Exploring state (depth: %d):\n", result.StatesExplored, current.Depth)
-			for name, value := range current.State.Variables {
-				fmt.Printf("  %s = %s\n", name, value.String())
+		if !e.silent {
+			if e.verbose {
+				fmt.Printf("\n[STATE %d] Exploring state (depth: %d):\n", result.StatesExplored, current.Depth)
+				for name, value := range current.State.Variables {
+					fmt.Printf("  %s = %s\n", name, value.String())
+				}
+			} else {
+				fmt.Printf("Exploring State %d\n", result.StatesExplored)
 			}
-		} else {
-			// Non-verbose mode: show simple progress
-			fmt.Printf("Exploring State %d\n", result.StatesExplored)
 		}
 
 		// Check temporal properties incrementally if callback is set
@@ -330,7 +340,7 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 					
 					violation := &Violation{
 						State:       current.State,
-						Invariant:   "unknown", // We'll extract this from the error message if possible
+						Invariant:   extractInvariantName(errMsg),
 						Path:        current.Path,
 						Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionWithArgs.ActionName, violationDesc),
 					}
@@ -574,14 +584,15 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 		result.StatesExplored++
 
 		// Print current state info
-		if e.verbose {
-			fmt.Printf("\n[STATE %d] Exploring state (depth: %d):\n", result.StatesExplored, current.Depth)
-			for name, value := range current.State.Variables {
-				fmt.Printf("  %s = %s\n", name, value.String())
+		if !e.silent {
+			if e.verbose {
+				fmt.Printf("\n[STATE %d] Exploring state (depth: %d):\n", result.StatesExplored, current.Depth)
+				for name, value := range current.State.Variables {
+					fmt.Printf("  %s = %s\n", name, value.String())
+				}
+			} else {
+				fmt.Printf("Exploring State %d\n", result.StatesExplored)
 			}
-		} else {
-			// Non-verbose mode: show simple progress
-			fmt.Printf("Exploring State %d\n", result.StatesExplored)
 		}
 
 		// Validate current state
@@ -649,7 +660,7 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 					
 					violation := &Violation{
 						State:       current.State,
-						Invariant:   "unknown", // We'll extract this from the error message if possible
+						Invariant:   extractInvariantName(errMsg),
 						Path:        current.Path,
 						Description: fmt.Sprintf("Action '%s' would violate invariants: %s", actionWithArgs.ActionName, violationDesc),
 					}
@@ -789,4 +800,11 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 	return result, nil
 }
 
-
+// extractInvariantName pulls the first invariant name out of an error string like
+// "next state violates invariants: [invariant foo violated: ...]".
+func extractInvariantName(errMsg string) string {
+	if m := reInvariantName.FindStringSubmatch(errMsg); len(m) > 1 {
+		return m[1]
+	}
+	return "unknown"
+}

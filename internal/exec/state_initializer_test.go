@@ -6,6 +6,7 @@ import (
 	"github.com/akkeshavan/spectre/internal/lexer"
 	"github.com/akkeshavan/spectre/internal/parser"
 	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/akkeshavan/spectre/pkg/ast"
 )
 
 func TestStateInitializerDeterministicInit(t *testing.T) {

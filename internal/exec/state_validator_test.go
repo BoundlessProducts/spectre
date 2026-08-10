@@ -31,7 +31,7 @@ invariant counterNonNegative {
 
 	am := state.NewActionModel(file)
 	cm := state.NewConstraintModel(file, am)
-	validator := NewStateValidator(cm)
+	validator := NewStateValidator(cm, file)
 
 	// Create a valid state (counter = 5)
 	validState := state.NewState()
@@ -91,7 +91,7 @@ invariant counterLessThan100 {
 
 	am := state.NewActionModel(file)
 	cm := state.NewConstraintModel(file, am)
-	validator := NewStateValidator(cm)
+	validator := NewStateValidator(cm, file)
 
 	// Valid state
 	validState := state.NewState()
@@ -146,7 +146,7 @@ action increment {
 
 	am := state.NewActionModel(file)
 	cm := state.NewConstraintModel(file, am)
-	validator := NewStateValidator(cm)
+	validator := NewStateValidator(cm, file)
 
 	// Create states
 	currentState := state.NewState()
