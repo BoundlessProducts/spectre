@@ -71,8 +71,9 @@ Lamport, L.: Specifying Systems: The {TLA+} Language and Tools for Hardware and
 
 \bibitem{leino2010dafny}
 Leino, K.R.M.: Dafny: An automatic program verifier for functional correctness.
-  In: Proceedings of Logic for Programming, Artificial Intelligence, and
-  Reasoning (LPAR). LNCS, vol.~6355, pp. 348--370. Springer (2010)
+  In: Logic for Programming, Artificial Intelligence, and Reasoning (LPAR-16).
+  Lecture Notes in Computer Science, vol.~6355, pp. 348--370. Springer, Berlin,
+  Heidelberg (2010). \doi{10.1007/978-3-642-17511-4_20}
 
 \bibitem{maliuginas2024elixir}
 Maliuginas, A., Petrauskas, K.: Extracting {TLA+} specifications out of a
