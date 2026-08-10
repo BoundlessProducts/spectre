@@ -55,9 +55,9 @@ Jin, D., Meredith, P.O.M., Lee, C., Ro{\c{s}}u, G.: {JavaMOP}: Efficient
   \doi{10.1109/ICSE.2012.6227231}
 
 \bibitem{apalache-itf}
-Konnov, I.: {ADR-015}: Informal trace format in {JSON}. Apalache Documentation,
-  \url{https://apalache-mc.org/docs/adr/015adr-trace.html}, last revised
-  2025-11-11; accessed 2026-08-09
+Konnov, I.: {ADR-015}: Informal trace format in {JSON}.
+  \url{https://apalache-mc.org/docs/adr/015adr-trace.html}, apalache
+  Documentation; accessed 2026-08-10
 
 \bibitem{kuppe2019tla}
 Kuppe, M.A., Lamport, L., Ricketts, D.: The {TLA+} toolbox. In: Proceedings of
