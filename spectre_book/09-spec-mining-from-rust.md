@@ -149,42 +149,37 @@ invariant within_cap {
 
 ## Drift Detection with `spectre sync`
 
-Once the spec exists, the code and spec can diverge silently as the codebase evolves. `spectre sync` compares the current Rust source against the mined spec and classifies every change:
+Once the spec exists, the code and spec can diverge silently as the codebase evolves. `spectre sync` compares the current Rust source against the existing spec using **SMT-backed equivalence checking** (Z3, QF_LIA theory):
 
 ```bash
-spectre sync examples/rust/bank_account.rs
+spectre sync examples/rust/bank_account.rs --spec examples/bank-account-mined.spec
 ```
 
-`sync` compares:
+Each action is classified with one of three symbols:
 
-- **Fields** — added, removed, or type-changed struct fields
-- **Actions** — added or removed methods
-- **Guard counts** — `require` clause additions or removals
-- **Guard expressions** — semantic comparison of guard conditions
-- **Assignment bodies** — normalised expression equality after constant folding (e.g., `balance + amount` vs `balance - amount`)
+| Symbol | Meaning |
+|--------|---------|
+| `[=]` | Structurally unchanged — guards and assignments are identical |
+| `[≡]` | SMT-proved equivalent — the code changed but Z3 proves the semantics are identical (safe rewrite, no re-verification needed) |
+| `[✗]` | Semantically changed — SMT found a counterexample witness; re-verification required |
 
-Each change is classified as one of:
-
-| Classification | Meaning |
-|----------------|---------|
-| `structurally-unchanged` | The action's guards and assignments are semantically identical to the spec |
-| `spec-update-required` | The action was added, removed, or its signature changed — the spec needs updating |
-| `possibly-unsafe` | The assignment expressions differ (e.g., a wrong arithmetic operator) — re-verification required |
-
-**Example output:**
+**Example output (semantic mutation: `balance - amount` → `balance + amount`):**
 
 ```
-bank_account.rs vs bank-account-parameterized.spec
-
-  deposit         structurally-unchanged
-  withdraw        possibly-unsafe   (assignment body changed: balance - amount → balance + amount)
-  freeze          structurally-unchanged
-  unfreeze        structurally-unchanged
-
-1 action requires re-verification.
+[=] action deposit (structurally unchanged)
+[✗] action withdraw assignment 1 body changed: "balance'=balance - amount" → "balance'=balance + amount" (witness: amount=1, balance=0)
+[=] action freeze (structurally unchanged)
+[=] action unfreeze (structurally unchanged)
 ```
 
-`sync` detected **30/35 injected mutations** in evaluation (85.7%), catching all guard-omission mutations and all wrong-arithmetic mutations. The 5 undetected mutations were semantic polarity inversions (e.g., `> 0` → `< 0`) that are not represented distinctly in assignment-body comparison.
+**Example output (equivalent rewrite: guard commuted):**
+
+```
+[≡] action deposit guard 2 rewritten (SMT-proved equivalent): "balance + amount <= 1000000" → "amount + balance <= 1000000"
+[=] action withdraw (structurally unchanged)
+```
+
+The `[≡]` classification prevents false alarms on logically-equivalent refactors (e.g., commutativity, constant folding). In evaluation: **8/8 semantic mutations detected** with **1 false positive** (vs. 4 FP using AST comparison alone).
 
 ---
 
@@ -217,17 +212,42 @@ The result is provably equivalent to a fresh BFS of the modified spec under the 
 
 ### Benchmark
 
-All timings on Apple M3 Pro (18 GB, macOS 15.6, Go 1.24):
+All timings on Apple M3 Pro (18 GB, macOS 15.6, Go 1.24). Absolute times are hardware-dependent; speedup ratios are the primary claims.
 
-| Spec | Changed action | Cold BFS | Incremental | Speedup | States pruned / new BFS |
-|------|---------------|----------|-------------|---------|------------------------|
-| bank-account (3,745) | `freeze` | 2.1 s | 0.27 s | **7.7×** | 1,882 / 0 |
-| Raft (22,432) | `stepDown1_sees2` | 8.7 s | 2.4 s | **3.6×** | 1,649 / 1,643 |
-| Raft (22,432) | `vote2for1` | 8.7 s | 2.9 s | **3.0×** | 6,501 / 6,493 |
+| Spec | Changed action | Cold BFS | Incremental | Speedup | States pruned / new |
+|------|---------------|----------|-------------|---------|---------------------|
+| Raft (22,432) | `stepDown1_sees2` | 12.4 s | 2.4 s | **5.2×** | 1,649 / 1,645 |
+| Raft (22,432) | `vote2for1` | 12.4 s | 2.9 s | **4.3×** | 6,501 / 6,495 |
 
-Cache restore (unchanged spec): 0.18 s for bank-account (11×), 0.26 s for Raft (33×).
+Cache restore (unchanged spec): 0.265 s for Raft (47× faster than cold BFS).
 
 Speedup depends on the fraction of states reachable only via the changed action. When that fraction is high (e.g., `freeze` owns 1,882 of 3,745 states), most of the graph can be reused without re-expansion.
+
+---
+
+## Impact Analysis with `spectre impact`
+
+`spectre impact` reads the current `git diff` and maps changed Rust functions to the actions they implement, then reports which spec actions and invariants are affected and whether incremental re-verification is needed:
+
+```bash
+spectre impact examples/raft-election-safety.spec
+```
+
+Example output after modifying `vote2for1` in Rust source:
+
+```
+Changed actions (from git diff):
+  vote2for1  — semantics changed (SMT witness available)
+
+Affected invariants:
+  electionSafety
+  leaderMajority
+
+Recommended:
+  spectre verify examples/raft-election-safety.spec --use-cache --incremental --changed-action vote2for1
+```
+
+`impact` is designed for CI: it exits non-zero if any changed action touches a safety-critical invariant, so pipelines can gate on it.
 
 ---
 

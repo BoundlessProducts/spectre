@@ -3276,13 +3276,13 @@ spectre verify examples/raft-election-safety.spec --max-states 30000 --use-cache
 # Restored state graph from cache (22432 states). Elapsed: 0.26 s
 ```
 
-Cache restore is **33× faster** than a cold BFS for the 22,432-state Raft model and **11× faster** for the 3,745-state bank-account model (timings on macOS 15.6, Go 1.24, Apple M3 Pro).
+Cache restore is **47× faster** than a cold BFS for the 22,432-state Raft model (0.265 s vs 12.4 s on Apple M3 Pro, macOS 15.6, Go 1.24). Absolute times are hardware-dependent; the speedup ratio is the primary claim.
 
 ---
 
 ### Incremental Re-verification
 
-When `spectre sync` reports that one action is **possibly-unsafe**, the safe path is to re-verify — but only that action needs to change:
+When `spectre sync` reports that one action has changed (`[✗]`), the safe path is to re-verify — but only that action needs to change:
 
 ```bash
 # After modifying vote2for1's guard in the Rust source:
@@ -3297,15 +3297,14 @@ The algorithm:
 4. **Re-execute** — run the changed action from every remaining reachable state
 5. **BFS-expand** — expand new states with all actions, capped at the original bound
 
-**Measured speedups:**
+**Measured speedups (Apple M3 Pro; ratios are hardware-independent):**
 
-| Spec | Changed action | Cold BFS | Incremental | Speedup | States pruned / new BFS |
-|------|---------------|----------|-------------|---------|------------------------|
-| bank-account (3,745) | `freeze` | 2.1 s | 0.27 s | **7.7×** | 1,882 / 0 |
-| Raft (22,432) | `stepDown1_sees2` | 8.7 s | 2.4 s | **3.6×** | 1,649 / 1,643 |
-| Raft (22,432) | `vote2for1` | 8.7 s | 2.9 s | **3.0×** | 6,501 / 6,493 |
+| Spec | Changed action | Cold BFS | Incremental | Speedup | States pruned / new |
+|------|---------------|----------|-------------|---------|---------------------|
+| Raft (22,432) | `stepDown1_sees2` | 12.4 s | 2.4 s | **5.2×** | 1,649 / 1,645 |
+| Raft (22,432) | `vote2for1` | 12.4 s | 2.9 s | **4.3×** | 6,501 / 6,495 |
 
-Speedup depends on what fraction of states are reachable only via the changed action.  When that fraction is high (e.g. `freeze` owns 1,882 / 3,745 states), most of the graph can be reused without re-expansion.
+Speedup depends on what fraction of states are reachable only via the changed action.
 
 ---
 
@@ -3317,22 +3316,20 @@ As you modify Rust source, `spectre sync` compares the current implementation ag
 spectre sync examples/rust/bank_account.rs --spec examples/bank-account-parameterized.spec
 ```
 
-Example output:
+Example output (semantic mutation: `balance - amount` → `balance + amount`):
 
 ```
-Syncing examples/rust/bank_account.rs against examples/bank-account-parameterized.spec
+[=] action deposit (structurally unchanged)
+[✗] action withdraw assignment 1 body changed: "balance'=balance - amount" → "balance'=balance + amount" (witness: amount=1, balance=0)
+[=] action freeze (structurally unchanged)
+[=] action unfreeze (structurally unchanged)
+```
 
-Variables:
-  [=] balance (unchanged)
-  [=] frozen  (unchanged)
+Example output (equivalent rewrite — guard commuted):
 
-Actions:
-  [=] action deposit (structurally unchanged)
-  [?] action withdraw assignment 1 body changed: "balance=balance-amount" → "balance=balance+amount" (possibly unsafe)
-  [=] action freeze   (structurally unchanged)
-  [=] action unfreeze (structurally unchanged)
-
-Summary: 3 model-preserving, 0 spec-update-required, 1 possibly-unsafe
+```
+[≡] action deposit guard 2 rewritten (SMT-proved equivalent): "balance + amount <= 1000000" → "amount + balance <= 1000000"
+[=] action withdraw (structurally unchanged)
 ```
 
 Each symbol means:
@@ -3340,11 +3337,10 @@ Each symbol means:
 | Symbol | Meaning |
 |--------|---------|
 | `[=]` | Structurally unchanged — no re-verification needed |
-| `[+]` | New field or action — update the spec before verifying |
-| `[-]` | Removed field or action — check if intentional |
-| `[?]` | Semantic change detected — run `--incremental` or full BFS |
+| `[≡]` | SMT-proved equivalent rewrite — safe, no re-verification needed |
+| `[✗]` | Semantically changed — SMT witness provided; run `--incremental` or full BFS |
 
-In evaluation on bank-account, `spectre sync` detected **30/35 injected mutations** (85.7%), catching all guard-omission and wrong-arithmetic mutations. The 5 undetected cases were polarity inversions (`> 0` → `< 0`) not visible in assignment-body comparison.
+`spectre sync` uses Z3/QF_LIA for equivalence checking. In evaluation: **8/8 semantic mutations detected** with **1 false positive** (vs. 4 FP using AST comparison alone).
 
 ---
 
@@ -3369,7 +3365,7 @@ mine → verify → commit spec ──→ evolving code → sync → incremental
 In CI, add these two checks:
 
 ```bash
-# Fail the build if any action is possibly-unsafe
+# Fail the build if any action is semantically changed ([✗])
 spectre sync src/account.rs --spec spec/account.spec
 
 # Re-verify the flagged action (fast path)

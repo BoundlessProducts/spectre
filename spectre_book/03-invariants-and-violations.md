@@ -379,6 +379,52 @@ With these preconditions, both invariants will always hold.
 
 ---
 
+---
+
+## CEGIS Automatic Repair
+
+When `spectre verify` finds an invariant violation, it does not just report it — it automatically synthesises a `require` guard that would prevent the violation, using **weakest-precondition (WP) computation**:
+
+```bash
+./spectre verify examples/bank-account-violation.spec
+```
+
+After reporting the violation, the output includes a repair suggestion:
+
+```
+CEGIS Repair Suggestions:
+
+  Invariant `no_negatives` violated via action `withdrawAlice30`:
+    Pre-state: {aliceBalance = 0, bobBalance = 0}
+    Counterexample: withdrawAlice30*
+    Option 1 — weakest precondition for `aliceBalance' = aliceBalance - 30`:
+      // In action withdrawAlice30 — add:
+      require aliceBalance - 30 >= 0
+      ✓ Verified: re-explored with this guard applied — invariant holds
+```
+
+The synthesised guard is the **weakest condition** under which the assignment preserves the invariant — i.e., the least restrictive guard that is still correct. Add it to the action:
+
+```spectre
+action withdrawAlice30 {
+  require aliceBalance - 30 >= 0   // synthesised by CEGIS
+  aliceBalance' = aliceBalance - 30
+}
+```
+
+Or rewrite it in the more idiomatic form (mathematically equivalent):
+
+```spectre
+action withdrawAlice30 {
+  require aliceBalance >= 30
+  aliceBalance' = aliceBalance - 30
+}
+```
+
+Spectre re-runs BFS with the proposed guard injected before reporting `✓ Verified`, so the suggestion is confirmed correct before you see it. For specs with multiple violating actions, a repair suggestion is produced for each one.
+
+---
+
 ## Common Patterns of Invariant Violations
 
 Based on our examples, here are common patterns:

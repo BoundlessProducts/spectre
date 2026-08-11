@@ -61,10 +61,12 @@ Spectre is a formal specification language for modelling systems as state machin
 | Temporal logic | Express liveness (`eventually`), safety (`always`), and response (`→` leads-to) properties |
 | Fairness | Weak (`WF`) and strong (`SF`) fairness conditions for concurrent systems |
 | CEGIS repair | Automatic weakest-precondition guard suggestions when an invariant is violated |
+| Partial-order reduction | `--por` heuristic skips redundant interleavings — 3-node Raft: 22,432 → 6,818 states (7.6× speedup) |
+| Property-directed exploration | `--property-guided` best-first BFS toward invariant boundaries — finds all 29 violation traces in 204 states |
 | Spec mining | Extract a Spectre skeleton from existing Rust source — fields, actions, guards, and init values |
-| Drift detection | `spectre sync` compares your Rust source against the mined spec and classifies every change |
-| Incremental re-verification | When one action changes, `--incremental` re-verifies only that action — 3–7× faster than a cold BFS |
-| State caching | `--use-cache` restores a previous BFS graph in milliseconds (33× faster for Raft) |
+| SMT drift detection | `spectre sync` uses Z3/QF_LIA to classify each change as `[=]` unchanged, `[≡]` SMT-proved-equivalent, or `[✗]` semantically changed |
+| Incremental re-verification | When one action changes, `--incremental` re-verifies only that action — 4.3–5.2× faster than a cold BFS |
+| State caching | `--use-cache` restores a previous BFS graph in milliseconds (47× faster for Raft) |
 | Model-based testing | Generate Rust test drivers and ITF trace replay; five coverage modes including property-directed |
 | Rust monitor generation | Emit a self-contained `monitor.rs` that checks spec invariants in production |
 | Simulation | Direct path sampling via `spectre simulate` — covers 5-/7-node Raft beyond exhaustive BFS scale |
@@ -341,12 +343,13 @@ spectre <command> [flags] <file>
 | `verify <file>` | BFS state exploration, invariant and temporal property checking |
 | `simulate <file>` | Random path sampling without building the full state graph |
 | `mine --lang rust <source.rs>` | Mine a Spectre spec skeleton from Rust source |
-| `sync <source.rs>` | Diff Rust source against the mined spec; classify changes as safe / unsafe / update-required |
+| `sync <source.rs> --spec <spec>` | SMT-backed drift detection; classifies each action as `[=]` / `[≡]` / `[✗]` |
 | `drift <spec> <source.rs>` | Detect bidirectional staleness between a spec and its Rust implementation |
 | `generate-driver --lang rust <file>` | Generate a Rust MBT driver skeleton |
 | `generate-monitor --lang rust <file>` | Generate an embedded Rust runtime monitor |
 | `check-refinement <file>` | Check that ITF traces conform to the spec via the refinement mapping |
 | `diff-conformance <file>` | Replay an ITF trace against two spec versions and report divergences |
+| `impact <spec>` | Given a git diff, report affected actions/invariants and incremental verification status |
 
 ### `verify` flags
 
@@ -356,6 +359,8 @@ spectre <command> [flags] <file>
 | `--max-states <n>` | 5000 | Stop after exploring `n` states. Use `unlimited` for no limit |
 | `--max-depth <n>` | 100 | Stop BFS at depth `n`. Use `unlimited` for no limit |
 | `--param Name=Value` | — | Bind a spec parameter (e.g., `--param N=3`). Repeatable |
+| `--por` | off | Partial-order reduction: skip redundant action interleavings (ample-set heuristic) |
+| `--property-guided` | off | Best-first BFS toward invariant boundaries — finds violations with far fewer states explored |
 | `--emit-traces <file>` | — | Write an ITF execution trace to `<file>` for MBT replay |
 | `--coverage-mode <mode>` | `action` | Trace coverage strategy: `action`, `transition-pair`, `boundary`, `rare-action`, `property` |
 | `--use-cache` | off | Restore a previously cached BFS graph; run fresh BFS and save cache if absent |
@@ -367,7 +372,10 @@ spectre <command> [flags] <file>
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--traces <n>` | 100 | Number of random paths to sample |
-| `--max-depth <n>` | 100 | Maximum steps per path |
+| `--max-steps <n>` | 100 | Maximum steps per path (also accepted as `--max-depth`) |
+| `--seed <n>` | — | Random seed for reproducible traces |
+| `--output-dir <dir>` | — | Write each trace as a separate ITF JSON file to `<dir>` |
+| `--use-bfs` | off | BFS walk instead of random walk |
 
 ### `mine` flags
 
@@ -392,15 +400,17 @@ Extract a spec from Rust source, then keep it in sync as the code evolves:
 # 2. Verify it
 ./spectre verify account.spec
 
-# 3. After code changes, check for drift
-./spectre sync src/account.rs
-# Output: classify each change as structurally unchanged / spec-update-required / possibly-unsafe
+# 3. After code changes, check for drift (SMT-backed)
+./spectre sync src/account.rs --spec account.spec
+# [=]  deposit     (structurally unchanged)
+# [≡]  withdraw    (SMT-proved equivalent rewrite — no re-verification needed)
+# [✗]  freeze      (semantically changed — witness: frozen=false; re-verify required)
 
 # 4. For bidirectional drift (spec also may have changed)
 ./spectre drift account.spec src/account.rs
 ```
 
-`spectre sync` compares fields, actions, guard counts, and normalised assignment expressions. It detected **30/35** injected mutations in evaluation (85.7%), missing only semantic polarity inversions not representable in assignment-body comparison.
+`spectre sync` uses Z3/QF_LIA to classify each change. `[✗]` includes a counterexample witness. In evaluation: 8/8 semantic mutations detected with 1 false positive (vs. 4 FP without SMT).
 
 ---
 
@@ -417,7 +427,25 @@ After `spectre sync` flags an action as **possibly-unsafe**, re-verify only that
     --use-cache --incremental --changed-action vote2for1
 ```
 
-The algorithm: prune stale transitions → recompute reachability → remove now-unreachable states → re-execute the changed action → BFS-expand new states up to the original bound. On Raft (22,432 states), incremental is **3× faster** than cold BFS; cache restore for an unchanged spec is **33× faster**.
+The algorithm: prune stale transitions → recompute reachability → remove now-unreachable states → re-execute the changed action → BFS-expand new states up to the original bound. On Raft (22,432 states), incremental is **4.3–5.2× faster** than cold BFS; cache restore for an unchanged spec is **47× faster**. (Timings on Apple M3 Pro; ratios are hardware-independent.)
+
+---
+
+### Partial-Order Reduction and Property-Directed Exploration
+
+Two flags that can dramatically reduce the number of states explored:
+
+```bash
+# POR: skip redundant action interleavings
+# 3-node Raft: 22,432 → 6,818 states (7.6× reduction, M3 Pro)
+./spectre verify examples/raft-election-safety.spec --max-states 30000 --por
+
+# Property-directed: best-first BFS toward invariant boundaries
+# Finds all 29 violation traces in 204 states; random walk finds 0 in 150,000 steps
+./spectre verify examples/queue.spec --property-guided
+```
+
+`--por` and `--property-guided` can be combined. Use `--por` for safety verification of large models; use `--property-guided` when you expect violations and want them found fast.
 
 ---
 
