@@ -28,6 +28,11 @@
       "relation": "isNewVersionOf",
       "identifier": "10.5281/zenodo.21871755",
       "scheme": "doi"
+    },
+    {
+      "relation": "isIdenticalTo",
+      "identifier": "10.5281/zenodo.21886752",
+      "scheme": "doi"
     }
   ],
   "notes": "Reproduction script: sh artifact/reproduce.sh (short run: SKIP_LONG=1 sh artifact/reproduce.sh). Docker: docker build -t spectre-vmcai . && docker run --rm spectre-vmcai sh /artifact/reproduce.sh"

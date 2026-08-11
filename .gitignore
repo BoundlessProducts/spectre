@@ -58,4 +58,4 @@ v2-paper-vmcai-27/*.blg
 v2-paper-vmcai-27/*.log
 v2-paper-vmcai-27/*.out
 v2-paper-vmcai-27/*.synctex.gz
-v2-paper-vmcai-27/*.pdf
+# v2-paper-vmcai-27/*.pdf  # keep main.pdf tracked for artifact
