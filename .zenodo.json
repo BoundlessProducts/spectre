@@ -26,12 +26,12 @@
   "related_identifiers": [
     {
       "relation": "isNewVersionOf",
-      "identifier": "10.5281/zenodo.21871755",
+      "identifier": "10.5281/zenodo.21886752",
       "scheme": "doi"
     },
     {
       "relation": "isIdenticalTo",
-      "identifier": "10.5281/zenodo.21886752",
+      "identifier": "10.5281/zenodo.21887116",
       "scheme": "doi"
     }
   ],
