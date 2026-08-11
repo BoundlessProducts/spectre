@@ -322,6 +322,194 @@ func deriveTemporalProps(m *MinedSpec) []LLMTemporal {
 	return deduped
 }
 
+// InvariantCandidate is a proposed invariant awaiting user approval.
+type InvariantCandidate struct {
+	Name        string
+	Condition   string // Spectre expression
+	Description string
+	Source      string // "assert", "type-bound", "field-relation", "recurring-guard"
+	Confidence  string // "high" | "medium" | "low"
+}
+
+// ProposeInvariantCandidates mines invariant candidates from the mined spec
+// across five sources, returning candidates for user approval.  The caller
+// must obtain explicit user confirmation before adding any candidate to the
+// live spec (to avoid circular oracle issues).
+//
+// Sources:
+//  1. Recurring guard conditions (2+ methods) — already in deriveInvariants
+//  2. Single-method assertions that reference only field names (high confidence)
+//  3. Integer field type-bounds (e.g., uint8 → 0 <= x && x <= 255)
+//  4. Constructor postconditions (conditions in new() / default() methods)
+//  5. Structural field relationships inferred from naming (len/capacity, used/size)
+func ProposeInvariantCandidates(m *MinedSpec) []InvariantCandidate {
+	fieldNames := fieldNameSet(m.Fields)
+	var candidates []InvariantCandidate
+	seen := make(map[string]bool)
+
+	add := func(c InvariantCandidate) {
+		if !seen[c.Condition] {
+			seen[c.Condition] = true
+			candidates = append(candidates, c)
+		}
+	}
+
+	// Source 1: recurring guards (2+ methods) — high confidence.
+	condCount := make(map[string]int)
+	condDesc := make(map[string]string)
+	condSource := make(map[string]string)
+	for _, meth := range m.Methods {
+		methParams := make(map[string]bool)
+		for _, p := range meth.Params {
+			methParams[p.Name] = true
+		}
+		seen2 := make(map[string]bool)
+		for _, req := range meth.Requires {
+			if containsAnyToken(req, methParams) {
+				continue
+			}
+			if !containsAnyToken(req, fieldNames) {
+				continue
+			}
+			if !containsComparisonOp(req) {
+				continue
+			}
+			if !seen2[req] {
+				seen2[req] = true
+				condCount[req]++
+				if condDesc[req] == "" {
+					condDesc[req] = "recurring guard in " + meth.Name
+					condSource[req] = "recurring-guard"
+				}
+			}
+		}
+	}
+	idx := 1
+	for cond, count := range condCount {
+		conf := "medium"
+		if count >= 2 {
+			conf = "high"
+		}
+		add(InvariantCandidate{
+			Name:        fmt.Sprintf("candidate_%d", idx),
+			Condition:   cond,
+			Description: condDesc[cond],
+			Source:      condSource[cond],
+			Confidence:  conf,
+		})
+		idx++
+	}
+
+	// Source 2: single-method assertions that reference only field names.
+	for _, meth := range m.Methods {
+		methParams := make(map[string]bool)
+		for _, p := range meth.Params {
+			methParams[p.Name] = true
+		}
+		for _, req := range meth.Requires {
+			if containsAnyToken(req, methParams) {
+				continue
+			}
+			if !containsAnyToken(req, fieldNames) {
+				continue
+			}
+			if !containsComparisonOp(req) {
+				continue
+			}
+			add(InvariantCandidate{
+				Name:        fmt.Sprintf("candidate_%d", idx),
+				Condition:   req,
+				Description: "assert condition in " + meth.Name,
+				Source:      "assert",
+				Confidence:  "medium",
+			})
+			idx++
+		}
+	}
+
+	// Source 3: integer type bounds.
+	for _, f := range m.Fields {
+		cond := typeBoundCondition(f.Name, f.RustType)
+		if cond != "" {
+			add(InvariantCandidate{
+				Name:        fmt.Sprintf("candidate_%d", idx),
+				Condition:   cond,
+				Description: "type bound for field " + f.Name + " (" + f.RustType + ")",
+				Source:      "type-bound",
+				Confidence:  "high",
+			})
+			idx++
+		}
+	}
+
+	// Source 4: constructor postconditions (new/default/init methods with no mut self).
+	for _, meth := range m.Methods {
+		name := strings.ToLower(meth.Name)
+		if name != "new" && name != "default" && !strings.HasPrefix(name, "init") {
+			continue
+		}
+		for _, req := range meth.Requires {
+			if !containsAnyToken(req, fieldNames) {
+				continue
+			}
+			add(InvariantCandidate{
+				Name:        fmt.Sprintf("candidate_%d", idx),
+				Condition:   req,
+				Description: "constructor postcondition in " + meth.Name,
+				Source:      "assert",
+				Confidence:  "medium",
+			})
+			idx++
+		}
+	}
+
+	// Source 5: structural field relationships from naming patterns.
+	fieldMap := make(map[string]bool)
+	for _, f := range m.Fields {
+		fieldMap[f.Name] = true
+	}
+	pairs := [][2]string{
+		{"len", "capacity"}, {"length", "capacity"}, {"size", "capacity"},
+		{"count", "max"}, {"used", "total"}, {"head", "tail"},
+		{"read_pos", "write_pos"}, {"front", "back"},
+	}
+	for _, pair := range pairs {
+		if fieldMap[pair[0]] && fieldMap[pair[1]] {
+			cond := pair[0] + " <= " + pair[1]
+			add(InvariantCandidate{
+				Name:        fmt.Sprintf("candidate_%d", idx),
+				Condition:   cond,
+				Description: "structural field relation (" + pair[0] + " ≤ " + pair[1] + ")",
+				Source:      "field-relation",
+				Confidence:  "medium",
+			})
+			idx++
+		}
+	}
+
+	return candidates
+}
+
+// typeBoundCondition returns a Spectre expression for the representable range
+// of a fixed-width integer type, or "" when no bound applies.
+func typeBoundCondition(field, rustType string) string {
+	switch strings.TrimSpace(rustType) {
+	case "u8":
+		return fmt.Sprintf("%s >= 0 && %s <= 255", field, field)
+	case "u16":
+		return fmt.Sprintf("%s >= 0 && %s <= 65535", field, field)
+	case "u32", "usize":
+		return fmt.Sprintf("%s >= 0", field)
+	case "u64":
+		return fmt.Sprintf("%s >= 0", field)
+	case "i8":
+		return fmt.Sprintf("%s >= -128 && %s <= 127", field, field)
+	case "i16":
+		return fmt.Sprintf("%s >= -32768 && %s <= 32767", field, field)
+	}
+	return ""
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func containsAnyToken(s string, tokens map[string]bool) bool {

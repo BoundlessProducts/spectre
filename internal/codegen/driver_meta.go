@@ -32,9 +32,10 @@ type MetaField struct {
 
 // MetaAction maps one spec action to the corresponding Rust method.
 type MetaAction struct {
-	SpecAction string      `json:"spec_action"` // name in .spec
-	RustMethod string      `json:"rust_method"` // name in Rust source
-	Params     []MetaParam `json:"params"`
+	SpecAction    string      `json:"spec_action"`              // name in .spec
+	RustMethod    string      `json:"rust_method"`              // name in Rust source
+	Params        []MetaParam `json:"params"`
+	ReturnsResult bool        `json:"returns_result,omitempty"` // true if the Rust method returns Result<_,_>
 }
 
 // MetaParam is one parameter of an action/method.

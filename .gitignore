@@ -31,3 +31,31 @@ go.work
 Thumbs.db
 
 notes/
+
+# Old paper drafts
+paper-vmcai-2027/
+
+# Build artefacts
+spectre_new
+spectre-mine-rs
+spectre-vmcai-2027.zip
+
+# Runtime state
+temp.txt
+texput.log
+examples/.spectre-cache/
+
+# LaTeX build output (both paper directories)
+paper-vmcai-2027/*.aux
+paper-vmcai-2027/*.bbl
+paper-vmcai-2027/*.blg
+paper-vmcai-2027/*.log
+paper-vmcai-2027/*.out
+paper-vmcai-2027/*.synctex.gz
+v2-paper-vmcai-27/*.aux
+v2-paper-vmcai-27/*.bbl
+v2-paper-vmcai-27/*.blg
+v2-paper-vmcai-27/*.log
+v2-paper-vmcai-27/*.out
+v2-paper-vmcai-27/*.synctex.gz
+v2-paper-vmcai-27/*.pdf

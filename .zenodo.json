@@ -1,0 +1,34 @@
+{
+  "title": "Spectre: Continuous Refinement and Closed-Loop Verification for Rust — VMCAI 2027 Artifact",
+  "description": "Artifact for the VMCAI 2027 paper 'Spectre: Continuous Refinement and Closed-Loop Verification for Rust'. Includes the Spectre tool binary (Go), Rust miner (spectre-mine-rs), all benchmark specifications, and a reproduction script (artifact/reproduce.sh) covering all four research questions:\n\n- RQ1: Raft election-safety verification with BFS, ample-set-style POR heuristic, warm-cache re-run, and incremental re-verification (Tables 2–3)\n- RQ2: SMT-backed semantic-sync ablation on bank_account mutations (Table 5)\n- RQ3: CEGIS/WP closed-loop repair across five defect classes (Tables 4, 6)\n- RQ4: Spec mining from nine Rust components; property-directed vs random exploration (Tables 7–8)\n\nDocker image available on request; see Dockerfile at repository root. Build requirements: Go ≥ 1.24, Rust stable, Z3 (for SMT sync).",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Keshavan, Anand Kumar",
+      "orcid": "0009-0007-8541-5203",
+      "affiliation": ""
+    }
+  ],
+  "keywords": [
+    "formal verification",
+    "Rust",
+    "model checking",
+    "specification mining",
+    "CEGIS",
+    "partial-order reduction",
+    "incremental verification",
+    "runtime monitoring",
+    "refinement",
+    "TLA+"
+  ],
+  "related_identifiers": [
+    {
+      "relation": "isNewVersionOf",
+      "identifier": "10.5281/zenodo.21871755",
+      "scheme": "doi"
+    }
+  ],
+  "notes": "Reproduction script: sh artifact/reproduce.sh (short run: SKIP_LONG=1 sh artifact/reproduce.sh). Docker: docker build -t spectre-vmcai . && docker run --rm spectre-vmcai sh /artifact/reproduce.sh"
+}

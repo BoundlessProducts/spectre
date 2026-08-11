@@ -1,4 +1,4 @@
-.PHONY: build build-go build-rs install uninstall test clean release docker-build docker-test
+.PHONY: build build-go build-rs install uninstall test clean release docker-build docker-test artifact-zip
 
 GOBIN          := $(shell go env GOPATH)/bin
 MINE_RS_DIR    := rust/spectre-mine-rs
@@ -72,5 +72,15 @@ docker-test: docker-build
 	@echo "=== spectre --help ==="
 	docker run --rm $(DOCKER_IMAGE) --help
 	@echo "\n=== full benchmark suite (all Table 2 & 3 entries) ==="
-	docker run --rm --entrypoint sh $(DOCKER_IMAGE) /artifact/run-benchmarks.sh
+	docker run --rm --entrypoint sh $(DOCKER_IMAGE) /artifact/reproduce.sh
+
+# Build the Zenodo upload zip (excludes git history and LaTeX build output)
+ARTIFACT_NAME := spectre-vmcai-2027
+artifact-zip:
+	@echo "Building artifact zip for Zenodo upload..."
+	git archive --format=zip --prefix=$(ARTIFACT_NAME)/ HEAD \
+	    --add-file=v2-paper-vmcai-27/main.pdf \
+	    -o $(ARTIFACT_NAME).zip
+	@echo "Created $(ARTIFACT_NAME).zip"
+	@ls -lh $(ARTIFACT_NAME).zip
 

@@ -559,6 +559,70 @@ func printStutterAnalysis(stuttering []*explore.Stuttering, file *ast.File, sm *
 	}
 }
 
+// sweepParamRanges verifies the spec for each combination of parameter values in
+// the given ranges.  It reports a summary table of which parameter values trigger
+// violations and which are clean.
+func sweepParamRanges(
+	sm *exec.StateMachine,
+	file *ast.File,
+	allFiles []*ast.File,
+	ranges map[string][2]int64,
+	maxStates, maxDepth int,
+	verbose bool,
+) error {
+	// For simplicity, support sweeping one parameter at a time (product of ranges
+	// can be exponential; the single-parameter case is the most useful for Raft node count).
+	if len(ranges) != 1 {
+		return fmt.Errorf("--param-range currently supports exactly one parameter at a time (got %d)", len(ranges))
+	}
+
+	var pName string
+	var pRange [2]int64
+	for k, v := range ranges {
+		pName, pRange = k, v
+	}
+
+	fmt.Printf("Sweeping param %s over [%d, %d]:\n\n", pName, pRange[0], pRange[1])
+	fmt.Printf("  %-12s  %-12s  %-12s  %s\n", "N", "States", "Violations", "Result")
+	fmt.Printf("  %-12s  %-12s  %-12s  %s\n", "---", "------", "----------", "------")
+
+	totalViolations := 0
+	for n := pRange[0]; n <= pRange[1]; n++ {
+		sm2, err := exec.NewStateMachine(file, allFiles...)
+		if err != nil {
+			return fmt.Errorf("cannot create state machine for N=%d: %w", n, err)
+		}
+		sm2.SetParam(pName, n)
+
+		exp := explore.NewExplorer(sm2)
+		exp.SetMaxDepth(maxDepth)
+		exp.SetMaxStates(maxStates)
+		exp.SetSilent(true)
+
+		result, err := exp.ExploreBFS()
+		if err != nil {
+			fmt.Printf("  %-12d  %-12s  %-12s  ERROR: %v\n", n, "-", "-", err)
+			continue
+		}
+
+		status := "✓ SAFE"
+		if len(result.Violations) > 0 {
+			status = fmt.Sprintf("✗ VIOLATION (%s)", result.Violations[0].Invariant)
+			totalViolations++
+		}
+		fmt.Printf("  %-12d  %-12d  %-12d  %s\n",
+			n, result.StatesExplored, len(result.Violations), status)
+	}
+
+	fmt.Printf("\nSweep complete. %d of %d values had violations.\n",
+		totalViolations, pRange[1]-pRange[0]+1)
+	if totalViolations > 0 {
+		fmt.Println("Use `spectre verify --param", pName+"=<N>` to inspect a specific violation in detail.")
+	}
+	_ = sm // original sm unused when sweeping; suppress warning
+	return nil
+}
+
 // verifyCEGISFix temporarily injects a require guard into an action, re-runs BFS, and
 // returns true if the named invariant is no longer violated.  Always restores the action.
 func verifyCEGISFix(
@@ -629,13 +693,17 @@ func runVerify(args []string) error {
 	maxStates := 5000  // Default: increased for large specs like elevator controller
 	maxDepth := 100    // Default: increased for deep state spaces
 	emitTraces := ""   // Output file for ITF trace (empty = disabled)
-	emitRustTests := "" // Output file for Rust regression tests (empty = disabled)
+	emitRustTests := ""  // Output file for Rust regression tests (empty = disabled)
+	emitProptest := ""   // Output file for proptest strategies (empty = disabled)
 	coverageMode := "action" // action | transition-pair | boundary | rare-action | property
 	useCache := false        // --use-cache: skip BFS if spec hash matches cached graph
 	incremental := false     // --incremental: re-verify only the changed action (requires --changed-action)
 	changedAction := ""      // --changed-action NAME: action whose semantics changed
-	checkRepairMinimal := false // --check-repair-minimal: verify guards don't block valid traces
-	params := map[string]int64{} // --param Name=Value spec parameter bindings
+	checkRepairMinimal := false    // --check-repair-minimal: verify guards don't block valid traces
+	propertyGuided := false        // --property-guided: best-first BFS by linear predicate distance
+	partialOrderReduction := false // --por: partial-order reduction (skip redundant interleavings)
+	params := map[string]int64{}   // --param Name=Value spec parameter bindings
+	paramRanges := map[string][2]int64{} // --param-range Name=lo..hi: sweep parameter over range
 	filteredArgs := []string{}
 
 	i := 0
@@ -657,6 +725,13 @@ func runVerify(args []string) error {
 				i++
 			} else {
 				return fmt.Errorf("--emit-rust-tests requires a file path")
+			}
+		case "--emit-proptest":
+			if i+1 < len(args) {
+				emitProptest = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--emit-proptest requires a file path")
 			}
 		case "--coverage-mode":
 			if i+1 < len(args) {
@@ -710,8 +785,38 @@ func runVerify(args []string) error {
 			}
 		case "--use-cache":
 			useCache = true
+		case "--property-guided":
+			propertyGuided = true
+		case "--por":
+			partialOrderReduction = true
 		case "--check-repair-minimal":
 			checkRepairMinimal = true
+		case "--param-range":
+			if i+1 < len(args) {
+				kv := args[i+1]
+				i++
+				eqIdx := strings.Index(kv, "=")
+				if eqIdx < 0 {
+					return fmt.Errorf("--param-range requires Name=lo..hi format, got %q", kv)
+				}
+				pName := kv[:eqIdx]
+				if pName == "" {
+					return fmt.Errorf("--param-range: parameter name cannot be empty in %q", kv)
+				}
+				rangePart := kv[eqIdx+1:]
+				dotIdx := strings.Index(rangePart, "..")
+				if dotIdx < 0 {
+					return fmt.Errorf("--param-range requires Name=lo..hi format, got %q", kv)
+				}
+				lo, err1 := strconv.ParseInt(rangePart[:dotIdx], 10, 64)
+				hi, err2 := strconv.ParseInt(rangePart[dotIdx+2:], 10, 64)
+				if err1 != nil || err2 != nil || lo > hi {
+					return fmt.Errorf("--param-range: invalid range %q", rangePart)
+				}
+				paramRanges[pName] = [2]int64{lo, hi}
+			} else {
+				return fmt.Errorf("--param-range requires a Name=lo..hi argument")
+			}
 		case "--param":
 			if i+1 < len(args) {
 				kv := args[i+1]
@@ -1117,6 +1222,11 @@ func runVerify(args []string) error {
 		sm.SetParam(pName, pVal)
 	}
 
+	// --param-range: sweep over parameter values and verify each.
+	if len(paramRanges) > 0 {
+		return sweepParamRanges(sm, file, allFiles, paramRanges, maxStates, maxDepth, verbose)
+	}
+
 	// Explore state space
 	explorer := explore.NewExplorer(sm)
 	explorer.SetMaxDepth(maxDepth)
@@ -1259,7 +1369,13 @@ func runVerify(args []string) error {
 		}
 	}
 	if result == nil {
-		result, err = explorer.ExploreBFS()
+		if propertyGuided {
+			result, err = explorer.ExplorePropertyGuided(file, allFiles)
+		} else if partialOrderReduction {
+			result, err = explorer.ExplorePOR(file, allFiles)
+		} else {
+			result, err = explorer.ExploreBFS()
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error exploring state space in %s: %v\n", filename, err)
 			return fmt.Errorf("error exploring state space: %w", err)
@@ -1384,6 +1500,17 @@ func runVerify(args []string) error {
 		}
 	}
 
+	// Emit proptest strategies if requested.
+	if emitProptest != "" {
+		proptestMeta, _ := codegen.LoadDriverMeta(codegen.MetaPath(filename))
+		proptestCode := codegen.EmitProptestModule(strings.TrimSuffix(filepath.Base(filename), ".spec"), file, proptestMeta)
+		if writeErr := os.WriteFile(emitProptest, []byte(proptestCode), 0644); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write proptest file to %s: %v\n", emitProptest, writeErr)
+		} else {
+			fmt.Printf("Proptest strategies written to %s\n", emitProptest)
+		}
+	}
+
 	// Final report
 	fmt.Printf("Traversed %d states\n", result.StatesExplored)
 
@@ -1424,9 +1551,23 @@ func runVerify(args []string) error {
 			violationNum++
 		}
 		
+		// Minimize counterexample traces before diagnosis.
+		minimizedViolations := make([]*explore.Violation, len(result.Violations))
+		for i, v := range result.Violations {
+			minimizedViolations[i] = diagnose.MinimizeCounterexample(v, sm)
+			if len(minimizedViolations[i].Path) < len(v.Path) {
+				fmt.Printf("  [↓] Counterexample for `%s` minimized: %d → %d steps\n",
+					v.Invariant, len(v.Path), len(minimizedViolations[i].Path))
+			}
+		}
+
+		// Load driver meta for Rust patch generation (nil if not available).
+		metaPath := codegen.MetaPath(filename)
+		meta, _ := codegen.LoadDriverMeta(metaPath)
+
 		// CEGIS repair suggestions for invariant violations
-		if len(result.Violations) > 0 {
-			cegisRepairs := diagnose.SynthesizeCEGIS(result.Violations, file)
+		if len(minimizedViolations) > 0 {
+			cegisRepairs := diagnose.SynthesizeCEGIS(minimizedViolations, file)
 			if len(cegisRepairs) > 0 {
 				fmt.Printf("\nCEGIS Repair Suggestions:\n")
 				for _, repair := range cegisRepairs {
@@ -1454,8 +1595,7 @@ func runVerify(args []string) error {
 					{
 						var repairPtr *diagnose.CEGISRepair
 						repairPtr = &repair
-						// find the matching violation for this repair
-						for _, viol := range result.Violations {
+						for _, viol := range minimizedViolations {
 							if viol.Invariant == repair.InvariantName {
 								expl := diagnose.Explain(viol, repairPtr, file)
 								fmt.Printf("%s", diagnose.PrintExplanation(expl))
@@ -1493,6 +1633,12 @@ func runVerify(args []string) error {
 									fmt.Printf("      ✓ Minimality: guard does not block any valid %q steps\n", repair.ActionName)
 								}
 							}
+						}
+						// Rust patch suggestion using refinement map.
+						patch := codegen.GenerateRustPatch(guard, repair.ActionName, meta)
+						fmt.Printf("      Rust patch suggestion:\n")
+						for _, line := range strings.Split(patch, "\n") {
+							fmt.Printf("        %s\n", line)
 						}
 					}
 				}
@@ -1695,6 +1841,7 @@ func runMine(args []string) error {
 	output := ""
 	specName := ""
 	useAI := false
+	proposeInvariants := false // --propose-invariants: print candidate invariants for approval
 	filteredArgs := []string{}
 
 	i := 0
@@ -1717,6 +1864,8 @@ func runMine(args []string) error {
 			}
 		case "--ai":
 			useAI = true
+		case "--propose-invariants":
+			proposeInvariants = true
 		default:
 			filteredArgs = append(filteredArgs, args[i])
 		}
@@ -1753,6 +1902,23 @@ func runMine(args []string) error {
 				fmt.Fprintf(os.Stderr, "Warning: LLM enhancement failed: %v; continuing with static analysis.\n", err)
 				suggestions = nil
 			}
+		}
+	}
+
+	// --propose-invariants: print candidates before generating the spec.
+	if proposeInvariants {
+		candidates := mine.ProposeInvariantCandidates(mined)
+		if len(candidates) == 0 {
+			fmt.Println("No invariant candidates found.")
+		} else {
+			fmt.Printf("Invariant Candidates (review and add to spec manually):\n\n")
+			for i, c := range candidates {
+				fmt.Printf("  [%d] %s  — %s (%s, %s confidence)\n",
+					i+1, c.Condition, c.Description, c.Source, c.Confidence)
+				fmt.Printf("      Add to spec: invariant %s { %s }\n\n", c.Name, c.Condition)
+			}
+			fmt.Printf("NOTE: accept candidates only after independent verification.\n")
+			fmt.Printf("      Circular oracle risk: properties derived from the same source that is being verified.\n\n")
 		}
 	}
 

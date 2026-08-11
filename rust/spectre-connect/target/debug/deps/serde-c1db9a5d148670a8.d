@@ -1,0 +1,14 @@
+/Users/anand-air/projects/spectre/rust/spectre-connect/target/debug/deps/serde-c1db9a5d148670a8.d: /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/anand-air/projects/spectre/rust/spectre-connect/target/debug/build/serde-96533ca132bdbf45/out/private.rs
+
+/Users/anand-air/projects/spectre/rust/spectre-connect/target/debug/deps/libserde-c1db9a5d148670a8.rlib: /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/anand-air/projects/spectre/rust/spectre-connect/target/debug/build/serde-96533ca132bdbf45/out/private.rs
+
+/Users/anand-air/projects/spectre/rust/spectre-connect/target/debug/deps/libserde-c1db9a5d148670a8.rmeta: /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/anand-air/projects/spectre/rust/spectre-connect/target/debug/build/serde-96533ca132bdbf45/out/private.rs
+
+/Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs:
+/Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs:
+/Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs:
+/Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs:
+/Users/anand-air/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs:
+/Users/anand-air/projects/spectre/rust/spectre-connect/target/debug/build/serde-96533ca132bdbf45/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/anand-air/projects/spectre/rust/spectre-connect/target/debug/build/serde-96533ca132bdbf45/out

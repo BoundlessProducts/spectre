@@ -172,6 +172,7 @@ func (e *Explorer) SetVerbose(verbose bool) {
 func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 	e.visited = make(map[string]bool)
 	e.queue = []*ExplorationStateNode{}
+	e.shouldStopExploration = false
 
 	// Get initial states
 	initialStates, err := e.stateMachine.GetInitialStates()
@@ -532,6 +533,7 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 	e.visited = make(map[string]bool)
 	e.stack = []*ExplorationStateNode{}
+	e.shouldStopExploration = false
 
 	// Get initial states
 	initialStates, err := e.stateMachine.GetInitialStates()

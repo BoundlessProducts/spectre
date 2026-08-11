@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/akkeshavan/spectre/internal/codegen"
@@ -43,6 +45,11 @@ func init() {
 		Name:        "simulate",
 		Description: "Generate random execution traces by random-walking the explored state graph",
 		Run:         runSimulate,
+	}
+	Commands["impact"] = &Command{
+		Name:        "impact",
+		Description: "Given a git diff, report affected spec actions/invariants and incremental verification status",
+		Run:         runImpact,
 	}
 }
 
@@ -126,6 +133,45 @@ func specActionGuards(file *ast.File) map[string][]string {
 				}
 			}
 			m[a.Name] = guards
+		}
+	}
+	return m
+}
+
+// specActionGuardExprs extracts action names → slice of guard AST expressions.
+// Used by runSync for SMT-backed equivalence checking.
+func specActionGuardExprs(file *ast.File) map[string][]ast.Expr {
+	m := make(map[string][]ast.Expr)
+	for _, d := range file.Decls {
+		if a, ok := d.(*ast.ActionDecl); ok {
+			var guards []ast.Expr
+			if a.Body != nil {
+				for _, s := range a.Body.Statements {
+					if req, ok := s.(*ast.RequireStmt); ok {
+						guards = append(guards, req.Condition)
+					}
+				}
+			}
+			m[a.Name] = guards
+		}
+	}
+	return m
+}
+
+// specActionAssignRHSExprs extracts action names → slice of assignment RHS AST expressions.
+func specActionAssignRHSExprs(file *ast.File) map[string][]ast.Expr {
+	m := make(map[string][]ast.Expr)
+	for _, d := range file.Decls {
+		if a, ok := d.(*ast.ActionDecl); ok {
+			var exprs []ast.Expr
+			if a.Body != nil {
+				for _, s := range a.Body.Statements {
+					if assign, ok := s.(*ast.AssignStmt); ok {
+						exprs = append(exprs, assign.Right)
+					}
+				}
+			}
+			m[a.Name] = exprs
 		}
 	}
 	return m
@@ -241,15 +287,20 @@ func runSync(args []string) error {
 	}
 	oldAssignCount := specActionAssignCount(oldFile)
 
-	// Generate fresh spec text and parse it for assignment expression comparison.
-	// This catches wrong-arith mutations where the assignment count is the same
-	// but the RHS expression changed (e.g. balance-amount → balance+amount).
+	// Generate fresh spec text and parse it for expression-level comparison.
 	freshText := mined.Generate(nil)
 	newFile, freshErr := parseSpecString(freshText)
 	var oldAssignExprs, newAssignExprs map[string][]string
+	var oldGuardExprs, newGuardExprs map[string][]ast.Expr
+	var oldAssignRHSExprs, newAssignRHSExprs map[string][]ast.Expr
 	if freshErr == nil && newFile != nil {
 		oldAssignExprs = specActionAssignExprs(oldFile)
 		newAssignExprs = specActionAssignExprs(newFile)
+		// AST expressions for SMT-backed semantic equivalence checking.
+		oldGuardExprs = specActionGuardExprs(oldFile)
+		newGuardExprs = specActionGuardExprs(newFile)
+		oldAssignRHSExprs = specActionAssignRHSExprs(oldFile)
+		newAssignRHSExprs = specActionAssignRHSExprs(newFile)
 	}
 
 	fmt.Printf("Syncing %s against %s\n\n", sourceFile, specFile)
@@ -285,14 +336,28 @@ func runSync(args []string) error {
 			nUpdate++
 			continue
 		}
-		// Same guard count — compare guard expression strings for semantic changes.
-		// Guard strings from `m.Requires` and the parsed spec are both in Spectre
-		// expression syntax, making direct string comparison reliable.
+		// Same guard count — compare guard expressions, using SMT for semantic precision.
 		oldG, newG := oldGuards[name], newGuards[name]
 		semanticChange := false
 		for i := 0; i < len(oldG) && i < len(newG); i++ {
-			if oldG[i] != newG[i] {
-				fmt.Printf("  [?] action %s guard %d changed: %q → %q (possibly unsafe)\n",
+			if oldG[i] == newG[i] {
+				continue
+			}
+			// Strings differ — attempt SMT equivalence check.
+			smtResult, witness := smtCheckGuards(oldGuardExprs, newGuardExprs, name, i)
+			switch smtResult {
+			case diagnose.SMTEquivalent:
+				fmt.Printf("  [≡] action %s guard %d rewritten (SMT-proved equivalent): %q → %q\n",
+					name, i+1, oldG[i], newG[i])
+			case diagnose.SMTChanged:
+				msg := fmt.Sprintf("  [✗] action %s guard %d changed semantically: %q → %q", name, i+1, oldG[i], newG[i])
+				if witness != "" {
+					msg += fmt.Sprintf(" (witness: %s)", witness)
+				}
+				fmt.Println(msg)
+				semanticChange = true
+			default:
+				fmt.Printf("  [?] action %s guard %d changed: %q → %q (possibly unsafe — SMT inconclusive)\n",
 					name, i+1, oldG[i], newG[i])
 				semanticChange = true
 			}
@@ -303,11 +368,24 @@ func runSync(args []string) error {
 				name, oldAssignCount[name], newAssignCount[name])
 			semanticChange = true
 		}
-		// Compare assignment RHS expressions when count is unchanged — catches wrong-arith mutations
-		// such as balance' = balance - amount → balance' = balance + amount.
+		// Compare assignment RHS expressions with SMT when count is unchanged.
 		if oldAssignExprs != nil && oldAssignCount[name] == newAssignCount[name] {
 			for i, newExpr := range newAssignExprs[name] {
-				if i < len(oldAssignExprs[name]) && oldAssignExprs[name][i] != newExpr {
+				if i >= len(oldAssignExprs[name]) || oldAssignExprs[name][i] == newExpr {
+					continue
+				}
+				smtResult, witness := smtCheckAssigns(oldAssignRHSExprs, newAssignRHSExprs, name, i)
+				switch smtResult {
+				case diagnose.SMTEquivalent:
+					fmt.Printf("  [≡] action %s assignment %d rewritten (SMT-proved equivalent)\n", name, i+1)
+				case diagnose.SMTChanged:
+					msg := fmt.Sprintf("  [✗] action %s assignment %d body changed: %q → %q", name, i+1, oldAssignExprs[name][i], newExpr)
+					if witness != "" {
+						msg += fmt.Sprintf(" (witness: %s)", witness)
+					}
+					fmt.Println(msg)
+					semanticChange = true
+				default:
 					fmt.Printf("  [?] action %s assignment %d body changed: %q → %q (possibly unsafe)\n",
 						name, i+1, oldAssignExprs[name][i], newExpr)
 					semanticChange = true
@@ -494,6 +572,8 @@ func itfStateToSpectre(raw map[string]interface{}) *state.State {
 					sv = &state.PrimitiveValue{TypeName: "int", IntValue: &n}
 				}
 			}
+		default:
+			fmt.Fprintf(os.Stderr, "Warning: ITF field %q has unsupported type %T — skipped; conformance check may be incomplete\n", k, v)
 		}
 		if sv != nil {
 			s.Variables[k] = sv
@@ -821,4 +901,310 @@ func runSimulateBFS(filename string, sm *exec.StateMachine,
 		fmt.Println("Run `spectre verify` for full counterexample analysis.")
 	}
 	return nil
+}
+
+// ── Feature: spectre impact ───────────────────────────────────────────────────
+
+// runImpact analyses a git diff (or a provided diff file) to determine which
+// spec actions and invariants are affected by the Rust source changes, whether
+// the refinement map changed, and whether incremental re-verification is
+// required.
+//
+// Usage:
+//
+//	spectre impact <spec-file.spec> [--diff <file.diff>] [--git-diff]
+func runImpact(args []string) error {
+	specFile := ""
+	diffFile := ""
+	useGitDiff := false
+	filteredArgs := []string{}
+
+	i := 0
+	for i < len(args) {
+		switch args[i] {
+		case "--diff":
+			if i+1 < len(args) {
+				diffFile = args[i+1]
+				i++
+			}
+		case "--git-diff":
+			useGitDiff = true
+		default:
+			filteredArgs = append(filteredArgs, args[i])
+		}
+		i++
+	}
+
+	if len(filteredArgs) > 0 {
+		specFile = filteredArgs[0]
+	}
+	if specFile == "" {
+		return fmt.Errorf("usage: spectre impact <spec-file.spec> [--diff <file.diff>] [--git-diff]")
+	}
+
+	// Load the spec.
+	parsedSpec, err := parseSpecFile(specFile)
+	if err != nil {
+		return fmt.Errorf("cannot parse spec: %w", err)
+	}
+
+	// Obtain the diff text.
+	var diffText string
+	if useGitDiff {
+		diffText = runGitDiff()
+	} else if diffFile != "" {
+		data, readErr := os.ReadFile(diffFile)
+		if readErr != nil {
+			return fmt.Errorf("cannot read diff file: %w", readErr)
+		}
+		diffText = string(data)
+	} else {
+		// Try git diff by default.
+		diffText = runGitDiff()
+		if diffText == "" {
+			fmt.Println("No diff provided and no uncommitted git changes detected.")
+			fmt.Println("Usage: spectre impact <spec.spec> [--diff <file.diff>] [--git-diff]")
+			return nil
+		}
+	}
+
+	// Extract changed Rust method names from the diff.
+	changedMethods := extractChangedMethods(diffText)
+
+	// Load the driver sidecar for the spec.
+	meta, _ := codegen.LoadDriverMeta(codegen.MetaPath(specFile))
+
+	// Determine which spec actions are affected.
+	affectedActions := findAffectedActions(changedMethods, parsedSpec, meta)
+
+	// Determine which invariants reference affected variables.
+	affectedVars := findWrittenVars(affectedActions, parsedSpec)
+	affectedInvariants := findAffectedInvariants(affectedVars, parsedSpec)
+
+	// Check if refinement map changed (method signatures changed for mapped actions).
+	refinementMapChanged := refinementChanged(changedMethods, meta)
+
+	fmt.Printf("Impact Analysis: %s\n\n", specFile)
+
+	if len(changedMethods) == 0 {
+		fmt.Println("No Rust method changes detected in diff.")
+	} else {
+		fmt.Printf("Changed Rust methods: %s\n", strings.Join(sortedKeys(changedMethods), ", "))
+	}
+
+	fmt.Printf("\nAffected spec actions:\n")
+	if len(affectedActions) == 0 {
+		fmt.Println("  (none)")
+	}
+	for _, a := range affectedActions {
+		fmt.Printf("  [!] %s\n", a)
+	}
+
+	fmt.Printf("\nAffected invariants (reference written variables):\n")
+	if len(affectedInvariants) == 0 {
+		fmt.Println("  (none)")
+	}
+	for _, inv := range affectedInvariants {
+		fmt.Printf("  [!] %s\n", inv)
+	}
+
+	fmt.Printf("\nRefinement map changed: %v\n", refinementMapChanged)
+
+	fmt.Printf("\nRecommendation:\n")
+	if len(affectedActions) > 0 {
+		fmt.Printf("  Run: spectre verify %s --incremental", specFile)
+		for _, a := range affectedActions {
+			fmt.Printf(" --changed-action %s", a)
+			break // show only first; user can add more
+		}
+		fmt.Println()
+	}
+	if len(affectedInvariants) > 0 {
+		fmt.Println("  Re-generate tests: spectre verify --emit-rust-tests tests.rs", specFile)
+	}
+	if refinementMapChanged {
+		fmt.Println("  Re-run: spectre mine to update the driver sidecar")
+	}
+	if len(affectedActions) == 0 && len(affectedInvariants) == 0 && !refinementMapChanged {
+		fmt.Println("  No re-verification required (changes appear spec-neutral).")
+	}
+
+	return nil
+}
+
+// runGitDiff runs `git diff HEAD` and returns the output, or "" on failure.
+func runGitDiff() string {
+	// Use os/exec to avoid import cycle — commands_extra is already in main.
+	cmd := osexec.Command("git", "diff", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// extractChangedMethods parses a unified diff and returns a set of Rust
+// method names that have changed (added/removed/modified lines in fn bodies).
+func extractChangedMethods(diff string) map[string]bool {
+	changed := make(map[string]bool)
+	// Heuristic: look for diff hunks that touch lines matching `fn <name>(`.
+	for _, line := range strings.Split(diff, "\n") {
+		line = strings.TrimLeft(line, " \t")
+		if (strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-")) &&
+			strings.Contains(line, "fn ") {
+			// Skip unified-diff file headers (--- a/file, +++ b/file).
+			if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
+				continue
+			}
+			// Extract function name.
+			rest := line[1:]
+			idx := strings.Index(rest, "fn ")
+			if idx < 0 {
+				continue
+			}
+			nameStart := idx + 3
+			nameEnd := strings.IndexAny(rest[nameStart:], "(<")
+			if nameEnd < 0 {
+				continue
+			}
+			name := strings.TrimSpace(rest[nameStart : nameStart+nameEnd])
+			if name != "" {
+				changed[name] = true
+			}
+		}
+	}
+	return changed
+}
+
+// findAffectedActions returns spec action names that correspond to changed Rust methods.
+func findAffectedActions(changedMethods map[string]bool, file *ast.File, meta *codegen.DriverMeta) []string {
+	var affected []string
+	seen := make(map[string]bool)
+
+	// Via driver sidecar: direct method→action mapping.
+	if meta != nil {
+		for _, a := range meta.Actions {
+			if changedMethods[a.RustMethod] {
+				if !seen[a.SpecAction] {
+					seen[a.SpecAction] = true
+					affected = append(affected, a.SpecAction)
+				}
+			}
+		}
+	}
+
+	// Fallback: match by name (action name == method name).
+	for _, d := range file.Decls {
+		if a, ok := d.(*ast.ActionDecl); ok {
+			if changedMethods[a.Name] && !seen[a.Name] {
+				seen[a.Name] = true
+				affected = append(affected, a.Name)
+			}
+		}
+	}
+	return affected
+}
+
+// findWrittenVars returns the set of variables written by the affected actions.
+func findWrittenVars(actions []string, file *ast.File) map[string]bool {
+	actionSet := make(map[string]bool)
+	for _, a := range actions {
+		actionSet[a] = true
+	}
+	written := make(map[string]bool)
+	for _, d := range file.Decls {
+		if a, ok := d.(*ast.ActionDecl); ok && actionSet[a.Name] && a.Body != nil {
+			for _, s := range a.Body.Statements {
+				if assign, ok := s.(*ast.AssignStmt); ok {
+					if id, ok := assign.Left.(*ast.Ident); ok {
+						written[id.Name] = true
+					}
+				}
+			}
+		}
+	}
+	return written
+}
+
+// findAffectedInvariants returns invariant names that reference any of the given variables.
+func findAffectedInvariants(vars map[string]bool, file *ast.File) []string {
+	var affected []string
+	for _, d := range file.Decls {
+		if inv, ok := d.(*ast.InvariantDecl); ok {
+			if exprReferencesAny(inv.Condition, vars) {
+				affected = append(affected, inv.Name)
+			}
+		}
+	}
+	return affected
+}
+
+func exprReferencesAny(e ast.Expr, vars map[string]bool) bool {
+	switch expr := e.(type) {
+	case *ast.Ident:
+		return vars[expr.Name]
+	case *ast.BinaryExpr:
+		return exprReferencesAny(expr.Left, vars) || exprReferencesAny(expr.Right, vars)
+	case *ast.UnaryExpr:
+		return exprReferencesAny(expr.Expr, vars)
+	case *ast.ParenExpr:
+		return exprReferencesAny(expr.X, vars)
+	}
+	return false
+}
+
+// refinementChanged returns true if any field or method in meta matches a changed Rust method.
+func refinementChanged(changedMethods map[string]bool, meta *codegen.DriverMeta) bool {
+	if meta == nil {
+		return false
+	}
+	for _, a := range meta.Actions {
+		if changedMethods[a.RustMethod] {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// ── SMT helpers for runSync ───────────────────────────────────────────────────
+
+// smtCheckGuards runs an SMT equivalence check on the i-th guard of the given action.
+// Returns SMTUnknown when AST expressions are unavailable.
+func smtCheckGuards(
+	oldExprs, newExprs map[string][]ast.Expr,
+	action string, idx int,
+) (diagnose.SMTResult, string) {
+	if oldExprs == nil || newExprs == nil {
+		return diagnose.SMTUnknown, ""
+	}
+	oldList, newList := oldExprs[action], newExprs[action]
+	if idx >= len(oldList) || idx >= len(newList) {
+		return diagnose.SMTUnknown, ""
+	}
+	return diagnose.CheckExprEquivalence(oldList[idx], newList[idx])
+}
+
+// smtCheckAssigns runs an SMT equivalence check on the i-th assignment RHS of
+// the given action.  Returns SMTUnknown when AST expressions are unavailable.
+func smtCheckAssigns(
+	oldExprs, newExprs map[string][]ast.Expr,
+	action string, idx int,
+) (diagnose.SMTResult, string) {
+	if oldExprs == nil || newExprs == nil {
+		return diagnose.SMTUnknown, ""
+	}
+	oldList, newList := oldExprs[action], newExprs[action]
+	if idx >= len(oldList) || idx >= len(newList) {
+		return diagnose.SMTUnknown, ""
+	}
+	return diagnose.CheckExprEquivalence(oldList[idx], newList[idx])
 }

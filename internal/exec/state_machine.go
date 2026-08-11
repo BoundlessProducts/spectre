@@ -276,3 +276,50 @@ func (sm *StateMachine) GetInitialStates() ([]*state.State, error) {
 	return states, nil
 }
 
+// ActionStep is a (name, args) pair used for trace replay.
+type ActionStep struct {
+	Name string
+	Args []state.Value
+}
+
+// ReplayForViolation replays steps from initialState, returning (true, finalState)
+// if targetInvariant (or any invariant when targetInvariant == "") is violated at
+// any point during the replay.  Steps whose guards fail are silently skipped so
+// that sparse sub-sequences from delta-debugging can still be evaluated.
+func (sm *StateMachine) ReplayForViolation(
+	initialState *state.State,
+	steps []ActionStep,
+	targetInvariant string,
+) (bool, *state.State) {
+	cur := cloneState(initialState)
+	for _, step := range steps {
+		ok, _ := sm.executor.CanExecute(step.Name, cur, step.Args)
+		if !ok {
+			continue
+		}
+		next, err := sm.executor.ExecuteAction(step.Name, cur, step.Args)
+		if err != nil {
+			continue
+		}
+		sm.injectParams(next)
+		cur = next
+
+		violations, _ := sm.validator.ValidateState(cur)
+		for _, v := range violations {
+			if targetInvariant == "" || v.Name == targetInvariant {
+				return true, cur
+			}
+		}
+	}
+	return false, cur
+}
+
+// cloneState returns a shallow copy of s with a new Variables map.
+func cloneState(s *state.State) *state.State {
+	vars := make(map[string]state.Value, len(s.Variables))
+	for k, v := range s.Variables {
+		vars[k] = v
+	}
+	return &state.State{Variables: vars, Position: s.Position}
+}
+
