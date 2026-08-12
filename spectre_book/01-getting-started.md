@@ -1,309 +1,260 @@
 # Chapter 1: Getting Started
 
-This chapter will help you install Spectre and run your first specification.
+This chapter covers installing Spectre and running your first specification.
 
 ---
 
-## Installation
+## Prerequisites
 
-Install Spectre using your preferred method:
+| Dependency | Required for | Notes |
+|------------|-------------|-------|
+| **Go ≥ 1.24** | Core CLI — `verify`, `sync`, `simulate`, `generate-*` | Required |
+| **Z3 ≥ 4.8** | `spectre sync` (SMT equivalence checking) | Optional — only needed for drift detection |
+| **Rust stable** | `spectre mine --lang rust` (spec mining) | Optional — only needed for spec mining |
+| **Git** | Cloning the repository | Required |
 
-**macOS (Homebrew):**
+Z3 and Rust are only needed if you use `spectre sync` and `spectre mine --lang rust` respectively.
+All other commands (`verify`, `simulate`, `generate-monitor`, `generate-driver`) work with Go alone.
 
-**Prerequisites**: Go 1.19 or later must be installed (Homebrew will build Spectre from source).
+---
 
-If Go is not installed, install it first:
+## Installation — macOS
+
+### Step 1 — Install Go
+
 ```bash
 brew install go
+go version
+# Expected: go version go1.24.x darwin/arm64  (or amd64)
 ```
 
-Since the Homebrew formula is in the main repository (not a separate `homebrew-spectre` repo), use the full GitHub URL:
+Or download the `.pkg` installer from [https://go.dev/dl/](https://go.dev/dl/).
+
+### Step 2 — Install Z3
+
+Required for `spectre sync`. Skip if you are not using drift detection.
 
 ```bash
-brew tap akkeshavan/spectre https://github.com/akkeshavan/spectre.git
-brew install spectre
+brew install z3
+z3 --version
 ```
 
-**Note**: The installation builds from source, so Go is required. Homebrew will automatically install Go as a dependency if it's not already installed, but it's recommended to install Go first to ensure you have the correct version.
-
-**Note**: If you later create a separate `homebrew-spectre` repository, you can simplify to:
-```bash
-brew tap akkeshavan/spectre
-brew install spectre
-```
-
-**Linux:**
-
-**Prerequisites**: Go 1.19 or later must be installed (the script builds Spectre from source).
-
-The install script downloads the source code and builds Spectre locally:
+### Step 3 — Clone and build the CLI
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/install.sh | bash
+git clone https://github.com/akkeshavan/spectre.git
+cd spectre
+go build -o spectre ./cmd/spectre
+./spectre
 ```
 
-The script will:
-- Check for Go 1.19+ installation (with helpful error messages if not found)
-- Check for Git installation
-- Clone the repository from GitHub
-- Build Spectre from source using Go
-- Install to `/usr/local/bin` (or custom `INSTALL_DIR`)
+### Step 4 — Build `spectre-mine-rs`
 
-**If Go is not installed**, the script will provide installation instructions. You can install Go with:
+Required for `spectre mine --lang rust`. Skip if you are not mining specs from Rust source.
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install golang-go
+# Install Rust if needed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
 
-# Fedora/RHEL/CentOS
-sudo dnf install golang
+# Build the Rust AST miner (inside the repo)
+cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
+cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
 ```
 
-Or download from: https://golang.org/dl/
+The `spectre-mine-rs` binary must sit next to the `spectre` binary (or be on `PATH`).
 
-**Note**: The script automatically detects if it's running as root (e.g., in Docker containers) and skips `sudo` commands. On regular Linux systems, it will use `sudo` for installation.
+### Step 5 — (Optional) Install globally
 
-**Windows:**  
+```bash
+go install ./cmd/spectre
+cp spectre-mine-rs "$(go env GOPATH)/bin/"
+
+# Add Go's bin to PATH if not already there
+export PATH="$PATH:$(go env GOPATH)/bin"
+# Persist: add the export line to ~/.zshrc or ~/.bash_profile
+```
+
+### Step 6 — Verify the installation
+
+```bash
+./spectre verify examples/counter.spec
+# Expected: Traversed N states. Found no violations.
+```
+
+---
+
+## Installation — Linux
+
+### Step 1 — Install Go
+
+**Debian / Ubuntu:**
+
+```bash
+wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+go version
+```
+
+> For ARM64 (Raspberry Pi, AWS Graviton): replace `amd64` with `arm64`.
+
+**Fedora / RHEL / CentOS:**
+
+```bash
+sudo dnf install -y golang
+go version
+```
+
+**Arch Linux:**
+
+```bash
+sudo pacman -S go
+```
+
+### Step 2 — Install Z3
+
+```bash
+# Debian / Ubuntu
+sudo apt install -y z3
+
+# Fedora / RHEL
+sudo dnf install -y z3
+
+# Arch
+sudo pacman -S z3
+```
+
+### Step 3 — Clone and build
+
+```bash
+git clone https://github.com/akkeshavan/spectre.git
+cd spectre
+go build -o spectre ./cmd/spectre
+go test ./...   # optional: run test suite
+```
+
+### Step 4 — Build `spectre-mine-rs`
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
+cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
+```
+
+---
+
+## Installation — Windows
+
+### Step 1 — Install Go
+
+Download the `.msi` installer from [https://go.dev/dl/](https://go.dev/dl/) and run it. Or:
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+winget install GoLang.Go
+```
+
+### Step 2 — Install Z3
+
+Download the Windows binary from [https://github.com/Z3Prover/z3/releases](https://github.com/Z3Prover/z3/releases).
+Extract the archive and add the `bin\` folder to your system `PATH`.
+
+### Step 3 — Clone and build
+
+```powershell
+git clone https://github.com/akkeshavan/spectre.git
+cd spectre
+go build -o spectre.exe ./cmd/spectre
+.\spectre.exe
+```
+
+### Step 4 — Build `spectre-mine-rs`
+
+Install Rust from [https://rustup.rs](https://rustup.rs), then:
+
+```powershell
+cargo build --release --manifest-path rust\spectre-mine-rs\Cargo.toml
+copy rust\spectre-mine-rs\target\release\spectre-mine-rs.exe .
 ```
 
 ---
 
-## Building from Source
+## Docker (Recommended for Reviewers)
 
-If you prefer to build Spectre from source (useful for development or if you want the latest code), follow these steps:
-
-### Prerequisites
-
-- **Go 1.21 or later** ([download](https://go.dev/dl/))
-- **Git** (for cloning the repository)
-
-### Build Steps
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/akkeshavan/spectre.git
-   cd spectre
-   ```
-
-2. **Build the CLI tool**:
-   ```bash
-   go build -o spectre ./cmd/spectre
-   ```
-   
-   This creates a `spectre` executable in the current directory.
-
-3. **Test the build**:
-   ```bash
-   ./spectre --help
-   ```
-   
-   You should see usage information for the Spectre CLI.
-
-4. **Run tests** (optional):
-   ```bash
-   go test ./...
-   ```
-   
-   This runs the full test suite to ensure everything works correctly.
-
-5. **Install globally** (optional):
-   ```bash
-   go install ./cmd/spectre
-   ```
-   
-   This installs `spectre` to your `$GOPATH/bin` or `$HOME/go/bin` directory. Make sure this directory is in your `PATH` environment variable.
-
-### Using the Built Executable
-
-After building, you can use the `spectre` executable directly:
+The Docker image includes all dependencies (Go, Z3, Rust, pre-built binaries).
 
 ```bash
-# From the project root directory
-./spectre parse examples/counter.spec
-./spectre typecheck examples/counter.spec
-./spectre verify examples/counter.spec
+docker build -t spectre-vmcai .
+docker run --rm spectre-vmcai sh /artifact/reproduce.sh
 ```
 
-If you installed globally with `go install`, you can use `spectre` from anywhere:
+To run interactively:
 
 ```bash
-spectre parse examples/counter.spec
-spectre typecheck examples/counter.spec
-spectre verify examples/counter.spec
+docker run --rm -it spectre-vmcai sh
 ```
-
-### Accessing Examples
-
-When you clone the repository, all example files are included in the `examples/` directory:
-
-```bash
-# List all examples
-ls examples/
-
-# Use an example directly
-./spectre verify examples/counter.spec
-
-# Or copy examples to a working directory
-mkdir -p ~/my-spectre-examples
-cp examples/*.spec ~/my-spectre-examples/
-cd ~/my-spectre-examples
-./spectre verify counter.spec
-```
-
-### Development Setup
-
-If you're planning to contribute or modify the code:
-
-1. **Fork the repository** on GitHub
-2. **Clone your fork**:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/spectre.git
-   cd spectre
-   ```
-3. **Set up the upstream remote**:
-   ```bash
-   git remote add upstream https://github.com/akkeshavan/spectre.git
-   ```
-4. **Run tests** to ensure everything works:
-   ```bash
-   go test ./...
-   ```
-
-For more details on development workflow, see [README_DEV.md](../README_DEV.md).
-
----
-
-## Finding Example Files After Installation
-
-When you install Spectre using Homebrew (macOS) or the installation script (Linux), **example files are automatically included** with the installation and placed in standard system directories.
-
-**macOS (Homebrew Installation):**
-
-The examples are installed to the Homebrew share directory:
-- **Location**: `/opt/homebrew/share/spectre/examples/` (Apple Silicon) or `/usr/local/share/spectre/examples/` (Intel)
-- **Using Homebrew prefix**: `$(brew --prefix)/share/spectre/examples/`
-
-```bash
-# List all available examples:
-ls $(brew --prefix)/share/spectre/examples/
-
-# Copy examples to a working directory (recommended):
-mkdir -p ~/my-spectre-examples
-cp $(brew --prefix)/share/spectre/examples/*.spec ~/my-spectre-examples/
-cd ~/my-spectre-examples
-
-# Now test the examples:
-spectre parse counter.spec
-spectre typecheck counter.spec
-spectre verify counter.spec
-```
-
-
-**Linux (Installation Script):**
-
-The examples are installed to the system share directory:
-- **Location**: `/usr/local/share/spectre/examples/`
-
-```bash
-# List all available examples:
-ls /usr/local/share/spectre/examples/
-
-# Copy examples to a working directory (recommended):
-mkdir -p ~/my-spectre-examples
-cp /usr/local/share/spectre/examples/*.spec ~/my-spectre-examples/
-cd ~/my-spectre-examples
-
-# Now test the examples:
-spectre parse counter.spec
-spectre typecheck counter.spec
-spectre verify counter.spec
-```
-
-> **⚠️ Important**: The examples are installed in system directories. **Before testing or modifying examples, copy them to a new directory** (e.g., `~/my-spectre-examples/` or `./test-examples/`). This prevents accidental modification of system files and allows you to experiment freely.
->
-> **Example:**
-> ```bash
-> # macOS
-> mkdir -p ~/my-spectre-examples
-> cp $(brew --prefix)/share/spectre/examples/*.spec ~/my-spectre-examples/
-> cd ~/my-spectre-examples
-> spectre parse counter.spec
->
-> # Linux
-> mkdir -p ~/my-spectre-examples
-> cp /usr/local/share/spectre/examples/*.spec ~/my-spectre-examples/
-> cd ~/my-spectre-examples
-> spectre parse counter.spec
-> ```
-
-**Note**: 
-- If you installed to a custom location using `INSTALL_DIR` or `SHARE_DIR` environment variables, adjust the paths accordingly.
-- The examples directory contains all the example `.spec` files from the repository, so you don't need to clone the repository just to access examples.
 
 ---
 
 ## Your First Specification
 
-Let's start with a simple counter example:
+Save the following as `counter.spec`:
 
 ```spectre
-description "Tracks a numeric counter value"
 var counter: int
 
-description "System starts with counter initialized to zero"
 init {
   counter = 0
 }
 
-description "Increments the counter by one"
 action increment {
   counter' = counter + 1
 }
 
-description "Ensures counter never becomes negative"
 invariant nonNegative {
   counter >= 0
 }
 ```
 
-Save this as `counter.spec` and verify it:
+Run it:
 
 ```bash
-spectre parse counter.spec
-spectre typecheck counter.spec
-spectre verify counter.spec
+./spectre parse counter.spec
+./spectre typecheck counter.spec
+./spectre verify counter.spec
 ```
 
-**Or use the installed example files:**
+### What each line means
 
-The examples are automatically installed with Spectre and available in the appropriate directories:
+- `var counter: int` — a state variable named `counter` of type integer
+- `init { counter = 0 }` — the system starts with `counter = 0`
+- `action increment { counter' = counter + 1 }` — one step: counter increases by 1. The prime (`'`) denotes the next-state value.
+- `invariant nonNegative { counter >= 0 }` — a property checked on every reachable state
+
+Since `increment` can only increase the counter and it starts at 0, the invariant holds for all reachable states.
+
+---
+
+## Running the Bundled Examples
+
+All examples are in the `examples/` directory of the repository:
 
 ```bash
-# macOS (Homebrew installation)
-spectre parse $(brew --prefix)/share/spectre/examples/counter.spec
+# Basic counter
+./spectre verify examples/counter.spec
 
-# Linux (installation script)
-spectre parse /usr/local/share/spectre/examples/counter.spec
+# Raft election safety (3-node, 22,432 states)
+./spectre verify examples/raft-election-safety.spec --max-states 30000
+
+# Spec mining from Rust
+./spectre mine --lang rust examples/rust/bank_account.rs
 ```
-
-> **⚠️ Important**: Before testing or modifying examples, **copy them to a new directory** first. The examples are in system directories and should not be modified directly. See the [Finding Example Files After Installation](#finding-example-files-after-installation) section above for instructions on copying examples to a working directory.
-
-### Understanding the Example
-
-- **`var counter: int`**: Declares a state variable named `counter` of type `int`
-- **`init { ... }`**: Defines the initial state of the system
-- **`action increment { ... }`**: Defines a transition that can change the state
-- **`counter' = counter + 1`**: The prime (`'`) denotes the next state value
-- **`invariant nonNegative { ... }`**: A property that must always hold
-- **`description "..."`**: Human-readable text that appears in error messages
 
 ---
 
 ## Next Steps
 
-Now that you have Spectre installed and have run your first specification, you're ready to learn about the language. Continue to [Chapter 2: Language Overview](02-language-overview.md) to understand all the elements of the Spectre language.
-
-
+Continue to [Chapter 2: Language Overview](02-language-overview.md) to learn all the elements of the Spectre language.

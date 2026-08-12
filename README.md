@@ -75,65 +75,82 @@ Spectre is a formal specification language for modelling systems as state machin
 
 ## Installation — macOS
 
+### Prerequisites
+
+| Dependency | Required for | Install |
+|------------|-------------|---------|
+| **Go ≥ 1.24** | Core CLI (`spectre verify`, `sync`, etc.) | `brew install go` or [go.dev/dl](https://go.dev/dl/) |
+| **Z3 ≥ 4.8** | `spectre sync` (SMT equivalence checking) | `brew install z3` |
+| **Rust stable** | `spectre mine --lang rust` (spec mining) | [rustup.rs](https://rustup.rs) |
+
+Z3 and Rust are optional if you only use `verify`, `simulate`, `generate-monitor`, and `generate-driver`.
+
 ### Step 1 — Install Go
-
-Spectre requires **Go 1.21 or later**.
-
-**Option A: Official installer (recommended)**
-
-1. Go to [https://go.dev/dl/](https://go.dev/dl/) and download the latest `.pkg` for macOS (arm64 for Apple Silicon, amd64 for Intel).
-2. Open the downloaded `.pkg` and follow the installer.
-3. Open a new terminal and verify:
-
-```bash
-go version
-# Expected: go version go1.24.x darwin/arm64  (or amd64)
-```
-
-**Option B: Homebrew**
 
 ```bash
 brew install go
 go version
+# Expected: go version go1.24.x darwin/arm64  (or amd64)
 ```
 
-### Step 2 — Clone the repository
+Or download the `.pkg` installer from [https://go.dev/dl/](https://go.dev/dl/).
+
+### Step 2 — Install Z3 (for `spectre sync`)
+
+```bash
+brew install z3
+z3 --version
+```
+
+### Step 3 — Clone and build the CLI
 
 ```bash
 git clone https://github.com/akkeshavan/spectre.git
 cd spectre
-```
-
-### Step 3 — Build the CLI
-
-```bash
 go build -o spectre ./cmd/spectre
 ./spectre
 ```
 
-### Step 4 — (Optional) Install globally
+### Step 4 — Build `spectre-mine-rs` (for `spectre mine --lang rust`)
+
+```bash
+# Install Rust if needed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Build the Rust AST miner
+cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
+cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
+```
+
+The `spectre-mine-rs` binary must be in the same directory as `spectre` (or on `PATH`).
+
+### Step 5 — (Optional) Install globally
 
 ```bash
 go install ./cmd/spectre
-```
-
-Add Go's bin directory to your shell PATH if it isn't already:
-
-```bash
+cp spectre-mine-rs "$(go env GOPATH)/bin/"
 export PATH="$PATH:$(go env GOPATH)/bin"
 # Add to ~/.zshrc or ~/.bash_profile to persist
 ```
 
-### Step 5 — Run the test suite (optional)
+### Step 6 — Run the test suite (optional)
 
 ```bash
 go test ./...
-# All 13 packages should pass
 ```
 
 ---
 
 ## Installation — Linux
+
+### Prerequisites
+
+| Dependency | Required for | Install |
+|------------|-------------|---------|
+| **Go ≥ 1.24** | Core CLI | see below |
+| **Z3 ≥ 4.8** | `spectre sync` | `sudo apt install z3` / `sudo dnf install z3` |
+| **Rust stable** | `spectre mine --lang rust` | [rustup.rs](https://rustup.rs) |
 
 ### Step 1 — Install Go
 
@@ -164,14 +181,36 @@ sudo pacman -S go
 go version
 ```
 
-### Step 2 — Clone, build, install
+### Step 2 — Install Z3 (for `spectre sync`)
+
+```bash
+# Debian / Ubuntu
+sudo apt install -y z3
+
+# Fedora / RHEL
+sudo dnf install -y z3
+
+# Arch
+sudo pacman -S z3
+```
+
+### Step 3 — Clone and build
 
 ```bash
 git clone https://github.com/akkeshavan/spectre.git
 cd spectre
 go build -o spectre ./cmd/spectre
-go install ./cmd/spectre   # optional: install globally
 go test ./...              # optional: run test suite
+go install ./cmd/spectre   # optional: install globally
+```
+
+### Step 4 — Build `spectre-mine-rs` (for `spectre mine --lang rust`)
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
+cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
 ```
 
 ---
@@ -194,7 +233,11 @@ go version
 winget install GoLang.Go
 ```
 
-### Step 2 — Clone, build, install
+### Step 2 — Install Z3 (for `spectre sync`)
+
+Download the Z3 Windows binary from [https://github.com/Z3Prover/z3/releases](https://github.com/Z3Prover/z3/releases) and add the `bin/` folder to your `PATH`.
+
+### Step 3 — Clone and build
 
 ```powershell
 git clone https://github.com/akkeshavan/spectre.git
@@ -202,6 +245,15 @@ cd spectre
 go build -o spectre.exe ./cmd/spectre
 .\spectre.exe
 go install ./cmd/spectre   # optional: install globally
+```
+
+### Step 4 — Build `spectre-mine-rs` (for `spectre mine --lang rust`)
+
+Install Rust from [https://rustup.rs](https://rustup.rs), then:
+
+```powershell
+cargo build --release --manifest-path rust\spectre-mine-rs\Cargo.toml
+copy rust\spectre-mine-rs\target\release\spectre-mine-rs.exe .
 ```
 
 > **Windows note:** All commands below use `./spectre` (macOS/Linux). On Windows substitute `.\spectre.exe` (PowerShell) or `./spectre.exe` (Git Bash).
