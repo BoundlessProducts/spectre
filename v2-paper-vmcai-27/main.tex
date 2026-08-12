@@ -509,8 +509,7 @@ checking all invariant predicates in $O(k)$ time with no heap allocation
 \noindent\textbf{Platform.}
 Apple M3 Pro (\texttt{aarch64}), 18\,GB RAM, macOS~15.6, Go~1.24.
 Default limits: 5{,}000 states / depth~100 unless noted.
-All benchmarks are in \texttt{examples/}; a Docker image and
-\texttt{artifact/reproduce.sh} enable reproduction.
+All benchmarks are in \texttt{examples/}; \texttt{artifact/reproduce.sh} enables reproduction.
 Absolute wall times are hardware-dependent; speedup ratios (BFS/POR,
 cold/warm, full/incremental) are the primary claims and are
 reproducible on any platform within normal variance.
@@ -810,7 +809,7 @@ verification, $7.6\times$ POR heuristic speedup, $47\times$ cache speedup,
 incremental re-verification ($4.3$--$5.2\times$ speedup), and end-to-end fault repair.
 Limitations: bounded checking; no infinite-trace LTL; external-crate mining
 requires manual abstraction for generic/unsafe Rust.
-The tool, artifact, and Docker image are at
+The tool and artifact are at
 \url{https://github.com/BoundlessProducts/spectre};
 artifact DOI: \href{https://doi.org/10.5281/zenodo.21896995}{\texttt{10.5281/zenodo.21896995}}.
 
