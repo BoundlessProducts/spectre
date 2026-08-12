@@ -3,7 +3,7 @@ package types
 import (
 	"testing"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 func TestCheckBasicLit(t *testing.T) {

@@ -1,6 +1,6 @@
 package parser
 
-import "github.com/akkeshavan/spectre/internal/lexer"
+import "github.com/BoundlessProducts/spectre/internal/lexer"
 
 // parseDescription parses an optional description field
 // Format: description "text"

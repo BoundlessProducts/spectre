@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
 )
 
 func TestParseDescription(t *testing.T) {

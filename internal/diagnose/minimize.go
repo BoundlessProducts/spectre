@@ -1,9 +1,9 @@
 package diagnose
 
 import (
-	"github.com/akkeshavan/spectre/internal/exec"
-	"github.com/akkeshavan/spectre/internal/explore"
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/exec"
+	"github.com/BoundlessProducts/spectre/internal/explore"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 // MinimizeCounterexample applies delta-debugging to reduce the action sequence in

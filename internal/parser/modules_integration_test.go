@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // TestParseModulesExampleFile tests parsing the complete modules-example.spec file

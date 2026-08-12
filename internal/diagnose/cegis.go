@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akkeshavan/spectre/internal/eval"
-	"github.com/akkeshavan/spectre/internal/explore"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/eval"
+	"github.com/BoundlessProducts/spectre/internal/explore"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // CEGISRepair holds synthesized repair candidates for one invariant violation.

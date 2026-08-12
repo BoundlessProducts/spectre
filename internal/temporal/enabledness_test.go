@@ -3,10 +3,10 @@ package temporal
 import (
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/exec"
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/internal/parser"
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/exec"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/internal/parser"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 func TestActionEnablednessCheckerBasic(t *testing.T) {

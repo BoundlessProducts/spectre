@@ -3,9 +3,9 @@ package temporal
 import (
 	"fmt"
 
-	"github.com/akkeshavan/spectre/internal/eval"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/eval"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // TemporalEvaluator evaluates temporal properties over execution traces

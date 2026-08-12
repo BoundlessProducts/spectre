@@ -1,7 +1,7 @@
 package eval
 
 import (
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // RegisterConstants registers all constants from a parsed file into an environment

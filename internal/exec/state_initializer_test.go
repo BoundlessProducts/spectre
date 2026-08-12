@@ -3,10 +3,10 @@ package exec
 import (
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/internal/parser"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/internal/parser"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 func TestStateInitializerDeterministicInit(t *testing.T) {

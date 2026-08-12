@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akkeshavan/spectre/internal/exec"
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/exec"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 // IncrementalReverify updates a cached ExplorationResult when a single action's

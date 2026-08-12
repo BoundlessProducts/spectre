@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // parseAllDeclarations parses all declarations from the input until EOF

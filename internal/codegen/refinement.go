@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/akkeshavan/spectre/internal/eval"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/eval"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // RefinementReport describes how well an ITF trace set conforms to the spec

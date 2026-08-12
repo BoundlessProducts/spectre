@@ -1,7 +1,7 @@
 package state
 
 import (
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // ConstraintModel represents the model of all constraints in a specification

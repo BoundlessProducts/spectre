@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akkeshavan/spectre/internal/explore"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/explore"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // Explanation is a structured analysis of a single counterexample violation.

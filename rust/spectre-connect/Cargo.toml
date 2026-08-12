@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Model-based testing bridge: replay Spectre ITF traces against Rust implementations"
 license = "Apache-2.0"
-repository = "https://github.com/akkeshavan/spectre"
+repository = "https://github.com/BoundlessProducts/spectre"
 keywords = ["formal-verification", "model-based-testing", "spectre", "itf"]
 categories = ["development-tools::testing"]
 

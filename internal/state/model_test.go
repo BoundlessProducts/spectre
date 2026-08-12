@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/internal/parser"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/internal/parser"
 )
 
 // TestStateMachineModelOnCounterSpec tests the complete state machine model on counter.spec

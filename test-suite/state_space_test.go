@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/exec"
-	"github.com/akkeshavan/spectre/internal/explore"
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/internal/parser"
-	"github.com/akkeshavan/spectre/internal/semantic"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/exec"
+	"github.com/BoundlessProducts/spectre/internal/explore"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/internal/parser"
+	"github.com/BoundlessProducts/spectre/internal/semantic"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // Test helper: Load and parse a spec file

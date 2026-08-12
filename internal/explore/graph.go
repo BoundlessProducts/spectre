@@ -3,7 +3,7 @@ package explore
 import (
 	"sort"
 
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 // NewTransitionGraph creates a new empty transition graph

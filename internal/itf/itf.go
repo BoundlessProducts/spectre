@@ -13,8 +13,8 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/akkeshavan/spectre/internal/explore"
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/explore"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 // Trace is a single ITF execution trace.

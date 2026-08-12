@@ -12,17 +12,17 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akkeshavan/spectre/internal/codegen"
-	"github.com/akkeshavan/spectre/internal/diagnose"
-	"github.com/akkeshavan/spectre/internal/eval"
-	"github.com/akkeshavan/spectre/internal/exec"
-	"github.com/akkeshavan/spectre/internal/explore"
-	"github.com/akkeshavan/spectre/internal/itf"
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/internal/mine"
-	"github.com/akkeshavan/spectre/internal/parser"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/codegen"
+	"github.com/BoundlessProducts/spectre/internal/diagnose"
+	"github.com/BoundlessProducts/spectre/internal/eval"
+	"github.com/BoundlessProducts/spectre/internal/exec"
+	"github.com/BoundlessProducts/spectre/internal/explore"
+	"github.com/BoundlessProducts/spectre/internal/itf"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/internal/mine"
+	"github.com/BoundlessProducts/spectre/internal/parser"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 func init() {

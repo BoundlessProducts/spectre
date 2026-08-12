@@ -3,7 +3,7 @@ package state
 import (
 	"fmt"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // InitialStateModel represents the initial state configuration

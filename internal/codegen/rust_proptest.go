@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // EmitProptestModule generates a Rust module containing proptest strategies

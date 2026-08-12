@@ -28,8 +28,8 @@ grep -q "check_go_version" "${INSTALL_SCRIPT}" && echo "   ✓ Go version check 
 
 # Test 3: Check repository URL is correct
 echo "3. Checking repository URL..."
-if grep -q "akkeshavan/spectre" "${INSTALL_SCRIPT}"; then
-    echo "   ✓ Repository URL is correct (akkeshavan/spectre)"
+if grep -q "BoundlessProducts/spectre" "${INSTALL_SCRIPT}"; then
+    echo "   ✓ Repository URL is correct (BoundlessProducts/spectre)"
 else
     echo "   ✗ Repository URL may be incorrect"
 fi

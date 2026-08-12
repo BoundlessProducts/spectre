@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/akkeshavan/spectre/internal/exec"
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/exec"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 var reInvariantName = regexp.MustCompile(`invariant (\w+) violated`)

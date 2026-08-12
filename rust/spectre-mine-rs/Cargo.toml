@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "AST-based Rust source extractor for spectre mine --lang rust"
 license = "Apache-2.0"
-repository = "https://github.com/akkeshavan/spectre"
+repository = "https://github.com/BoundlessProducts/spectre"
 
 [[bin]]
 name = "spectre-mine-rs"

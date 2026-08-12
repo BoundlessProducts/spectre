@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/akkeshavan/spectre/internal/eval"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/eval"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // StateMachine represents a complete state machine executor

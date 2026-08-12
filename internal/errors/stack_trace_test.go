@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/explore"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/internal/temporal"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/explore"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/temporal"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 func TestStackTraceBasic(t *testing.T) {

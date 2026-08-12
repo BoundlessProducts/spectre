@@ -42,7 +42,7 @@ z3 --version
 ### Step 3 — Clone and build the CLI
 
 ```bash
-git clone https://github.com/akkeshavan/spectre.git
+git clone https://github.com/BoundlessProducts/spectre.git
 cd spectre
 go build -o spectre ./cmd/spectre
 ./spectre
@@ -130,7 +130,7 @@ sudo pacman -S z3
 ### Step 3 — Clone and build
 
 ```bash
-git clone https://github.com/akkeshavan/spectre.git
+git clone https://github.com/BoundlessProducts/spectre.git
 cd spectre
 go build -o spectre ./cmd/spectre
 go test ./...   # optional: run test suite
@@ -165,7 +165,7 @@ Extract the archive and add the `bin\` folder to your system `PATH`.
 ### Step 3 — Clone and build
 
 ```powershell
-git clone https://github.com/akkeshavan/spectre.git
+git clone https://github.com/BoundlessProducts/spectre.git
 cd spectre
 go build -o spectre.exe ./cmd/spectre
 .\spectre.exe

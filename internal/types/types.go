@@ -3,7 +3,7 @@ package types
 import (
 	"fmt"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // Type represents a type in the Spectre type system

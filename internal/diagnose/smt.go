@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // SMTResult classifies the outcome of an SMT equivalence check.

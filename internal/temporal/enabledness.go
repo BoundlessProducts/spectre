@@ -3,8 +3,8 @@ package temporal
 import (
 	"fmt"
 
-	"github.com/akkeshavan/spectre/internal/exec"
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/exec"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 // ActionEnablednessChecker checks when actions are enabled in states

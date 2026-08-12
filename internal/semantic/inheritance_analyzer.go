@@ -3,7 +3,7 @@ package semantic
 import (
 	"fmt"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // InheritanceAnalyzer analyzes module extension and super calls

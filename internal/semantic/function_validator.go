@@ -3,7 +3,7 @@ package semantic
 import (
 	"fmt"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // FunctionValidator performs function-specific validation

@@ -3,8 +3,8 @@ package semantic
 import (
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/internal/parser"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/internal/parser"
 )
 
 func TestModuleResolution(t *testing.T) {

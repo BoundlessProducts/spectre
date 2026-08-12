@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akkeshavan/spectre/internal/explore"
-	"github.com/akkeshavan/spectre/internal/temporal"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/explore"
+	"github.com/BoundlessProducts/spectre/internal/temporal"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // StackTraceEntry represents a single entry in a stack trace

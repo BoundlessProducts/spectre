@@ -3,7 +3,7 @@ package explore
 import (
 	"testing"
 
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 func TestCycleDetectorNoCycle(t *testing.T) {

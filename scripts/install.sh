@@ -7,7 +7,7 @@ set -e
 VERSION="0.1.0"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 SHARE_DIR="${SHARE_DIR:-/usr/local/share/spectre}"
-REPO_URL="https://github.com/akkeshavan/spectre.git"
+REPO_URL="https://github.com/BoundlessProducts/spectre.git"
 BRANCH="${BRANCH:-main}"
 MIN_GO_VERSION="1.19"
 

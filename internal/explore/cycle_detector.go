@@ -1,7 +1,7 @@
 package explore
 
 import (
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 // CycleDetector detects cycles in the state space

@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/akkeshavan/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
 )
 
 // syncToDeclaration advances the parser to the next declaration start

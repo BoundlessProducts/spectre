@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"github.com/akkeshavan/spectre/internal/lexer"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/lexer"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // parseInvariantDecl parses an invariant declaration

@@ -3,7 +3,7 @@ package types
 import (
 	"testing"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // buildEnvironmentFromAST builds a type environment from AST declarations

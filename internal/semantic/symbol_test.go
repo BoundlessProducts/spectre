@@ -3,7 +3,7 @@ package semantic
 import (
 	"testing"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 func TestNewSymbolTable(t *testing.T) {

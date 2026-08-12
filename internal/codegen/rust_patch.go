@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akkeshavan/spectre/internal/diagnose"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/diagnose"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // GenerateRustPatch translates a WP-derived Spectre guard into a suggested Rust

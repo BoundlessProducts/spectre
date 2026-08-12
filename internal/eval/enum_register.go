@@ -1,7 +1,7 @@
 package eval
 
 import (
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // RegisterEnumTypes registers all enum types from a parsed file into an environment

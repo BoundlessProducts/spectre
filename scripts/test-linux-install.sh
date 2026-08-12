@@ -39,7 +39,7 @@ apt-get update -qq
 apt-get install -y -qq git curl
 
 # Run the install script
-curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BoundlessProducts/spectre/main/scripts/install.sh | bash
 
 # Verify installation
 echo ""

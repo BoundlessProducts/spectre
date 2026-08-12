@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 func TestErrorFormatterBasic(t *testing.T) {

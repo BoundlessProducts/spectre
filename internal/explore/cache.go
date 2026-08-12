@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akkeshavan/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/state"
 )
 
 // GraphCache persists the explored state graph to disk so subsequent verify

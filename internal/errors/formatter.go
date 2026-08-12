@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // ErrorFormatter formats errors with context and descriptions

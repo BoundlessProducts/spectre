@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/akkeshavan/spectre/internal/eval"
-	"github.com/akkeshavan/spectre/internal/exec"
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/internal/temporal"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/eval"
+	"github.com/BoundlessProducts/spectre/internal/exec"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/internal/temporal"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // ViolationCallback is called immediately when a temporal violation is detected

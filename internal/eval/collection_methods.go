@@ -3,8 +3,8 @@ package eval
 import (
 	"fmt"
 
-	"github.com/akkeshavan/spectre/internal/state"
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/internal/state"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // evalFilter evaluates the filter method: collection.filter(predicate)

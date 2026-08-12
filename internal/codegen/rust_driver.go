@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akkeshavan/spectre/pkg/ast"
+	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
 // RustDriver holds everything extracted from a spec that is needed to generate

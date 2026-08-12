@@ -72,7 +72,7 @@ Build from source (requires **Go ≥ 1.24**, **Z3 ≥ 4.8** for `spectre sync`, 
 **macOS:**
 ```bash
 brew install go z3
-git clone https://github.com/akkeshavan/spectre.git && cd spectre
+git clone https://github.com/BoundlessProducts/spectre.git && cd spectre
 go build -o spectre ./cmd/spectre
 # Optional: build the Rust AST miner
 cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
@@ -82,7 +82,7 @@ cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
 **Linux (Debian/Ubuntu):**
 ```bash
 sudo apt install -y golang z3
-git clone https://github.com/akkeshavan/spectre.git && cd spectre
+git clone https://github.com/BoundlessProducts/spectre.git && cd spectre
 go build -o spectre ./cmd/spectre
 ```
 

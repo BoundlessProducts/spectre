@@ -1,7 +1,7 @@
 class Spectre < Formula
   desc "Formal specification language and Rust verification toolchain"
-  homepage "https://github.com/akkeshavan/spectre"
-  url "https://github.com/akkeshavan/spectre.git",
+  homepage "https://github.com/BoundlessProducts/spectre"
+  url "https://github.com/BoundlessProducts/spectre.git",
       branch: "main"
   version "0.3.1"
   license "MIT"
