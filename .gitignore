@@ -13,8 +13,8 @@ cmd/spectre/spectre
 # Output of the go coverage tool
 *.out
 
-# Dependency directories
-vendor/
+# Dependency directories (Go only; Rust vendor tracked for Homebrew offline build)
+/vendor/
 
 # Go workspace file
 go.work
@@ -37,7 +37,7 @@ paper-vmcai-2027/
 
 # Build artefacts
 spectre_new
-spectre-mine-rs
+/spectre-mine-rs
 spectre-vmcai-2027.zip
 
 # Runtime state
