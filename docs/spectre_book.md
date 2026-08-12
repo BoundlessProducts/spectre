@@ -67,135 +67,32 @@ Traditional formal specification languages like TLA+ can be intimidating for dev
 
 ### Installation
 
-Install Spectre using your preferred method:
+Build from source (requires **Go ≥ 1.24**, **Z3 ≥ 4.8** for `spectre sync`, **Rust stable** for `spectre mine --lang rust`):
 
-**macOS (Homebrew):**
-
-**Prerequisites**: Go 1.19 or later must be installed (Homebrew will build Spectre from source).
-
-If Go is not installed, install it first:
+**macOS:**
 ```bash
-brew install go
+brew install go z3
+git clone https://github.com/akkeshavan/spectre.git && cd spectre
+go build -o spectre ./cmd/spectre
+# Optional: build the Rust AST miner
+cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
+cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
 ```
 
-Since the Homebrew formula is in the main repository (not a separate `homebrew-spectre` repo), use the full GitHub URL:
-
+**Linux (Debian/Ubuntu):**
 ```bash
-brew tap akkeshavan/spectre https://github.com/akkeshavan/spectre.git
-brew install spectre
+sudo apt install -y golang z3
+git clone https://github.com/akkeshavan/spectre.git && cd spectre
+go build -o spectre ./cmd/spectre
 ```
 
-**Note**: The installation builds from source, so Go is required. Homebrew will automatically install Go as a dependency if it's not already installed, but it's recommended to install Go first to ensure you have the correct version.
-
-**Note**: If you later create a separate `homebrew-spectre` repository, you can simplify to:
+**Docker (no local toolchain required):**
 ```bash
-brew tap akkeshavan/spectre
-brew install spectre
+docker build -t spectre-vmcai .
+docker run --rm -it spectre-vmcai sh
 ```
 
-**Linux:**
-
-**Prerequisites**: Go 1.19 or later must be installed (the script builds Spectre from source).
-
-The install script downloads the source code and builds Spectre locally:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/akkeshavan/spectre/main/scripts/install.sh | bash
-```
-
-The script will:
-- Check for Go 1.19+ installation (with helpful error messages if not found)
-- Check for Git installation
-- Clone the repository from GitHub
-- Build Spectre from source using Go
-- Install to `/usr/local/bin` (or custom `INSTALL_DIR`)
-
-**If Go is not installed**, the script will provide installation instructions. You can install Go with:
-
-```bash
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install golang-go
-
-# Fedora/RHEL/CentOS
-sudo dnf install golang
-```
-
-Or download from: https://golang.org/dl/
-
-**Note**: The script automatically detects if it's running as root (e.g., in Docker containers) and skips `sudo` commands. On regular Linux systems, it will use `sudo` for installation.
-
-**Windows:**  
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
-```
-
-### Finding Example Files After Installation
-
-When you install Spectre using Homebrew (macOS) or the installation script (Linux), **example files are automatically included** with the installation and placed in standard system directories.
-
-**macOS (Homebrew Installation):**
-
-The examples are installed to the Homebrew share directory:
-- **Location**: `/opt/homebrew/share/spectre/examples/` (Apple Silicon) or `/usr/local/share/spectre/examples/` (Intel)
-- **Using Homebrew prefix**: `$(brew --prefix)/share/spectre/examples/`
-
-```bash
-# List all available examples:
-ls $(brew --prefix)/share/spectre/examples/
-
-# Copy examples to a working directory (recommended):
-mkdir -p ~/my-spectre-examples
-cp $(brew --prefix)/share/spectre/examples/*.spec ~/my-spectre-examples/
-cd ~/my-spectre-examples
-
-# Now test the examples:
-spectre parse counter.spec
-spectre typecheck counter.spec
-spectre verify counter.spec
-```
-
-
-**Linux (Installation Script):**
-
-The examples are installed to the system share directory:
-- **Location**: `/usr/local/share/spectre/examples/`
-
-```bash
-# List all available examples:
-ls /usr/local/share/spectre/examples/
-
-# Copy examples to a working directory (recommended):
-mkdir -p ~/my-spectre-examples
-cp /usr/local/share/spectre/examples/*.spec ~/my-spectre-examples/
-cd ~/my-spectre-examples
-
-# Now test the examples:
-spectre parse counter.spec
-spectre typecheck counter.spec
-spectre verify counter.spec
-```
-
-> **⚠️ Important**: The examples are installed in system directories. **Before testing or modifying examples, copy them to a new directory** (e.g., `~/my-spectre-examples/` or `./test-examples/`). This prevents accidental modification of system files and allows you to experiment freely.
->
-> **Example:**
-> ```bash
-> # macOS
-> mkdir -p ~/my-spectre-examples
-> cp $(brew --prefix)/share/spectre/examples/*.spec ~/my-spectre-examples/
-> cd ~/my-spectre-examples
-> spectre parse counter.spec
->
-> # Linux
-> mkdir -p ~/my-spectre-examples
-> cp /usr/local/share/spectre/examples/*.spec ~/my-spectre-examples/
-> cd ~/my-spectre-examples
-> spectre parse counter.spec
-> ```
-
-**Note**: 
-- If you installed to a custom location using `INSTALL_DIR` or `SHARE_DIR` environment variables, adjust the paths accordingly.
-- The examples directory contains all the example `.spec` files from the repository, so you don't need to clone the repository just to access examples.
+All examples are in the `examples/` directory of the cloned repository. Full installation instructions for all platforms are in [Chapter 1](../spectre_book/01-getting-started.md) and the [README](../README.md).
 
 ---
 
