@@ -1,6 +1,6 @@
 # Chapter 2: Language Overview
 
-This chapter provides a comprehensive overview of the Spectre language, its design philosophy, and all its core elements.
+This chapter covers the core elements of the Spectre language.
 
 ---
 
@@ -766,6 +766,5 @@ Now that you understand the overview of the Spectre language, you're ready to di
 - **Chapter 9**: Modules and Code Organization
 - **Chapter 10**: Verification and Debugging
 
-Each chapter will provide detailed syntax, examples, and best practices for using that language element effectively.
 
 

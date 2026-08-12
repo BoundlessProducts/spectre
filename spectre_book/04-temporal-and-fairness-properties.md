@@ -1,6 +1,6 @@
 # Chapter 4: Temporal and Fairness Properties
 
-This chapter explores temporal properties and fairness conditions in Spectre. We'll use a counter example to demonstrate how these concepts work together to verify system behavior.
+This chapter covers temporal properties and fairness conditions.
 
 ## Understanding Temporal Properties
 
@@ -221,7 +221,7 @@ This ensures that the temporal property is verified only under the assumption th
 
 ## The Counter Example with Fairness
 
-Let's see how fairness solves our counter problem. In `counter-with-fairness.spec`:
+In `counter-with-fairness.spec`:
 
 ```spectre
 description "Tracks a numeric counter value"

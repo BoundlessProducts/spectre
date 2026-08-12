@@ -1,6 +1,6 @@
 # Chapter 7: Modules and Code Organization
 
-This chapter demonstrates how to organize large specifications using Spectre's module system. We'll use an elevator controller system as a comprehensive example showing how modules enable code reuse, separation of concerns, and maintainability.
+This chapter covers organizing large specifications using Spectre's module system, using an elevator controller as the running example.
 
 ## Understanding Modules
 
@@ -504,13 +504,10 @@ If module A needs module B, module B should not need module A. Design modules hi
 
 ## Summary
 
-Modules in Spectre provide a powerful way to organize complex specifications:
+Modules in Spectre:
 
-- **Declare modules** in separate files with matching names
-- **Import modules** using `import ModuleName` or `import "path/to/Module"`
+- **Declare** in separate files with matching names
+- **Import** using `import ModuleName` or `import "path/to/Module"`
 - **Access members** using `ModuleName.member` notation
-- **Use visibility modifiers** to control access (`public` vs private)
-- **Organize by concern** to improve maintainability and reuse
-
-The elevator controller example demonstrates how to build a large, complex system by composing smaller, focused modules. This modular approach makes specifications easier to understand, test, and maintain.
+- **Control visibility** with `public` vs private modifiers
 

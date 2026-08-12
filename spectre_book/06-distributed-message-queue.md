@@ -1,6 +1,6 @@
 # Chapter 6: Distributed Message Queue
 
-This chapter demonstrates temporal property violations in a distributed message queue system. Message queues are fundamental components in distributed systems, used for asynchronous communication between services. Ensuring correctness requires careful attention to both safety (invariants) and liveness (temporal) properties.
+This chapter demonstrates temporal property violations in a distributed message queue system.
 
 ## The Message Queue System
 

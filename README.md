@@ -485,7 +485,7 @@ The algorithm: prune stale transitions → recompute reachability → remove now
 
 ### Partial-Order Reduction and Property-Directed Exploration
 
-Two flags that can dramatically reduce the number of states explored:
+Two flags that reduce the number of states explored:
 
 ```bash
 # POR: skip redundant action interleavings

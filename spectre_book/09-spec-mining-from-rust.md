@@ -1,6 +1,6 @@
 # Chapter 9: Spec Mining, Drift Detection, and Incremental Re-verification
 
-One of Spectre's most practical features is its ability to extract a specification skeleton directly from existing Rust source code — and then keep that specification in sync as the code evolves. This chapter covers three related commands: `spectre mine`, `spectre sync`, and `spectre verify --incremental`.
+This chapter covers three related commands: `spectre mine`, `spectre sync`, and `spectre verify --incremental`.
 
 ---
 

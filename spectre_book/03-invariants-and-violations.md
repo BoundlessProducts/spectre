@@ -1,6 +1,6 @@
 # Chapter 3: Invariants and Violations
 
-This chapter explores invariants in Spectre: what they are, how they can be violated, and how to fix violations. We'll use two examples to demonstrate common patterns of invariant violations and their solutions.
+This chapter covers invariants: what they are, how they can be violated, and how to fix violations.
 
 ## Understanding Invariants
 

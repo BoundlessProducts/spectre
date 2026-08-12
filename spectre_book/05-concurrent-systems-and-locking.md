@@ -1,6 +1,6 @@
 # Chapter 5: Concurrent Systems and Locking
 
-This chapter demonstrates how to specify and verify concurrent systems where multiple processes compete for access to a shared resource. We'll use a locking mechanism to ensure mutual exclusion and show how missing preconditions can lead to both invariant and temporal property violations.
+This chapter covers specifying and verifying concurrent systems. The example uses a locking mechanism for mutual exclusion, showing how missing preconditions lead to invariant and temporal property violations.
 
 ## Understanding Concurrent Systems
 

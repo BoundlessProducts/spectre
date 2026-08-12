@@ -1,6 +1,6 @@
 # The Spectre Language Book
 
-A comprehensive guide to writing specifications in Spectre.
+Reference guide for the Spectre specification language.
 
 ---
 
@@ -824,7 +824,7 @@ Pure functions must:
 - ✅ Not modify state variables
 - ✅ Return a value based only on inputs
 
-See `examples/pure-functions.spec` for comprehensive examples.
+See `examples/pure-functions.spec` for examples.
 
 ---
 
@@ -1256,7 +1256,7 @@ const NUM_PROCESSES: int = 2
 
 ## Error Messages and Debugging
 
-Spectre provides excellent error messages with descriptions and stack traces to help you debug your specifications.
+Spectre reports error messages with descriptions and stack traces.
 
 ### Descriptions
 
@@ -2236,21 +2236,10 @@ When a property fails:
 
 ## Conclusion
 
-Spectre provides a powerful yet accessible way to write formal specifications. With its familiar syntax, strong typing, and excellent error messages, you can:
-
-- Model complex systems as state machines
-- Verify safety properties with invariants
-- Verify liveness properties with temporal logic
-- Express fairness conditions for concurrent systems
-- Organize code with modules
-- Debug easily with descriptions and stack traces
-
 ### Next Steps
 
 1. **Try the examples**: Run `spectre verify` on the example files
-2. **Write your own**: Start with a simple counter and expand
-3. **Read the spec**: See `docs/spec.md` for complete language details
-4. **Explore advanced features**: Try modules, fairness, and complex types
+2. **Read the spec**: See `docs/spec.md` for complete language details
 
 ### Resources
 

@@ -14,7 +14,7 @@ Spectre is a programmer-friendly specification language inspired by TLA+ and Qui
 
 ## Descriptions and Error Messages
 
-All language elements can include a `description` field to provide human-readable names and context. These descriptions are used in error messages, stack traces, and verification reports to make debugging easier and more intuitive.
+All language elements can include a `description` field to provide human-readable names and context. These descriptions appear in error messages, stack traces, and verification reports.
 
 ### Syntax
 
