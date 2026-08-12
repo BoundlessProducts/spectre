@@ -1,14 +1,14 @@
-> **⚠️ Under Construction** —  This is a research project. Not intended for commercial use. No PRs are encouarged at this point.
+> **⚠️ Under Construction** — This is a research project. Not intended for commercial use. No PRs encouraged at this point.
 >
-> The entire codebase, documentation, and Spectre Book were generated using LLMs (Cursor + Gemini deep research + Claude). Not a single line of code was written by hand. Build time: ~24 hours across two weekends.
+> Some parts of the code were generated using LLMs.
 
 ---
 
 # Spectre
 
-A programmer-friendly formal specification language and Rust verification toolchain inspired by TLA+ and Quint, designed for developers who want to verify system correctness without a PhD in formal methods.
+A formal specification language and Rust verification toolchain inspired by TLA+ and Quint.
 
-Model your system as a state machine, write invariants and temporal properties, and let Spectre exhaustively explore every reachable state. A source-derived refinement map connects your Rust implementation to the formal model throughout the development lifecycle — covering verification, counterexample-guided repair, conformance testing, drift detection, incremental re-verification, and runtime monitoring.
+Model your system as a state machine, write invariants and temporal properties, and let Spectre exhaustively explore every reachable state. A refinement map connects your Rust implementation to the formal model, covering verification, counterexample-guided repair, conformance testing, drift detection, incremental re-verification, and runtime monitoring.
 
 ```spectre
 var balance: int
