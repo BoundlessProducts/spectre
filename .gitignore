@@ -49,6 +49,8 @@ cmd/spectre/_test_mine_tmp.go
 # Rust build artifacts
 artifact/bench_monitor/target/
 rust/target/
+rust/spectre-mine-rs/target/
+rust/spectre-mine-rs/rust/
 
 # LaTeX build output (both paper directories)
 paper-vmcai-2027/*.aux
