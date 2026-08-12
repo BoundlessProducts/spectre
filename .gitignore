@@ -44,6 +44,11 @@ spectre-vmcai-2027.zip
 temp.txt
 texput.log
 examples/.spectre-cache/
+cmd/spectre/_test_mine_tmp.go
+
+# Rust build artifacts
+artifact/bench_monitor/target/
+rust/target/
 
 # LaTeX build output (both paper directories)
 paper-vmcai-2027/*.aux
