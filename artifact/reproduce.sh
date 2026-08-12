@@ -107,7 +107,7 @@ rm -rf examples/.spectre-cache .spectre-cache
 
 echo "============================================"
 echo " Spectre VMCAI 2027 — Reproduction Script"
-echo " Artifact DOI: 10.5281/zenodo.21887116"
+echo " Artifact DOI: 10.5281/zenodo.21896995"
 echo "============================================"
 echo " SKIP_LONG=${SKIP_LONG:-0}  (set SKIP_LONG=1 to skip 5-node Raft)"
 echo ""
