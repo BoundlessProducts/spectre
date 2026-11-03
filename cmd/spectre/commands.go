@@ -1511,8 +1511,25 @@ func runVerify(args []string) error {
 		}
 	}
 
-	// Final report
-	fmt.Printf("Traversed %d states\n", result.StatesExplored)
+	// Report domain and unsupported-param warnings before the main result.
+	for _, w := range result.UnsupportedParams {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
+	for _, w := range result.DomainWarnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
+
+	// Final report — state the verification kind explicitly.
+	switch result.Kind {
+	case explore.KindExhaustive:
+		fmt.Printf("Exhaustive verification: traversed %d states (full reachable space)\n", result.StatesExplored)
+	case explore.KindBounded:
+		fmt.Printf("Bounded verification: traversed %d states (state or depth limit reached — result is not exhaustive)\n", result.StatesExplored)
+	case explore.KindCounterexample:
+		fmt.Printf("Counterexample found after %d states\n", result.StatesExplored)
+	default:
+		fmt.Printf("Traversed %d states\n", result.StatesExplored)
+	}
 
 	if hasViolations {
 		fmt.Printf("Violations:\n")

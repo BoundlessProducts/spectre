@@ -235,6 +235,19 @@ func (sm *StateMachine) GetAvailableActionsWithArgs(currentState *state.State) (
 	return available, nil
 }
 
+// CollectParamWarnings returns domain warnings and unsupported-param warnings for all actions.
+// Domain warnings identify int parameters using a heuristic default range.
+// Unsupported warnings identify str/float parameters that will be silently skipped.
+func (sm *StateMachine) CollectParamWarnings() (domainWarnings, unsupportedWarnings []string) {
+	env := eval.NewEnvironment()
+	allFiles := sm.executor.getAllFiles()
+	for _, f := range allFiles {
+		eval.RegisterEnumTypes(env, f)
+		eval.RegisterConstants(env, f, allFiles...)
+	}
+	return CollectParamWarnings(sm.actionModel.Actions, env, sm.executor.file)
+}
+
 // ValidateState validates a state against all invariants
 func (sm *StateMachine) ValidateState(s *state.State) ([]*ValidationError, error) {
 	return sm.validator.ValidateState(s)

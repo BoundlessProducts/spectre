@@ -32,12 +32,15 @@ func (e *Explorer) ExplorePOR(file *ast.File, _ []*ast.File) (*ExplorationResult
 		return nil, err
 	}
 
+	domainWarns, unsupportedWarns := e.stateMachine.CollectParamWarnings()
 	result := &ExplorationResult{
-		Violations:      []*Violation{},
-		ReachableStates: []*state.State{},
-		InitialStates:   initialStates,
-		Cycles:          []*Cycle{},
-		TransitionGraph: NewTransitionGraph(),
+		Violations:        []*Violation{},
+		ReachableStates:   []*state.State{},
+		InitialStates:     initialStates,
+		Cycles:            []*Cycle{},
+		TransitionGraph:   NewTransitionGraph(),
+		DomainWarnings:    domainWarns,
+		UnsupportedParams: unsupportedWarns,
 	}
 
 	type queueItem struct {
@@ -133,6 +136,16 @@ func (e *Explorer) ExplorePOR(file *ast.File, _ []*ast.File) (*ExplorationResult
 				})
 			}
 		}
+	}
+
+	hitStateLimitPOR := e.maxStates > 0 && result.StatesExplored >= e.maxStates
+	switch {
+	case len(result.Violations) > 0:
+		result.Kind = KindCounterexample
+	case hitStateLimitPOR:
+		result.Kind = KindBounded
+	default:
+		result.Kind = KindExhaustive
 	}
 
 	return result, nil

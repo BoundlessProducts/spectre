@@ -91,7 +91,7 @@ check_not_contains() {
     fi
 }
 
-states_from() { printf '%s' "$1" | grep "^Traversed" | awk '{print $2}'; }
+states_from() { printf '%s' "$1" | grep -E "^(Traversed|Exhaustive verification:|Bounded verification:|Counterexample found after)" | grep -oE '[0-9]+ state' | grep -oE '[0-9]+' | head -1; }
 time_ms() {
     start=$1; end=$2
     # Prefer nanosecond precision; fall back to seconds.
@@ -357,7 +357,7 @@ mine_and_verify() {
         || $SPECTRE mine --lang rust "$rs" > "$mined" 2>/dev/null; then
         # Sanity-check the mined spec: parse + 1-step verify.
         if $SPECTRE verify "$mined" --max-states 1 >/dev/null 2>&1 \
-            || $SPECTRE verify "$mined" --max-states 5 2>&1 | grep -qE "Traversed|Found no"; then
+            || $SPECTRE verify "$mined" --max-states 5 2>&1 | grep -qE "traversed|Found no"; then
             printf "  [PASS] mine %s\n" "$component"; MINE_PASS=$((MINE_PASS+1))
         else
             printf "  [FAIL] mine %s — spec fails to verify\n" "$component"; MINE_FAIL=$((MINE_FAIL+1))

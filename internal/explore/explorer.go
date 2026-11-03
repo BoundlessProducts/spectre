@@ -12,6 +12,31 @@ import (
 
 var reInvariantName = regexp.MustCompile(`invariant (\w+) violated`)
 
+// VerificationKind describes how exploration terminated.
+type VerificationKind int
+
+const (
+	// KindExhaustive means the full reachable state space was explored within the configured limits.
+	KindExhaustive VerificationKind = iota
+	// KindBounded means exploration stopped early because the state or depth limit was reached.
+	KindBounded
+	// KindCounterexample means at least one invariant or temporal violation was found.
+	KindCounterexample
+)
+
+func (k VerificationKind) String() string {
+	switch k {
+	case KindExhaustive:
+		return "exhaustive"
+	case KindBounded:
+		return "bounded"
+	case KindCounterexample:
+		return "counterexample"
+	default:
+		return "unknown"
+	}
+}
+
 // InvariantViolationCallback is called immediately when an invariant violation is detected
 // Returns true if exploration should continue, false if it should stop
 type InvariantViolationCallback func(violation *Violation) bool
@@ -59,6 +84,7 @@ type Transition struct {
 
 // ExplorationResult contains the results of state space exploration
 type ExplorationResult struct {
+	Kind            VerificationKind
 	StatesExplored  int
 	StatesVisited   int
 	Violations      []*Violation
@@ -68,6 +94,10 @@ type ExplorationResult struct {
 	MaxDepth        int
 	Cycles          []*Cycle
 	TransitionGraph *TransitionGraph // Complete transition graph including cycles
+	// DomainWarnings lists action parameters whose domain was approximated (e.g. int → 0..N heuristic).
+	DomainWarnings []string
+	// UnsupportedParams lists action parameters skipped because their type has no finite domain (str, float).
+	UnsupportedParams []string
 }
 
 // TransitionGraph represents the complete state transition graph
@@ -180,12 +210,15 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 		return nil, fmt.Errorf("error getting initial states: %w", err)
 	}
 
+	domainWarns, unsupportedWarns := e.stateMachine.CollectParamWarnings()
 	result := &ExplorationResult{
-		Violations:      []*Violation{},
-		ReachableStates: []*state.State{},
-		InitialStates:   initialStates, // Store initial states for temporal verification
-		Cycles:          []*Cycle{},
-		TransitionGraph: NewTransitionGraph(),
+		Violations:        []*Violation{},
+		ReachableStates:   []*state.State{},
+		InitialStates:     initialStates,
+		Cycles:            []*Cycle{},
+		TransitionGraph:   NewTransitionGraph(),
+		DomainWarnings:    domainWarns,
+		UnsupportedParams: unsupportedWarns,
 	}
 
 	// Add initial states to queue - sort by hash for deterministic ordering (like TLC)
@@ -232,11 +265,13 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 
 	// BFS exploration
 	// -1 means unlimited
+	hitDepthLimit := false
 	for len(e.queue) > 0 && (e.maxStates == -1 || result.StatesExplored < e.maxStates) && !e.shouldStopExploration {
 		current := e.queue[0]
 		e.queue = e.queue[1:]
 
 		if e.maxDepth != -1 && current.Depth >= e.maxDepth {
+			hitDepthLimit = true
 			if e.verbose {
 				fmt.Printf("[DEPTH LIMIT] Skipping state at depth %d (max: %d)\n", current.Depth, e.maxDepth)
 			}
@@ -526,6 +561,17 @@ func (e *Explorer) ExploreBFS() (*ExplorationResult, error) {
 	}
 
 	result.StatesVisited = len(e.visited)
+
+	hitStateLimit := e.maxStates != -1 && result.StatesExplored >= e.maxStates && len(e.queue) > 0
+	switch {
+	case len(result.Violations) > 0:
+		result.Kind = KindCounterexample
+	case hitStateLimit || hitDepthLimit:
+		result.Kind = KindBounded
+	default:
+		result.Kind = KindExhaustive
+	}
+
 	return result, nil
 }
 
@@ -541,12 +587,15 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 		return nil, fmt.Errorf("error getting initial states: %w", err)
 	}
 
+	domainWarnsDFS, unsupportedWarnsDFS := e.stateMachine.CollectParamWarnings()
 	result := &ExplorationResult{
-		Violations:      []*Violation{},
-		ReachableStates: []*state.State{},
-		InitialStates:   initialStates, // Store initial states
-		Cycles:          []*Cycle{},
-		TransitionGraph: NewTransitionGraph(),
+		Violations:        []*Violation{},
+		ReachableStates:   []*state.State{},
+		InitialStates:     initialStates,
+		Cycles:            []*Cycle{},
+		TransitionGraph:   NewTransitionGraph(),
+		DomainWarnings:    domainWarnsDFS,
+		UnsupportedParams: unsupportedWarnsDFS,
 	}
 
 	// Add initial states to stack
@@ -574,12 +623,14 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 
 	// DFS exploration
 	// -1 means unlimited
+	hitDepthLimitDFS := false
 	for len(e.stack) > 0 && (e.maxStates == -1 || result.StatesExplored < e.maxStates) && !e.shouldStopExploration {
 		// Pop from stack
 		current := e.stack[len(e.stack)-1]
 		e.stack = e.stack[:len(e.stack)-1]
 
 		if e.maxDepth != -1 && current.Depth >= e.maxDepth {
+			hitDepthLimitDFS = true
 			continue
 		}
 
@@ -799,6 +850,17 @@ func (e *Explorer) ExploreDFS() (*ExplorationResult, error) {
 	}
 
 	result.StatesVisited = len(e.visited)
+
+	hitStateLimitDFS := e.maxStates != -1 && result.StatesExplored >= e.maxStates && len(e.stack) > 0
+	switch {
+	case len(result.Violations) > 0:
+		result.Kind = KindCounterexample
+	case hitStateLimitDFS || hitDepthLimitDFS:
+		result.Kind = KindBounded
+	default:
+		result.Kind = KindExhaustive
+	}
+
 	return result, nil
 }
 

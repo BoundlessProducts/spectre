@@ -1,6 +1,8 @@
 package exec
 
 import (
+	"fmt"
+
 	"github.com/BoundlessProducts/spectre/internal/eval"
 	"github.com/BoundlessProducts/spectre/internal/state"
 	"github.com/BoundlessProducts/spectre/pkg/ast"
@@ -91,6 +93,42 @@ func generateValuesForParameter(param ast.Parameter, env *eval.Environment, file
 
 	// Unknown type - return empty
 	return []state.Value{}
+}
+
+// CollectParamWarnings scans all actions in the model and returns two warning lists:
+//   - domainWarnings: int parameters whose domain falls back to the heuristic 0..N range
+//   - unsupportedWarnings: str/float parameters that will be skipped during exploration
+func CollectParamWarnings(actions map[string]*state.ActionInfo, env *eval.Environment, file *ast.File) (domainWarnings, unsupportedWarnings []string) {
+	for actionName, actionInfo := range actions {
+		for _, param := range actionInfo.Parameters {
+			switch t := param.Type.(type) {
+			case *ast.PrimitiveType:
+				switch t.Name {
+				case "int":
+					maxValue := int64(20)
+					if numFloors, exists := env.GetConstant("NUM_FLOORS"); exists {
+						if pv, ok := numFloors.(*state.PrimitiveValue); ok && pv.IntValue != nil {
+							maxValue = *pv.IntValue
+						}
+					}
+					if maxValue == 20 {
+						domainWarnings = append(domainWarnings,
+							fmt.Sprintf("action %s: int parameter '%s' uses default domain 0..19 — declare a constant to set the domain explicitly", actionName, param.Name))
+					} else {
+						domainWarnings = append(domainWarnings,
+							fmt.Sprintf("action %s: int parameter '%s' uses heuristic domain 0..%d (from NUM_FLOORS)", actionName, param.Name, maxValue-1))
+					}
+				case "str":
+					unsupportedWarnings = append(unsupportedWarnings,
+						fmt.Sprintf("action %s: str parameter '%s' has no finite domain — all argument combinations skipped", actionName, param.Name))
+				case "float":
+					unsupportedWarnings = append(unsupportedWarnings,
+						fmt.Sprintf("action %s: float parameter '%s' has no finite domain — all argument combinations skipped", actionName, param.Name))
+				}
+			}
+		}
+	}
+	return
 }
 
 // cartesianProduct generates all combinations from multiple slices

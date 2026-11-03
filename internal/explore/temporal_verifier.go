@@ -152,40 +152,25 @@ func (tv *TemporalVerifier) verifyEventuallyWithInitial(prop *state.TemporalProp
 		}
 	}
 	
-	// Property doesn't hold - find counterexample
-	// Check if we're stuck in cycles that prevent reaching states where P holds
+	// Property doesn't hold — build a lasso counterexample showing a reachable cycle
+	// where P never becomes true.
+	trace := tv.buildLassoCE(initialStates, expr.Expr, graph)
+
+	// Identify blocking cycles for diagnostic info.
 	var blockingCycles []*CycleInfo
 	for _, cycle := range graph.DetectCycles(tv.hasher) {
-		// Check if cycle prevents reaching P
-		canReachP := false
+		anyHolds := false
 		for _, cycleState := range cycle.States {
-			holds, err := tv.evaluateProperty(expr.Expr, cycleState)
-			if err == nil && holds {
-				canReachP = true
+			if holds, err := tv.evaluateProperty(expr.Expr, cycleState); err == nil && holds {
+				anyHolds = true
 				break
 			}
-			// Check if we can exit cycle to reach P
-			cycleHash := tv.hasher.HashState(cycleState)
-			if node := graph.GetStateNode(cycleHash); node != nil {
-				for _, trans := range node.Outgoing {
-					toHash := tv.hasher.HashState(trans.ToState)
-					if graph.GetStateNode(toHash) != nil {
-						if tv.canEventuallyReachP(trans.ToState, expr.Expr, graph, make(map[string]bool)) {
-							canReachP = true
-							break
-						}
-					}
-				}
-			}
 		}
-		if !canReachP {
+		if !anyHolds {
 			blockingCycles = append(blockingCycles, cycle)
 		}
 	}
-	
-	// Build counterexample trace (simplified - just show one path)
-	trace := tv.buildCounterexampleTrace(initialStates, graph)
-	
+
 	desc := fmt.Sprintf("Property '%s' never becomes true in any reachable state", prop.Name)
 	if prop.Description != "" {
 		desc = fmt.Sprintf("Property '%s' violated: (%s) property never becomes true in any reachable state", prop.Name, prop.Description)
@@ -947,39 +932,136 @@ func (tv *TemporalVerifier) hasBlockingCycle(from *state.State, propExpr ast.Exp
 	return false
 }
 
-func (tv *TemporalVerifier) buildCounterexampleTrace(initialStates []*state.State, graph *TransitionGraph) *temporal.Trace {
+// buildLassoCE builds a lasso counterexample for a liveness violation:
+// a finite prefix from an initial state to a cycle entry, followed by the cycle itself.
+// The cycle contains no state where violatedProp holds (if provided).
+// Falls back to a simple linear trace when no suitable cycle is found.
+func (tv *TemporalVerifier) buildLassoCE(initialStates []*state.State, violatedProp ast.Expr, graph *TransitionGraph) *temporal.Trace {
 	if len(initialStates) == 0 {
 		return temporal.NewTrace()
 	}
-	
-	trace := temporal.NewTrace()
-	trace.AddState(initialStates[0], "", nil)
-	
-	// Build a simple trace by following transitions
-	visited := make(map[string]bool)
-	hash := tv.hasher.HashState(initialStates[0])
-	visited[hash] = true
-	
-	maxSteps := 10 // Limit trace length
-	steps := 0
-	
-	for steps < maxSteps {
-		if node := graph.GetStateNode(hash); node != nil && len(node.Outgoing) > 0 {
-			trans := node.Outgoing[0] // Take first transition
-			toHash := tv.hasher.HashState(trans.ToState)
-			if visited[toHash] {
-				break // Hit cycle
+
+	// BFS from initial states to find shortest prefix to any cycle entry.
+	// Collect all states that are part of a blocking cycle (no P-satisfying state).
+	cycles := graph.DetectCycles(tv.hasher)
+
+	// Identify blocking cycle states (where violatedProp never holds in the cycle).
+	blockingCycleStates := make(map[string]*CycleInfo)
+	for _, cycle := range cycles {
+		if violatedProp != nil {
+			anyHolds := false
+			for _, s := range cycle.States {
+				if holds, err := tv.evaluateProperty(violatedProp, s); err == nil && holds {
+					anyHolds = true
+					break
+				}
 			}
-			visited[toHash] = true
-			trace.AddState(trans.ToState, trans.Action, trans.Args)
-			hash = toHash
-			steps++
-		} else {
-			break
+			if anyHolds {
+				continue // This cycle contains a P-state — not a blocking cycle.
+			}
+		}
+		for _, s := range cycle.States {
+			h := tv.hasher.HashState(s)
+			if _, exists := blockingCycleStates[h]; !exists {
+				blockingCycleStates[h] = cycle
+			}
 		}
 	}
-	
+
+	// BFS to find shortest path from any initial state to any blocking cycle state.
+	type bfsEntry struct {
+		state  *state.State
+		parent *bfsEntry
+		action string
+		args   []state.Value
+	}
+	visited := make(map[string]*bfsEntry)
+	queue := make([]*bfsEntry, 0, len(initialStates))
+	for _, s := range initialStates {
+		h := tv.hasher.HashState(s)
+		if _, seen := visited[h]; !seen {
+			e := &bfsEntry{state: s}
+			visited[h] = e
+			queue = append(queue, e)
+		}
+	}
+
+	var cycleEntry *bfsEntry
+	var blockingCycle *CycleInfo
+	for len(queue) > 0 && cycleEntry == nil {
+		cur := queue[0]
+		queue = queue[1:]
+		h := tv.hasher.HashState(cur.state)
+		if cycle, ok := blockingCycleStates[h]; ok {
+			cycleEntry = cur
+			blockingCycle = cycle
+			break
+		}
+		if node := graph.GetStateNode(h); node != nil {
+			for _, trans := range node.Outgoing {
+				toH := tv.hasher.HashState(trans.ToState)
+				if _, seen := visited[toH]; !seen {
+					child := &bfsEntry{state: trans.ToState, parent: cur, action: trans.Action, args: trans.Args}
+					visited[toH] = child
+					queue = append(queue, child)
+				}
+			}
+		}
+	}
+
+	trace := temporal.NewTrace()
+
+	if cycleEntry == nil {
+		// No blocking cycle reachable — fall back to a simple linear trace.
+		trace.AddState(initialStates[0], "", nil)
+		visited2 := make(map[string]bool)
+		h := tv.hasher.HashState(initialStates[0])
+		visited2[h] = true
+		for steps := 0; steps < 10; steps++ {
+			if node := graph.GetStateNode(h); node != nil && len(node.Outgoing) > 0 {
+				trans := node.Outgoing[0]
+				toH := tv.hasher.HashState(trans.ToState)
+				if visited2[toH] {
+					break
+				}
+				visited2[toH] = true
+				trace.AddState(trans.ToState, trans.Action, trans.Args)
+				h = toH
+			} else {
+				break
+			}
+		}
+		return trace
+	}
+
+	// Reconstruct the prefix path from initial state to cycle entry.
+	prefix := make([]*bfsEntry, 0)
+	for e := cycleEntry; e != nil; e = e.parent {
+		prefix = append(prefix, e)
+	}
+	// Reverse to get root → cycle-entry order.
+	for i, j := 0, len(prefix)-1; i < j; i, j = i+1, j-1 {
+		prefix[i], prefix[j] = prefix[j], prefix[i]
+	}
+	trace.AddState(prefix[0].state, "", nil)
+	for _, e := range prefix[1:] {
+		trace.AddState(e.state, e.action, e.args)
+	}
+
+	// Append the cycle itself (lasso loop).
+	if blockingCycle != nil {
+		for _, trans := range blockingCycle.Transitions {
+			trace.AddState(trans.ToState, trans.Action, trans.Args)
+		}
+	}
+
 	return trace
+}
+
+// buildCounterexampleTrace builds a counterexample trace for a liveness violation.
+// It delegates to buildLassoCE with no property filter (caller already knows no state satisfies the prop).
+func (tv *TemporalVerifier) buildCounterexampleTrace(initialStates []*state.State, graph *TransitionGraph) *temporal.Trace {
+	return tv.buildLassoCE(initialStates, nil, graph)
 }
 
 // extractActionNameFromExpr extracts the action name from an expression (usually an Ident)
@@ -1089,11 +1171,10 @@ func (tv *TemporalVerifier) filterFairPaths(graph *TransitionGraph, actionName s
 		}
 	}
 	
-	// After filtering, verify that no unfair cycles remain in the fair graph
-	// This is a safety check to ensure our filtering worked correctly
-	// Iteratively remove unfair cycles until none remain
-	maxIterations := 10 // Prevent infinite loops
-	for iteration := 0; iteration < maxIterations; iteration++ {
+	// Iteratively remove unfair cycles until the fair graph reaches a fixed point.
+	// Each iteration either removes at least one transition (strictly shrinking the graph)
+	// or terminates — so convergence is guaranteed.
+	for {
 		additionalUnfairTransitions := make(map[string]bool)
 		
 		// Check all cycles in the current fair graph
