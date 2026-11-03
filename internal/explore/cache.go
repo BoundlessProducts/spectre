@@ -25,10 +25,13 @@ type GraphCache struct {
 
 // CacheConfig holds the exploration configuration that must match for a cache hit.
 type CacheConfig struct {
-	Params     map[string]int64 // spec parameter bindings (e.g. N=3)
-	MaxStates  int
-	MaxDepth   int
-	ParamBound int
+	Params             map[string]int64  // spec parameter bindings (e.g. N=3)
+	MaxStates          int
+	MaxDepth           int
+	ParamBound         int
+	// ImportedFileHashes maps each imported spec file path to its SHA-256 content hash.
+	// When any imported file changes, the cache is invalidated automatically.
+	ImportedFileHashes map[string]string
 }
 
 // CachedState is a serializable snapshot of one explored state.
@@ -60,15 +63,14 @@ func HashSpec(content []byte) string {
 }
 
 // HashConfig returns a stable hex SHA-256 of the exploration configuration,
-// so caches are invalidated when --param, --max-states, --max-depth, or
-// --param-bound change even if the spec file is identical.
+// so caches are invalidated when --param, --max-states, --max-depth,
+// --param-bound, or any imported file changes.
 func HashConfig(cfg CacheConfig) string {
 	// Stable serialisation: sorted param keys, then fixed fields.
 	keys := make([]string, 0, len(cfg.Params))
 	for k := range cfg.Params {
 		keys = append(keys, k)
 	}
-	// sort inline without importing sort (keep imports minimal)
 	for i := 0; i < len(keys); i++ {
 		for j := i + 1; j < len(keys); j++ {
 			if keys[i] > keys[j] {
@@ -81,6 +83,23 @@ func HashConfig(cfg CacheConfig) string {
 		b = append(b, []byte(fmt.Sprintf("%s=%d;", k, cfg.Params[k]))...)
 	}
 	b = append(b, []byte(fmt.Sprintf("ms=%d;md=%d;pb=%d", cfg.MaxStates, cfg.MaxDepth, cfg.ParamBound))...)
+
+	// Include imported file hashes so that changing any imported spec invalidates the cache.
+	importKeys := make([]string, 0, len(cfg.ImportedFileHashes))
+	for k := range cfg.ImportedFileHashes {
+		importKeys = append(importKeys, k)
+	}
+	for i := 0; i < len(importKeys); i++ {
+		for j := i + 1; j < len(importKeys); j++ {
+			if importKeys[i] > importKeys[j] {
+				importKeys[i], importKeys[j] = importKeys[j], importKeys[i]
+			}
+		}
+	}
+	for _, k := range importKeys {
+		b = append(b, []byte(fmt.Sprintf(";import:%s=%s", k, cfg.ImportedFileHashes[k]))...)
+	}
+
 	sum := sha256.Sum256(b)
 	return fmt.Sprintf("%x", sum)
 }

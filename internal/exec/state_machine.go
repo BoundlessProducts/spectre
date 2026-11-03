@@ -248,6 +248,22 @@ func (sm *StateMachine) CollectParamWarnings() (domainWarnings, unsupportedWarni
 	return CollectParamWarnings(sm.actionModel.Actions, env, sm.executor.file)
 }
 
+// HasAction reports whether the state machine has an action with the given name.
+func (sm *StateMachine) HasAction(name string) bool {
+	_, exists := sm.actionModel.Actions[name]
+	return exists
+}
+
+// ActionNames returns all action names defined in the spec, sorted.
+func (sm *StateMachine) ActionNames() []string {
+	names := make([]string, 0, len(sm.actionModel.Actions))
+	for n := range sm.actionModel.Actions {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // ValidateState validates a state against all invariants
 func (sm *StateMachine) ValidateState(s *state.State) ([]*ValidationError, error) {
 	return sm.validator.ValidateState(s)

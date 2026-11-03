@@ -702,6 +702,8 @@ func runVerify(args []string) error {
 	checkRepairMinimal := false    // --check-repair-minimal: verify guards don't block valid traces
 	propertyGuided := false        // --property-guided: best-first BFS by linear predicate distance
 	partialOrderReduction := false // --por: partial-order reduction (skip redundant interleavings)
+	porValidate := false           // --por-validate: cross-check BFS vs POR and report discrepancies
+	verifyIncremental := false     // --verify-incremental: cross-check incremental result vs fresh BFS
 	params := map[string]int64{}   // --param Name=Value spec parameter bindings
 	paramRanges := map[string][2]int64{} // --param-range Name=lo..hi: sweep parameter over range
 	filteredArgs := []string{}
@@ -789,6 +791,10 @@ func runVerify(args []string) error {
 			propertyGuided = true
 		case "--por":
 			partialOrderReduction = true
+		case "--por-validate":
+			porValidate = true
+		case "--verify-incremental":
+			verifyIncremental = true
 		case "--check-repair-minimal":
 			checkRepairMinimal = true
 		case "--param-range":
@@ -1222,6 +1228,12 @@ func runVerify(args []string) error {
 		sm.SetParam(pName, pVal)
 	}
 
+	// Validate --changed-action: the named action must exist in the spec.
+	if changedAction != "" && !sm.HasAction(changedAction) {
+		return fmt.Errorf("--changed-action: action %q not found in spec (known actions: %s)",
+			changedAction, strings.Join(sm.ActionNames(), ", "))
+	}
+
 	// --param-range: sweep over parameter values and verify each.
 	if len(paramRanges) > 0 {
 		return sweepParamRanges(sm, file, allFiles, paramRanges, maxStates, maxDepth, verbose)
@@ -1265,6 +1277,16 @@ func runVerify(args []string) error {
 	// Set up temporal verification callback for incremental checking
 	constraintModel := sm.GetConstraintModel()
 	temporalProps := constraintModel.GetTemporalProperties()
+
+	// Warn when POR is combined with temporal properties: POR is an ample-set
+	// heuristic validated only for safety invariants. Liveness verdicts under
+	// POR may be unsound because cycle-closing is not guaranteed.
+	if partialOrderReduction && len(temporalProps) > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: --por is an ample-set heuristic not formally validated for liveness properties.\n")
+		fmt.Fprintf(os.Stderr, "  Temporal property verdicts under --por may be unsound. Consider using full BFS for liveness.\n")
+		fmt.Fprintf(os.Stderr, "  Run with --por-validate to compare POR results against full BFS.\n")
+	}
+
 	if len(temporalProps) > 0 {
 		hasher := explore.NewStateHasher()
 		temporalVerifier := explore.NewTemporalVerifier(hasher, file)
@@ -1342,11 +1364,23 @@ func runVerify(args []string) error {
 		fmt.Fprintf(os.Stderr, "This may run until the state space is fully explored or memory is exhausted.\n\n")
 	}
 
-	// Build the cache configuration key from params + exploration limits.
+	// Build the cache configuration key from params + exploration limits + imported file hashes.
+	// Imported file hashes ensure the cache is invalidated when any dependency changes.
+	importedHashes := make(map[string]string)
+	if hasImports && loader != nil {
+		for _, mod := range loader.GetAllModules() {
+			if mod.FilePath != "" && mod.FilePath != filename {
+				if importContent, readErr := os.ReadFile(mod.FilePath); readErr == nil {
+					importedHashes[mod.FilePath] = explore.HashSpec(importContent)
+				}
+			}
+		}
+	}
 	cacheCfg := explore.CacheConfig{
-		Params:    params,
-		MaxStates: maxStates,
-		MaxDepth:  maxDepth,
+		Params:             params,
+		MaxStates:          maxStates,
+		MaxDepth:           maxDepth,
+		ImportedFileHashes: importedHashes,
 	}
 
 	// Try to restore from cache when --use-cache is set and spec+config unchanged.
@@ -1387,10 +1421,32 @@ func runVerify(args []string) error {
 		}
 	}
 
+	// --por-validate: cross-check POR result against full BFS and report discrepancies.
+	if porValidate {
+		fmt.Printf("Running POR cross-validation (BFS vs POR)...\n")
+		report, valErr := explore.CrossValidatePOR(sm, file, allFiles, maxStates, maxDepth)
+		if valErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: POR validation failed: %v\n", valErr)
+		} else {
+			fmt.Println(explore.FormatPORReport(report))
+		}
+	}
+
+	// --verify-incremental: compare incremental result against a fresh BFS.
+	if verifyIncremental && incremental && changedAction != "" {
+		fmt.Printf("Running incremental cross-validation (incremental vs fresh BFS)...\n")
+		incrReport, incrErr := explore.CrossValidateIncremental(result, sm, maxStates, maxDepth)
+		if incrErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: incremental validation failed: %v\n", incrErr)
+		} else {
+			fmt.Println(explore.FormatIncrementalReport(incrReport))
+		}
+	}
+
 	// Report results
 	hasViolations := len(result.Violations) > 0
 	temporalViolations := []*explore.TemporalVerificationResult{}
-	
+
 	// Final verification of temporal properties (only if not already checked incrementally)
 	// Incremental verification during exploration already checks and reports violations,
 	// but we do a final check to catch any violations that might have been missed
