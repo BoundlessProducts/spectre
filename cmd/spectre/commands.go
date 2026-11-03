@@ -1667,27 +1667,24 @@ func runVerify(args []string) error {
 
 	if hasViolations {
 		fmt.Printf("Violations:\n")
-		
-		// Report invariant violations
+
+		dispOpts := diagnose.DisplayOptions{
+			Indent:           "  ",
+			ShowReplayScript: true,
+			SpecFile:         filename,
+		}
+
+		// Report invariant violations with rich state-diff display.
 		violationNum := 1
 		for _, violation := range result.Violations {
-			fmt.Printf("%d. Invariant: %s\n", violationNum, violation.Description)
-			if len(violation.Path) > 0 {
-				fmt.Printf("   Path: ")
-				actions := make([]string, 0, len(violation.Path))
-				for _, transition := range violation.Path {
-					if transition.Action != "" {
-						actions = append(actions, transition.Action)
-					}
-				}
-				fmt.Printf("%s\n", strings.Join(actions, " → "))
-			}
+			fmt.Printf("\n%d. ", violationNum)
+			diagnose.FormatViolation(violation, dispOpts, os.Stdout)
 			violationNum++
 		}
-		
-		// Report temporal property violations
+
+		// Report temporal property violations.
 		for _, violation := range temporalViolations {
-			fmt.Printf("%d. Temporal Property (%s): %s\n", violationNum, violation.PropertyName, violation.Violation.Description)
+			fmt.Printf("\n%d. Temporal Property (%s): %s\n", violationNum, violation.PropertyName, violation.Violation.Description)
 			if violation.Violation.Trace != nil && violation.Violation.Trace.Length() > 0 {
 				fmt.Printf("   Counterexample: ")
 				actions := make([]string, 0, violation.Violation.Trace.Length())
