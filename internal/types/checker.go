@@ -19,11 +19,43 @@ func (e *TypeError) Error() string {
 	return e.Message
 }
 
+// ExprContext classifies the semantic context in which an expression appears,
+// so the checker can enforce language-level restrictions.
+type ExprContext int
+
+const (
+	// CtxUnknown is the default zero value; no additional context checks are applied.
+	CtxUnknown ExprContext = iota
+	// CtxPure is a pure function body: state-variable reads and primed writes are forbidden.
+	CtxPure
+	// CtxStateRead is an invariant, temporal property, or action guard: state reads are
+	// allowed but primed (next-state) writes are not.
+	CtxStateRead
+	// CtxStateUpdate is an action body (assignments and ensure conditions): both state
+	// reads and primed writes are allowed.
+	CtxStateUpdate
+)
+
+func (ctx ExprContext) String() string {
+	switch ctx {
+	case CtxPure:
+		return "pure function"
+	case CtxStateRead:
+		return "invariant/temporal/guard"
+	case CtxStateUpdate:
+		return "action body"
+	default:
+		return "unknown"
+	}
+}
+
 // Checker performs type checking on AST nodes
 type Checker struct {
-	env    *Environment
-	errors []*TypeError
-	modules map[string]*ast.ModuleDecl // Module name -> Module declaration (for module-qualified access)
+	env       *Environment
+	errors    []*TypeError
+	modules   map[string]*ast.ModuleDecl // Module name -> Module declaration (for module-qualified access)
+	stateVars map[string]bool            // Set of state-variable names (for purity checking)
+	exprCtx   ExprContext                // Current expression context
 }
 
 // NewChecker creates a new type checker with the given environment
@@ -38,6 +70,40 @@ func NewChecker(env *Environment) *Checker {
 // SetModules sets the modules map for module-qualified name resolution
 func (c *Checker) SetModules(modules map[string]*ast.ModuleDecl) {
 	c.modules = modules
+}
+
+// SetStateVariables registers the set of state-variable names so the checker
+// can reject state reads in pure-function contexts.
+func (c *Checker) SetStateVariables(vars map[string]bool) {
+	c.stateVars = vars
+}
+
+// SetContext sets the expression context for subsequent CheckExpression calls.
+func (c *Checker) SetContext(ctx ExprContext) {
+	c.exprCtx = ctx
+}
+
+// CheckExpressionInContext type-checks expr in the given semantic context and
+// returns its type.  It restores the previous context after the call.
+func (c *Checker) CheckExpressionInContext(expr ast.Expr, ctx ExprContext) Type {
+	prev := c.exprCtx
+	c.exprCtx = ctx
+	t := c.CheckExpression(expr)
+	c.exprCtx = prev
+	return t
+}
+
+// childChecker returns a new checker that shares this checker's error list,
+// modules map, state-variable set, and current expression context but uses
+// the supplied environment.  Use this when opening a new lexical scope.
+func (c *Checker) childChecker(env *Environment) *Checker {
+	return &Checker{
+		env:       env,
+		errors:    c.errors,
+		modules:   c.modules,
+		stateVars: c.stateVars,
+		exprCtx:   c.exprCtx,
+	}
 }
 
 // Errors returns all type errors found during checking
@@ -241,8 +307,21 @@ func (c *Checker) checkLValue(expr ast.Expr) Type {
 func (c *Checker) checkIdent(ident *ast.Ident) Type {
 	name := ident.Name
 
+	// Primed variables (x') represent next-state writes and are only meaningful
+	// inside action body assignments and ensure conditions.
+	if ident.Prime && c.exprCtx != CtxStateUpdate && c.exprCtx != CtxUnknown {
+		c.addError(ident.Pos(),
+			"primed variable '%s' may only appear in an action body or ensure condition, not in %s",
+			name, c.exprCtx)
+	}
+
 	// Check if it's a variable
 	if typ, found := c.env.LookupVariable(name); found {
+		// State-variable reads are forbidden in pure-function bodies.
+		if c.exprCtx == CtxPure && c.stateVars[name] {
+			c.addError(ident.Pos(),
+				"state variable '%s' cannot be read in a pure function body", name)
+		}
 		// Resolve any named types in the type (e.g., Set<User> -> Set<Record{...}>)
 		// Multiple passes to ensure deep resolution
 		resolved := typ
@@ -485,8 +564,8 @@ func (c *Checker) checkCallExpr(expr *ast.CallExpr) Type {
 		// Infer lambda parameter types from method context before checking arguments
 		inferredLambdaType := c.inferLambdaTypeFromMethod(receiverType, funcName, lambda, nil)
 		if inferredLambdaType != nil {
-			// Check the lambda with inferred types
-			lambdaChecker := &Checker{env: c.env, errors: []*TypeError{}}
+			// Check the lambda with inferred types (fresh error slice to isolate and merge)
+			lambdaChecker := &Checker{env: c.env, errors: []*TypeError{}, modules: c.modules, stateVars: c.stateVars, exprCtx: c.exprCtx}
 			recheckedLambdaType := lambdaChecker.checkLambdaExprWithExpected(lambda, inferredLambdaType)
 			// Merge errors from lambda re-checking
 			c.errors = append(c.errors, lambdaChecker.errors...)
@@ -705,17 +784,16 @@ func (c *Checker) checkIfExpr(expr *ast.IfExpr) Type {
 
 	// Create a new scope for the then branch
 	thenEnv := NewChildEnvironment(c.env)
-	thenChecker := &Checker{env: thenEnv, errors: c.errors}
+	thenChecker := c.childChecker(thenEnv)
 	thenType := thenChecker.CheckExpression(expr.Then)
 
 	// Create a new scope for the else branch
 	elseEnv := NewChildEnvironment(c.env)
-	elseChecker := &Checker{env: elseEnv, errors: c.errors}
+	elseChecker := c.childChecker(elseEnv)
 	elseType := elseChecker.CheckExpression(expr.Else)
 
-	// Merge errors
-	c.errors = thenChecker.errors
-	c.errors = append(c.errors, elseChecker.errors...)
+	// Merge errors (child checkers share the same slice, so we just sync the pointer)
+	c.errors = elseChecker.errors
 
 	if thenType == nil || elseType == nil {
 		return nil
@@ -749,10 +827,10 @@ func (c *Checker) checkLetExpr(expr *ast.LetExpr) Type {
 	letEnv.DeclareVariable(expr.Name, valueType)
 
 	// Check the body in the new scope
-	letChecker := &Checker{env: letEnv, errors: c.errors}
+	letChecker := c.childChecker(letEnv)
 	bodyType := letChecker.CheckExpression(expr.Body)
 
-	// Merge errors
+	// Merge errors (child checker shares our slice)
 	c.errors = letChecker.errors
 
 	return bodyType
@@ -803,10 +881,10 @@ func (c *Checker) checkLambdaExprWithExpected(expr *ast.LambdaExpr, expectedType
 	}
 	
 	// Check lambda body in the new environment
-	lambdaChecker := &Checker{env: lambdaEnv, errors: c.errors}
+	lambdaChecker := c.childChecker(lambdaEnv)
 	bodyType := lambdaChecker.CheckExpression(expr.Body)
-	
-	// Merge errors
+
+	// Merge errors (child checker shares our slice)
 	c.errors = lambdaChecker.errors
 	
 	if bodyType == nil {

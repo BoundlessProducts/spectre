@@ -554,14 +554,36 @@ func (e *Evaluator) evalCallExpr(expr *ast.CallExpr) (state.Value, error) {
 				// Static method call on collection type
 				return e.evalStaticMethodCall(ident.Name, fun.Sel, expr.Args)
 			}
+
+			// Check if it's a module-qualified function call (e.g. Math.double(x)).
+			// Module functions are registered under the key "ModuleName.FuncName".
+			qualifiedName := ident.Name + "." + fun.Sel
+			if fnDef, exists := e.env.GetFunction(qualifiedName); exists {
+				args := make([]state.Value, len(expr.Args))
+				for i, arg := range expr.Args {
+					val, err := e.Eval(arg)
+					if err != nil {
+						return nil, fmt.Errorf("error evaluating argument %d: %w", i, err)
+					}
+					args[i] = val
+				}
+				if len(args) != len(fnDef.Params) {
+					return nil, fmt.Errorf("function %s expects %d arguments, got %d", qualifiedName, len(fnDef.Params), len(args))
+				}
+				funcEnv := e.env.EnterScope()
+				for i, param := range fnDef.Params {
+					funcEnv.SetVariable(param.Name, args[i])
+				}
+				return NewEvaluator(funcEnv).evalFunctionBody(fnDef.Body)
+			}
 		}
-		
+
 		// Instance method call (e.g., users.filter(...))
 		obj, err := e.Eval(fun.X)
 		if err != nil {
 			return nil, fmt.Errorf("error evaluating object in method call: %w", err)
 		}
-		
+
 		// Evaluate arguments
 		args := make([]state.Value, len(expr.Args))
 		for i, arg := range expr.Args {
@@ -571,7 +593,7 @@ func (e *Evaluator) evalCallExpr(expr *ast.CallExpr) (state.Value, error) {
 			}
 			args[i] = val
 		}
-		
+
 		// Evaluate method call with the object
 		return e.evalMethodCall(obj, fun.Sel, args)
 	default:

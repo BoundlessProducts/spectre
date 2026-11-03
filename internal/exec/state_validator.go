@@ -47,12 +47,13 @@ func (sv *StateValidator) ValidateState(s *state.State) ([]*ValidationError, err
 
 	// Create environment with state variables
 	env := eval.NewEnvironment()
-	// Register enum types and constants from all files
+	// Register enum types, constants, and functions from all files
 	allFiles := sv.getAllFiles()
 	for _, f := range allFiles {
 		eval.RegisterEnumTypes(env, f)
 		eval.RegisterConstants(env, f, allFiles...)
 	}
+	eval.RegisterFunctions(env, sv.file, sv.additionalFiles...)
 	for varName, varValue := range s.Variables {
 		env.SetVariable(varName, varValue)
 	}
@@ -105,12 +106,13 @@ func (sv *StateValidator) ValidatePostconditions(actionName string, currentState
 
 	// Create environment with both current and next state variables
 	env := eval.NewEnvironment()
-	// Register enum types and constants from all files
+	// Register enum types, constants, and functions from all files
 	allFiles := sv.getAllFiles()
 	for _, f := range allFiles {
 		eval.RegisterEnumTypes(env, f)
 		eval.RegisterConstants(env, f, allFiles...)
 	}
+	eval.RegisterFunctions(env, sv.file, sv.additionalFiles...)
 
 	// Add current state variables (unprimed)
 	for varName, varValue := range currentState.Variables {

@@ -58,12 +58,13 @@ func (ae *ActionExecutor) ExecuteAction(actionName string, currentState *state.S
 
 	// Create an environment with current state values and action parameters
 	env := eval.NewEnvironment()
-	// Register enum types and constants from all files
+	// Register enum types, constants, and functions (including module-qualified) from all files
 	allFiles := ae.getAllFiles()
 	for _, f := range allFiles {
 		eval.RegisterEnumTypes(env, f)
 		eval.RegisterConstants(env, f, allFiles...)
 	}
+	eval.RegisterFunctions(env, ae.file, ae.additionalFiles...)
 
 	// Add current state variables to environment
 	for varName, varValue := range currentState.Variables {
@@ -173,12 +174,13 @@ func (ae *ActionExecutor) CanExecute(actionName string, currentState *state.Stat
 
 	// Create environment with current state values
 	env := eval.NewEnvironment()
-	// Register enum types and constants from all files
+	// Register enum types, constants, and functions from all files
 	allFiles := ae.getAllFiles()
 	for _, f := range allFiles {
 		eval.RegisterEnumTypes(env, f)
 		eval.RegisterConstants(env, f, allFiles...)
 	}
+	eval.RegisterFunctions(env, ae.file, ae.additionalFiles...)
 	for varName, varValue := range currentState.Variables {
 		env.SetVariable(varName, varValue)
 	}

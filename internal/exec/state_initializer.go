@@ -67,12 +67,13 @@ func (si *StateInitializer) generateDeterministicInitialState() ([]*state.State,
 
 	// Create an environment that can access state variables
 	env := eval.NewEnvironment()
-	// Register enum types and constants from all files
+	// Register enum types, constants, and functions from all files
 	allFiles := si.getAllFiles()
 	for _, f := range allFiles {
 		eval.RegisterEnumTypes(env, f)
 		eval.RegisterConstants(env, f, allFiles...)
 	}
+	eval.RegisterFunctions(env, si.file, si.additionalFiles...)
 
 	// Evaluate each assignment in the init block
 	for _, stmt := range initState.Body.Statements {

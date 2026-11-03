@@ -429,13 +429,22 @@ func runTypecheck(args []string) error {
 		processDecl(decl)
 	}
 
+	// Collect state-variable names for purity / context checking.
+	stateVarSet := make(map[string]bool)
+	for _, decl := range file.Decls {
+		if varDecl, ok := decl.(*ast.VariableDecl); ok {
+			stateVarSet[varDecl.Name] = true
+		}
+	}
+
 	// Type check
 	checker := types.NewChecker(typeEnv)
-	
+	checker.SetStateVariables(stateVarSet)
+
 	// Populate modules map for module-qualified name resolution
 	// This includes both imported modules (from loader) and same-file modules
 	modulesMap := make(map[string]*ast.ModuleDecl)
-	
+
 	// Add modules from loader if we have imports
 	if hasImports && loader != nil {
 		allModules := loader.GetAllModules()
@@ -445,16 +454,16 @@ func runTypecheck(args []string) error {
 			}
 		}
 	}
-	
+
 	// Also add modules from the current file (same-file modules)
 	for _, decl := range file.Decls {
 		if moduleDecl, ok := decl.(*ast.ModuleDecl); ok {
 			modulesMap[moduleDecl.Name] = moduleDecl
 		}
 	}
-	
+
 	checker.SetModules(modulesMap)
-	
+
 	var typeCheckDecl func(ast.Decl)
 	typeCheckDecl = func(d ast.Decl) {
 		switch decl := d.(type) {
@@ -470,6 +479,7 @@ func runTypecheck(args []string) error {
 				}
 			}
 			actionChecker := types.NewChecker(actionEnv)
+			actionChecker.SetStateVariables(stateVarSet)
 			// Copy modules map to action checker so it can resolve module-qualified names
 			// Build the modules map (same logic as for main checker)
 			actionModulesMap := make(map[string]*ast.ModuleDecl)
@@ -488,26 +498,55 @@ func runTypecheck(args []string) error {
 				}
 			}
 			actionChecker.SetModules(actionModulesMap)
-			
+
 			if decl.Body != nil {
 				for _, stmt := range decl.Body.Statements {
 					switch s := stmt.(type) {
 					case *ast.AssignStmt:
+						// CheckAssignment checks both RHS (via CheckExpression) and LHS;
+						// set CtxStateUpdate so primed identifiers in both are accepted.
+						actionChecker.SetContext(types.CtxStateUpdate)
 						actionChecker.CheckAssignment(s)
+						actionChecker.SetContext(types.CtxUnknown)
 					case *ast.RequireStmt:
-						actionChecker.CheckExpression(s.Condition)
+						actionChecker.CheckExpressionInContext(s.Condition, types.CtxStateRead)
 					case *ast.EnsureStmt:
-						actionChecker.CheckExpression(s.Condition)
+						actionChecker.CheckExpressionInContext(s.Condition, types.CtxStateUpdate)
 					}
 				}
 			}
 			// Merge errors from action checker
 			checker.MergeErrors(actionChecker)
+		case *ast.FunctionDecl:
+			if decl.Body != nil {
+				funcEnv := types.NewChildEnvironment(typeEnv)
+				for _, param := range decl.Parameters {
+					paramType, err := types.FromASTWithResolver(param.Type, func(name string) (types.Type, bool) {
+						return typeEnv.LookupType(name)
+					})
+					if err == nil {
+						funcEnv.DeclareVariable(param.Name, paramType)
+					}
+				}
+				funcChecker := types.NewChecker(funcEnv)
+				funcChecker.SetStateVariables(stateVarSet)
+				funcChecker.SetModules(modulesMap)
+				for _, stmt := range decl.Body.Statements {
+					switch s := stmt.(type) {
+					case *ast.ReturnStmt:
+						funcChecker.CheckExpressionInContext(s.Value, types.CtxPure)
+					case *ast.ExprStmt:
+						funcChecker.CheckExpressionInContext(s.Expr, types.CtxPure)
+					case *ast.AssignStmt:
+						funcChecker.CheckExpressionInContext(s.Right, types.CtxPure)
+					}
+				}
+				checker.MergeErrors(funcChecker)
+			}
 		case *ast.InvariantDecl:
-			checker.CheckExpression(decl.Condition)
+			checker.CheckExpressionInContext(decl.Condition, types.CtxStateRead)
 		case *ast.TemporalDecl:
-			// Type-check temporal expressions - they contain expressions that reference state variables
-			checker.CheckExpression(decl.Expression)
+			checker.CheckExpressionInContext(decl.Expression, types.CtxStateRead)
 		case *ast.ModuleDecl:
 			// Type-check declarations inside modules
 			for _, moduleDecl := range decl.Decls {
@@ -515,7 +554,7 @@ func runTypecheck(args []string) error {
 			}
 		}
 	}
-	
+
 	for _, decl := range file.Decls {
 		typeCheckDecl(decl)
 	}
@@ -1100,13 +1139,22 @@ func runVerify(args []string) error {
 		processDecl(decl)
 	}
 
+	// Collect state-variable names for purity / context checking.
+	stateVarSet := make(map[string]bool)
+	for _, decl := range file.Decls {
+		if varDecl, ok := decl.(*ast.VariableDecl); ok {
+			stateVarSet[varDecl.Name] = true
+		}
+	}
+
 	// Type check
 	checker := types.NewChecker(typeEnv)
-	
+	checker.SetStateVariables(stateVarSet)
+
 	// Populate modules map for module-qualified name resolution
 	// This includes both imported modules (from loader) and same-file modules
 	modulesMap := make(map[string]*ast.ModuleDecl)
-	
+
 	// Add modules from loader if we have imports
 	if hasImports && loader != nil {
 		allModules := loader.GetAllModules()
@@ -1116,16 +1164,16 @@ func runVerify(args []string) error {
 			}
 		}
 	}
-	
+
 	// Also add modules from the current file (same-file modules)
 	for _, decl := range file.Decls {
 		if moduleDecl, ok := decl.(*ast.ModuleDecl); ok {
 			modulesMap[moduleDecl.Name] = moduleDecl
 		}
 	}
-	
+
 	checker.SetModules(modulesMap)
-	
+
 	var typeCheckDecl func(ast.Decl)
 	typeCheckDecl = func(d ast.Decl) {
 		switch decl := d.(type) {
@@ -1141,6 +1189,7 @@ func runVerify(args []string) error {
 				}
 			}
 			actionChecker := types.NewChecker(actionEnv)
+			actionChecker.SetStateVariables(stateVarSet)
 			// Copy modules map to action checker so it can resolve module-qualified names
 			// Build the modules map (same logic as for main checker)
 			actionModulesMap := make(map[string]*ast.ModuleDecl)
@@ -1159,26 +1208,55 @@ func runVerify(args []string) error {
 				}
 			}
 			actionChecker.SetModules(actionModulesMap)
-			
+
 			if decl.Body != nil {
 				for _, stmt := range decl.Body.Statements {
 					switch s := stmt.(type) {
 					case *ast.AssignStmt:
+						// CheckAssignment checks both RHS (via CheckExpression) and LHS;
+						// set CtxStateUpdate so primed identifiers in both are accepted.
+						actionChecker.SetContext(types.CtxStateUpdate)
 						actionChecker.CheckAssignment(s)
+						actionChecker.SetContext(types.CtxUnknown)
 					case *ast.RequireStmt:
-						actionChecker.CheckExpression(s.Condition)
+						actionChecker.CheckExpressionInContext(s.Condition, types.CtxStateRead)
 					case *ast.EnsureStmt:
-						actionChecker.CheckExpression(s.Condition)
+						actionChecker.CheckExpressionInContext(s.Condition, types.CtxStateUpdate)
 					}
 				}
 			}
 			// Merge errors from action checker
 			checker.MergeErrors(actionChecker)
+		case *ast.FunctionDecl:
+			if decl.Body != nil {
+				funcEnv := types.NewChildEnvironment(typeEnv)
+				for _, param := range decl.Parameters {
+					paramType, err := types.FromASTWithResolver(param.Type, func(name string) (types.Type, bool) {
+						return typeEnv.LookupType(name)
+					})
+					if err == nil {
+						funcEnv.DeclareVariable(param.Name, paramType)
+					}
+				}
+				funcChecker := types.NewChecker(funcEnv)
+				funcChecker.SetStateVariables(stateVarSet)
+				funcChecker.SetModules(modulesMap)
+				for _, stmt := range decl.Body.Statements {
+					switch s := stmt.(type) {
+					case *ast.ReturnStmt:
+						funcChecker.CheckExpressionInContext(s.Value, types.CtxPure)
+					case *ast.ExprStmt:
+						funcChecker.CheckExpressionInContext(s.Expr, types.CtxPure)
+					case *ast.AssignStmt:
+						funcChecker.CheckExpressionInContext(s.Right, types.CtxPure)
+					}
+				}
+				checker.MergeErrors(funcChecker)
+			}
 		case *ast.InvariantDecl:
-			checker.CheckExpression(decl.Condition)
+			checker.CheckExpressionInContext(decl.Condition, types.CtxStateRead)
 		case *ast.TemporalDecl:
-			// Type-check temporal expressions - they contain expressions that reference state variables
-			checker.CheckExpression(decl.Expression)
+			checker.CheckExpressionInContext(decl.Expression, types.CtxStateRead)
 		case *ast.ModuleDecl:
 			// Type-check declarations inside modules
 			for _, moduleDecl := range decl.Decls {
@@ -1186,7 +1264,7 @@ func runVerify(args []string) error {
 			}
 		}
 	}
-	
+
 	for _, decl := range file.Decls {
 		typeCheckDecl(decl)
 	}
