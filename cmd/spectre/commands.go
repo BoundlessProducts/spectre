@@ -12,8 +12,9 @@ import (
 
 	"github.com/BoundlessProducts/spectre/internal/codegen"
 	"github.com/BoundlessProducts/spectre/internal/diagnose"
-	"github.com/BoundlessProducts/spectre/internal/mine"
 	"github.com/BoundlessProducts/spectre/internal/errors"
+	"github.com/BoundlessProducts/spectre/internal/mine"
+	"github.com/BoundlessProducts/spectre/internal/repair"
 	"github.com/BoundlessProducts/spectre/internal/exec"
 	"github.com/BoundlessProducts/spectre/internal/explore"
 	"github.com/BoundlessProducts/spectre/internal/itf"
@@ -739,6 +740,7 @@ func runVerify(args []string) error {
 	incremental := false     // --incremental: re-verify only the changed action (requires --changed-action)
 	changedAction := ""      // --changed-action NAME: action whose semantics changed
 	checkRepairMinimal := false    // --check-repair-minimal: verify guards don't block valid traces
+	suggestRepairs := false        // --suggest-repairs: emit CANDIDATE repairs for each violation
 	propertyGuided := false        // --property-guided: best-first BFS by linear predicate distance
 	partialOrderReduction := false // --por: partial-order reduction (skip redundant interleavings)
 	porValidate := false           // --por-validate: cross-check BFS vs POR and report discrepancies
@@ -836,6 +838,8 @@ func runVerify(args []string) error {
 			verifyIncremental = true
 		case "--check-repair-minimal":
 			checkRepairMinimal = true
+		case "--suggest-repairs":
+			suggestRepairs = true
 		case "--param-range":
 			if i+1 < len(args) {
 				kv := args[i+1]
@@ -1813,6 +1817,22 @@ func runVerify(args []string) error {
 				}
 			}
 			printStutterAnalysis(result.Stuttering, file, sm)
+		}
+
+		if suggestRepairs && len(result.Violations) > 0 {
+			fmt.Printf("\nRepair candidates (CANDIDATE — review before applying):\n")
+			for i, v := range result.Violations {
+				candidates := repair.SuggestRepairs(v, file)
+				if len(candidates) == 0 {
+					continue
+				}
+				fmt.Printf("  Violation %d (%s):\n", i+1, v.Invariant)
+				for j, c := range candidates {
+					rv := repair.ValidateRepair(&c, string(content), result.StatesExplored, maxStates)
+					fmt.Printf("    [%d] %s\n", j+1, c.String())
+					fmt.Printf("        Validation: %s\n", rv.Note)
+				}
+			}
 		}
 
 		return fmt.Errorf("verification failed with %d violation(s)", len(result.Violations)+len(temporalViolations))
