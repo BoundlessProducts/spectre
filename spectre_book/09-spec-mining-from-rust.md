@@ -147,6 +147,64 @@ invariant within_cap {
 
 ---
 
+## Extraction Omissions and `--show-omissions`
+
+The miner tracks every Rust construct it cannot fully translate and records it as an **extraction omission**.  Omissions do not abort mining — the miner always produces a runnable spec — but they mark places where the generated spec is an approximation of the Rust source.
+
+Run `--show-omissions` to see the full list printed to stderr after mining:
+
+```bash
+spectre mine --lang rust src/state_machine.rs --show-omissions
+```
+
+Example output:
+
+```
+Extraction omissions (3):
+  TUPLE_VARIANT in State: variant Running(task_id: u32) — data dropped, unit variant kept
+  OVERFLOW_OP in process: wrapping_add — saturating/wrapping arithmetic abstracted
+  SKIPPED_METHOD in new: constructor/utility method skipped (not translated to action)
+```
+
+### Omission Kinds
+
+| Kind | What it means |
+|------|--------------|
+| `UNSUPPORTED_TYPE` | Rust type has no direct Spectre equivalent; field mapped to `int` |
+| `SKIPPED_METHOD` | `new`, `default`, `clone`, `fmt`, `drop` — skipped, not an action |
+| `TUPLE_VARIANT` | Enum variant with data (`Name(T)`) — data dropped, variant name kept |
+| `OVERFLOW_OP` | `checked_`, `wrapping_`, `saturating_` arithmetic — abstracted |
+| `PANIC_PATTERN` | `panic!`, `unwrap()`, `expect()` — dropped |
+| `RESULT_RETURN` | `Result<T,E>` return / `?` operator — error path abstracted |
+| `COMPLEX_ASSIGN` | Assignment RHS too complex to translate directly |
+| `UNSUPPORTED_PATTERN` | Other unrecognised Rust pattern |
+
+### Interpreting Omissions
+
+**`SKIPPED_METHOD`** is almost always benign — constructors (`new`) set initial values, not transitions.  The mined `init` block captures those instead.
+
+**`TUPLE_VARIANT` and `OVERFLOW_OP`** require the most attention.  If your invariants depend on the dropped data or on overflow behaviour, you need to manually model those cases:
+
+```spectre
+// Original Rust: enum State { Idle, Running { task_id: u32 }, Done }
+// Mined spec drops task_id — add it back manually if needed:
+var task_id: int
+```
+
+**`RESULT_RETURN`** means the method has error paths that the miner abstracts into `require` guards (the happy path only).  The generated spec verifies that the non-error path is safe; it does not verify the error paths themselves.
+
+### Omission Count in Mine Summary
+
+The mine command prints a summary line alongside field/action counts:
+
+```
+Mined: 3 fields, 2 enums, 4 actions, 3 omissions (run --show-omissions for details)
+```
+
+A zero-omission result means the miner was able to translate the entire supported subset without any approximation.
+
+---
+
 ## Drift Detection with `spectre sync`
 
 Once the spec exists, the code and spec can diverge silently as the codebase evolves. `spectre sync` compares the current Rust source against the existing spec using **SMT-backed equivalence checking** (Z3, QF_LIA theory):

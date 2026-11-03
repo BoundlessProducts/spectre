@@ -212,6 +212,63 @@ For `bank-account-parameterized.spec` with 2 invariants and 1 temporal property,
 
 ---
 
+## Validating Monitor Traces with `validate-monitor`
+
+The `validate-monitor` command verifies that every violation found by BFS is **internally consistent**: the recorded trace genuinely leads to a state that fails the target invariant, with no intermediate invariant violations that would make the trace unreachable.
+
+```bash
+spectre validate-monitor examples/bank-account-violation.spec
+```
+
+Example output:
+
+```
+Validated 2 violation trace(s):
+  [1] action 'withdraw' → invariant 'non_negative': consistent (3 steps, final violated)
+  [2] action 'deposit' → invariant 'balance_cap': consistent (2 steps, final violated)
+
+2/2 consistent.
+```
+
+### Why Validation Matters
+
+The BFS explorer records the **pre-violation state** for transition-level violations — the state just before the offending action executes.  The validate-monitor command replays the full path at the executor level (bypassing invariant guards) and confirms that:
+
+1. No intermediate step violates a *different* invariant.
+2. The final action, when applied, produces a state that fails the target invariant.
+
+If a trace is **not** consistent, it indicates a bug in the violation-recording logic — the trace cannot be replayed to reproduce the reported failure.
+
+### Flags
+
+```bash
+spectre validate-monitor account.spec --max-states 20000 --max-depth 50
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--max-states` | 10000 | BFS state limit |
+| `--max-depth` | 100 | BFS depth limit |
+
+### Integration with `generate-monitor`
+
+Run `validate-monitor` after any spec change to confirm that the violations your runtime monitor would detect are the same ones the model checker found:
+
+```bash
+# 1. Verify the spec
+spectre verify account.spec
+
+# 2. Confirm all violation traces are self-consistent
+spectre validate-monitor account.spec
+
+# 3. Generate the monitor
+spectre generate-monitor --lang rust account.spec -o src/monitor.rs
+```
+
+A passing `validate-monitor` result means the monitor's invariant checks are backed by genuinely reachable counterexample traces.
+
+---
+
 ## Spec Consistency Guarantee
 
 Because the runtime monitor is generated from the **same spec file** used for model checking, it is guaranteed to be consistent with your verification results.  There is no separate monitoring-rule language to keep in sync.

@@ -111,6 +111,49 @@ impl StepHandler for MySystem {
 
 ---
 
+## CI-Ready Driver Generation with `--ci`
+
+The `--ci` flag extends `generate-driver` with two additional files that wire the generated driver into a standard Rust CI pipeline.
+
+```bash
+spectre generate-driver --lang rust account.spec --ci -o src/driver.rs
+```
+
+This produces three files:
+
+| File | Purpose |
+|------|---------|
+| `src/driver.rs` | The Rust test driver (as usual) |
+| `src/driver.cargo.toml` | `[dev-dependencies]` snippet to paste into your `Cargo.toml` |
+| `src/driver.ci.yml` | GitHub Actions workflow that runs the driver on every push |
+
+The Cargo snippet adds `spectre-connect` as a dev-dependency — the small Rust crate that reads ITF trace files and drives the replayer:
+
+```toml
+# src/driver.cargo.toml — paste into your Cargo.toml [dev-dependencies]
+[dev-dependencies]
+spectre-connect = { git = "https://github.com/BoundlessProducts/spectre-connect" }
+```
+
+The CI workflow checks out your repo, installs the Rust toolchain, and runs `cargo test`:
+
+```yaml
+# src/driver.ci.yml
+name: Spectre conformance
+on: [push, pull_request]
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rust-toolchain@stable
+      - run: cargo test --test driver
+```
+
+This makes the generated driver a first-class CI gate with no extra configuration.
+
+---
+
 ## Filling In the Driver
 
 Replace the `todo!()` stubs with calls to your real implementation:
@@ -202,6 +245,43 @@ cargo run -- violation.itf.json
 ```
 
 Use these as regression tests that confirm your fix resolves the violation.
+
+---
+
+## Repair Suggestions with `--suggest-repairs`
+
+When `spectre verify` finds an invariant violation, the `--suggest-repairs` flag analyses the violated invariant and the triggering action, then prints labelled **CANDIDATE** repairs — never applied automatically, always requiring human review.
+
+```bash
+spectre verify account.spec --suggest-repairs
+```
+
+Example output:
+
+```
+Repair candidates (CANDIDATE — review before applying):
+
+Violation 1: action 'withdraw' violates 'non_negative'
+  [1] CANDIDATE strengthen_require: add `require balance >= amount` to action withdraw
+      Validation: original violation fixed; no deadlock; reachability unchanged — SAFE
+  [2] CANDIDATE add_invariant_guard: add `when balance >= amount` to action withdraw
+      Validation: original violation fixed; deadlock at balance=0 — review required
+```
+
+Each candidate includes a **validation result** computed by re-running BFS on the patched spec:
+
+| Validation result | Meaning |
+|-------------------|---------|
+| `SAFE` | Violation fixed, no deadlock introduced, reachability ≥ 95% of original |
+| `review required` | Violation fixed but a deadlock or significant reachability drop was detected |
+| `did not fix` | The patch did not prevent the violation |
+
+### Confidence Levels
+
+- **Medium confidence** — tighter bound on a simple comparison (e.g., `x < N` → `x < N - 1`).  Stops the action one step earlier to prevent crossing the invariant boundary.
+- **Low confidence** — invariant-guard approach.  Adds a `when` clause that mirrors the violated invariant condition.  Reliable but can over-restrict (cause deadlocks).
+
+Repairs are always labelled `CANDIDATE` in the output.  They are never written to the spec file automatically.
 
 ---
 

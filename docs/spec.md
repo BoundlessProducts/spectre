@@ -1763,6 +1763,79 @@ In evaluation on bank-account, `property` mode achieved **52% boundary-state cov
 
 ---
 
+### Extraction Omissions (`spectre mine --show-omissions`)
+
+The miner records every Rust construct it cannot fully translate.  Pass `--show-omissions` to print the full list:
+
+```bash
+spectre mine --lang rust src/state_machine.rs --show-omissions
+```
+
+Omission kinds: `UNSUPPORTED_TYPE`, `SKIPPED_METHOD`, `TUPLE_VARIANT`, `OVERFLOW_OP`, `PANIC_PATTERN`, `RESULT_RETURN`, `COMPLEX_ASSIGN`, `UNSUPPORTED_PATTERN`.  See Chapter 9 for interpretation.
+
+---
+
+### Rust Extraction Coverage (`spectre eval-rust`)
+
+Evaluates one or more Rust source files for extraction completeness and prints a Markdown report:
+
+```bash
+spectre eval-rust --dir src/
+spectre eval-rust src/account.rs src/order.rs
+```
+
+Reports: fields/enums/methods extracted, omissions by kind, success fraction per file (fraction of methods with no body-level omissions), and aggregate totals.
+
+---
+
+### CI-Ready Driver Generation (`spectre generate-driver --ci`)
+
+The `--ci` flag emits a `{stem}.cargo.toml` dev-dependency snippet and a `{stem}.ci.yml` GitHub Actions workflow alongside the driver:
+
+```bash
+spectre generate-driver --lang rust account.spec --ci -o src/driver.rs
+```
+
+---
+
+### Repair Suggestions (`spectre verify --suggest-repairs`)
+
+When a violation is found, `--suggest-repairs` analyses the violated invariant and prints labelled **CANDIDATE** patches with BFS-validated safety assessments:
+
+```bash
+spectre verify account.spec --suggest-repairs
+```
+
+Candidates are never applied automatically.  Each is validated for: violation fixed, deadlock introduced, reachability change.
+
+---
+
+### Monitor Trace Validation (`spectre validate-monitor`)
+
+Replays every BFS violation trace through the executor to confirm each trace is internally consistent:
+
+```bash
+spectre validate-monitor account.spec --max-states 20000
+```
+
+A consistent trace means the recorded path genuinely leads to (or one step before) a state that fails the target invariant.
+
+---
+
+### Benchmarking (`spectre benchmark`)
+
+Runs BFS on spec files and prints a timing table (states explored, elapsed time, max depth):
+
+```bash
+spectre benchmark                        # scans benchmarks/ directory
+spectre benchmark --dir my-specs/
+spectre benchmark examples/raft.spec
+```
+
+Does not check invariants — measures raw exploration throughput.  Pass `--max-states` to cap exploration.
+
+---
+
 ## Notes
 
 - The prime notation (`'`) denotes the next state value
