@@ -1,4091 +1,2688 @@
-# Chapter 1: Getting Started
+# The Spectre Book
 
-This chapter covers installing Spectre and running your first specification.
-
----
-
-## Prerequisites
-
-| Dependency | Required for | Notes |
-|------------|-------------|-------|
-| **Go ≥ 1.24** | Core CLI — `verify`, `sync`, `simulate`, `generate-*` | Required |
-| **Z3 ≥ 4.8** | `spectre sync` (SMT equivalence checking) | Optional — only needed for drift detection |
-| **Rust stable** | `spectre mine --lang rust` (spec mining) | Optional — only needed for spec mining |
-| **Git** | Cloning the repository | Required |
-
-Z3 and Rust are only needed if you use `spectre sync` and `spectre mine --lang rust` respectively.
-All other commands (`verify`, `simulate`, `generate-monitor`, `generate-driver`) work with Go alone.
+**Spectre** — formal verification for Rust programs.
 
 ---
 
-## Installation — macOS
+## Table of contents
 
-### Step 1 — Install Go
+1. [Getting started](#chapter-1-getting-started)
+2. [Language overview](#chapter-2-language-overview)
+3. [Invariants and violations](#chapter-3-invariants-and-violations)
+4. [Temporal and fairness properties](#chapter-4-temporal-and-fairness-properties)
+5. [Fairness: WF and SF](#chapter-5-fairness-wf-and-sf)
+6. [Concurrent systems](#chapter-6-concurrent-systems)
+7. [Modules, parameters, and reuse](#chapter-7-modules-parameters-and-reuse)
+8. [Reading counterexamples and debugging](#chapter-8-reading-counterexamples-and-debugging)
+9. [Choosing a verification backend](#chapter-9-choosing-a-verification-backend)
+10. [Mining specs from Rust](#chapter-10-mining-specs-from-rust)
+11. [Drift detection and incremental re-verification](#chapter-11-drift-detection-and-incremental-re-verification)
+12. [Model-based testing](#chapter-12-model-based-testing)
+13. [Runtime monitoring](#chapter-13-runtime-monitoring)
+14. [Benchmarking and performance](#chapter-14-benchmarking-and-performance)
+15. [TLA+ and Apalache backend](#chapter-15-tla-and-apalache-backend)
+16. [Z3 bounded model checking](#chapter-16-z3-bounded-model-checking)
+
+---
+
+# Chapter 1: Getting started
+
+---
+
+## Install
 
 ```bash
-brew install go
-go version
-# Expected: go version go1.24.x darwin/arm64  (or amd64)
-```
-
-Or download the `.pkg` installer from [https://go.dev/dl/](https://go.dev/dl/).
-
-### Step 2 — Install Z3
-
-Required for `spectre sync`. Skip if you are not using drift detection.
-
-```bash
-brew install z3
-z3 --version
-```
-
-### Step 3 — Clone and build the CLI
-
-```bash
-git clone https://github.com/BoundlessProducts/spectre.git
+# macOS / Linux — build from source
+git clone https://github.com/BoundlessProducts/spectre
 cd spectre
 go build -o spectre ./cmd/spectre
-./spectre
+sudo mv spectre /usr/local/bin/
+
+spectre --version
+# spectre version 0.3.2
 ```
 
-### Step 4 — Build `spectre-mine-rs`
-
-Required for `spectre mine --lang rust`. Skip if you are not mining specs from Rust source.
-
-```bash
-# Install Rust if needed
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# Build the Rust AST miner (inside the repo)
-cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
-cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
-```
-
-The `spectre-mine-rs` binary must sit next to the `spectre` binary (or be on `PATH`).
-
-### Step 5 — (Optional) Install globally
-
-```bash
-go install ./cmd/spectre
-cp spectre-mine-rs "$(go env GOPATH)/bin/"
-
-# Add Go's bin to PATH if not already there
-export PATH="$PATH:$(go env GOPATH)/bin"
-# Persist: add the export line to ~/.zshrc or ~/.bash_profile
-```
-
-### Step 6 — Verify the installation
-
-```bash
-./spectre verify examples/counter.spec
-# Expected: Traversed N states. Found no violations.
-```
+No runtime dependencies, no Docker, no JVM needed for the default BFS backend.
 
 ---
 
-## Installation — Linux
+## Your first spec
 
-### Step 1 — Install Go
-
-**Debian / Ubuntu:**
-
-```bash
-wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
-sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-go version
-```
-
-> For ARM64 (Raspberry Pi, AWS Graviton): replace `amd64` with `arm64`.
-
-**Fedora / RHEL / CentOS:**
-
-```bash
-sudo dnf install -y golang
-go version
-```
-
-**Arch Linux:**
-
-```bash
-sudo pacman -S go
-```
-
-### Step 2 — Install Z3
-
-```bash
-# Debian / Ubuntu
-sudo apt install -y z3
-
-# Fedora / RHEL
-sudo dnf install -y z3
-
-# Arch
-sudo pacman -S z3
-```
-
-### Step 3 — Clone and build
-
-```bash
-git clone https://github.com/BoundlessProducts/spectre.git
-cd spectre
-go build -o spectre ./cmd/spectre
-go test ./...   # optional: run test suite
-```
-
-### Step 4 — Build `spectre-mine-rs`
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
-cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
-```
-
----
-
-## Installation — Windows
-
-### Step 1 — Install Go
-
-Download the `.msi` installer from [https://go.dev/dl/](https://go.dev/dl/) and run it. Or:
-
-```powershell
-winget install GoLang.Go
-```
-
-### Step 2 — Install Z3
-
-Download the Windows binary from [https://github.com/Z3Prover/z3/releases](https://github.com/Z3Prover/z3/releases).
-Extract the archive and add the `bin\` folder to your system `PATH`.
-
-### Step 3 — Clone and build
-
-```powershell
-git clone https://github.com/BoundlessProducts/spectre.git
-cd spectre
-go build -o spectre.exe ./cmd/spectre
-.\spectre.exe
-```
-
-### Step 4 — Build `spectre-mine-rs`
-
-Install Rust from [https://rustup.rs](https://rustup.rs), then:
-
-```powershell
-cargo build --release --manifest-path rust\spectre-mine-rs\Cargo.toml
-copy rust\spectre-mine-rs\target\release\spectre-mine-rs.exe .
-```
-
----
-
-## Docker (Recommended for Reviewers)
-
-The Docker image includes all dependencies (Go, Z3, Rust, pre-built binaries).
-
-```bash
-docker build -t spectre-vmcai .
-docker run --rm spectre-vmcai sh /artifact/reproduce.sh
-```
-
-To run interactively:
-
-```bash
-docker run --rm -it spectre-vmcai sh
-```
-
----
-
-## Your First Specification
-
-Save the following as `counter.spec`:
+Save this as `counter.spec`:
 
 ```spectre
-var counter: int
+var value: int
+param MAX: int = 5
 
-init {
-  counter = 0
-}
+init { value = 0 }
 
 action increment {
-  counter' = counter + 1
+  require value < MAX
+  value' = value + 1
 }
 
-invariant nonNegative {
-  counter >= 0
+action reset {
+  value' = 0
 }
+
+invariant non_negative  { value >= 0 }
+invariant within_bounds { value <= MAX }
 ```
 
 Run it:
 
 ```bash
-./spectre parse counter.spec
-./spectre typecheck counter.spec
-./spectre verify counter.spec
+spectre verify counter.spec
 ```
 
-### What each line means
-
-- `var counter: int` — a state variable named `counter` of type integer
-- `init { counter = 0 }` — the system starts with `counter = 0`
-- `action increment { counter' = counter + 1 }` — one step: counter increases by 1. The prime (`'`) denotes the next-state value.
-- `invariant nonNegative { counter >= 0 }` — a property checked on every reachable state
-
-Since `increment` can only increase the counter and it starts at 0, the invariant holds for all reachable states.
+```
+✓ safe — 6 states explored (exhaustive)
+  Invariants checked: non_negative, within_bounds
+```
 
 ---
 
-## Running the Bundled Examples
+## What just happened
 
-All examples are in the `examples/` directory of the repository:
+```
+counter.spec
+  ├── var value: int              ← one piece of state
+  ├── param MAX: int = 5          ← a named constant
+  ├── init { value = 0 }          ← where to start
+  ├── action increment { … }      ← one possible transition
+  ├── action reset { … }          ← another transition
+  └── invariant within_bounds … ← the property to check
+          │
+          ▼
+    spectre verify
+          │
+    BFS explores all 6 reachable states
+    {0, 1, 2, 3, 4, 5}
+          │
+    checks both invariants in every state
+          │
+          ▼
+        ✓ safe
+```
+
+Spectre uses **breadth-first search** — it finds every state reachable from `init` and checks your invariants in all of them. Six states here because `value` can be `0`–`5` and `reset` can always bring it back.
+
+---
+
+## Introducing a bug
+
+Remove the `require` from `increment`:
+
+```spectre
+action increment {
+  // require value < MAX   ← commented out
+  value' = value + 1
+}
+```
 
 ```bash
-# Basic counter
-./spectre verify examples/counter.spec
+spectre verify counter.spec
+```
 
-# Raft election safety (3-node, 22,432 states)
-./spectre verify examples/raft-election-safety.spec --max-states 30000
+```
+✗ violation — invariant 'within_bounds' after action 'increment'
 
-# Spec mining from Rust
-./spectre mine --lang rust examples/rust/bank_account.rs
+Counterexample (6 steps):
+  step 0  init:       value = 0
+  step 1  increment:  value = 1
+  step 2  increment:  value = 2
+  step 3  increment:  value = 3
+  step 4  increment:  value = 4
+  step 5  increment:  value = 5
+  step 6  increment:  value = 6  ← VIOLATION
+                      within_bounds: value <= MAX → 6 <= 5  FAILS
+```
+
+Spectre found the shortest path to a bad state: six increments from zero.
+
+---
+
+## Fix it
+
+Restore `require value < MAX`. This tells Spectre: "increment can only fire when `value < MAX`." If the condition is false the action is disabled — not an error, the system just can't take that step from that state.
+
+---
+
+## Key commands
+
+| Command | What it does |
+|---------|-------------|
+| `spectre verify <file>` | BFS — exhaustively checks all reachable states |
+| `spectre verify <file> --backend z3` | Bounded check — fast, finds shallow bugs |
+| `spectre verify <file> --backend tlc` | Delegates to TLA+ Tools (validated fairness) |
+| `spectre verify <file> --backend apalache` | Delegates to Apalache (symbolic, large specs) |
+| `spectre mine --lang rust <file.rs>` | Extract a spec skeleton from Rust source |
+| `spectre simulate <file> --steps 20` | Random walk through the state space |
+| `spectre benchmark` | Time BFS across a set of spec files |
+
+---
+
+## Choosing a backend
+
+```
+      Your goal
+          │
+          ▼
+  ┌───────────────────────────────────────────────────────┐
+  │ Find shallow bugs quickly (≤20 steps)?                │
+  │   → --backend z3 --bmc-depth 20                       │
+  ├───────────────────────────────────────────────────────┤
+  │ Exhaustive proof on a small–medium spec?              │
+  │   → spectre verify  (default BFS)                     │
+  ├───────────────────────────────────────────────────────┤
+  │ Liveness / fairness properties you can trust?         │
+  │   → --backend tlc  or  --backend apalache             │
+  ├───────────────────────────────────────────────────────┤
+  │ Spec too large for BFS (millions of states)?          │
+  │   → --backend apalache  (symbolic, handles large)     │
+  └───────────────────────────────────────────────────────┘
+```
+
+Chapter 9 covers the full decision guide.
+
+---
+
+## The full Spectre workflow
+
+```
+Rust source
+    │
+    ▼
+spectre mine --lang rust src/account.rs
+    │
+    ▼
+account.spec  ← skeleton; add invariants by hand
+    │
+    ▼
+spectre verify account.spec
+    │
+    ├── ✓ safe ────────────────► commit .spec alongside source
+    │
+    └── ✗ violation
+              │
+              ▼
+         spectre verify account.spec --suggest-repairs
+              │
+              ▼
+         CANDIDATE patches  ← review, apply, re-verify
+```
+
+Once safe, one spec drives three downstream workflows:
+
+```
+account.spec
+    │
+    ├──► spectre generate-driver  →  Rust conformance test harness  (Ch 12)
+    ├──► spectre generate-monitor →  embedded runtime monitor       (Ch 13)
+    └──► spectre sync account.rs  →  drift detection as code evolves (Ch 11)
 ```
 
 ---
 
-## Next Steps
+## What's next
 
-Continue to [Chapter 2: Language Overview](02-language-overview.md) to learn all the elements of the Spectre language.
-# Chapter 2: Language Overview
-
-This chapter covers the core elements of the Spectre language.
-
----
-
-## What is Spectre?
-
-Spectre is a programmer-friendly specification language inspired by TLA+ and Quint, designed specifically for Java and TypeScript developers. It allows you to:
-
-- **Model systems** as state machines with clear state variables and transitions
-- **Verify properties** using both classic constraints (invariants) and temporal properties
-- **Express concurrency** with fairness conditions
-- **Organize code** using modules and imports
-- **Debug easily** with readable error messages and execution traces
-
-### Why Spectre?
-
-Traditional formal specification languages like TLA+ can be intimidating for developers coming from mainstream programming languages. Spectre bridges this gap by providing:
-
-- **Familiar syntax** similar to Java and TypeScript
-- **Strong typing** with type inference
-- **Clear semantics** for state machines and transitions
-- **Comprehensive verification** tools
-- **Excellent error messages** with descriptions and stack traces
-
-### Key Features
-
-- ✅ **Type System**: Primitive and compound types (records, sets, maps, lists, enums, options)
-- ✅ **State Management**: Explicit state variables with prime notation (`'`) for next-state
-- ✅ **Non-determinism**: `oneOf` operator for multiple initial states
-- ✅ **Pure Functions**: Reusable computational helpers without side effects
-- ✅ **Temporal Logic**: `always`, `eventually`, `until`, `leads-to` operators
-- ✅ **Fairness**: Weak Fairness (WF) and Strong Fairness (SF) conditions
-- ✅ **Modules**: Code organization with imports and inheritance
-- ✅ **Descriptions**: Human-readable context in error messages
+- **Chapter 2** — every language construct with examples
+- **Chapter 3** — safety invariants in depth, reading violations, repair suggestions
+- **Chapter 9** — picking the right backend for your problem
+# Chapter 2: The Spectre language
 
 ---
 
-## Core Concepts
+## Variables
 
-### State Machines
+You declare state with `var`. Four primitive types:
 
-Spectre models systems as **state machines**. A state machine consists of:
-
-1. **State Variables**: The data that represents the system's state
-2. **Initial States**: How the system starts
-3. **Actions**: Transitions that change the state
-4. **Properties**: Invariants and temporal properties to verify
-
-### State vs Next-State
-
-In Spectre, you distinguish between the current state and the next state:
-
-- **Current state**: `counter` (the value now)
-- **Next state**: `counter'` (the value after an action executes)
-
-This is called **prime notation** and comes from TLA+. The prime (`'`) notation is essential for specifying how actions transform the system from one state to another.
-
----
-
-## Language Elements
-
-Spectre includes the following language elements:
-
-### 1. Types
-
-Spectre provides a rich type system:
-
-**Primitive Types:**
-- `int`: Integers (e.g., `42`, `-10`, `0`)
-- `bool`: Booleans (`true`, `false`)
-- `str`: Strings (e.g., `"hello"`, `"world"`)
-- `float`: Floating-point numbers (e.g., `3.14`, `-0.5`)
-
-**Compound Types:**
-- **Records**: Group related data together (e.g., `type User = { id: int, name: str }`)
-- **Sets**: Unordered collections of unique elements (e.g., `Set<int>`, `Set<User>`)
-- **Maps**: Key-value pairs (e.g., `Map<int, User>`)
-- **Lists**: Ordered sequences (e.g., `List<int>`)
-- **Options**: Values that may or may not exist (e.g., `Option<User>`)
-- **Enums**: Fixed sets of named values (e.g., `enum ProcessState { Idle, Critical }`)
-
-### 2. State Variables
-
-State variables represent the data that changes over time in your system:
+| Type | Declaration | Default |
+|------|-------------|---------|
+| `int` | `var count: int` | `0` |
+| `bool` | `var active: bool` | `false` |
+| `str` | `var label: str` | `""` |
+| `float` | `var ratio: float` | `0.0` |
 
 ```spectre
-description "Tracks a numeric counter value"
-var counter: int
-
-description "Collection of all users in the system"
-var users: Set<User>
+var count:  int
+var active: bool
+var label:  str
+var ratio:  float
 ```
 
-State variables are declared using the `var` keyword followed by a name and type.
+Variables live for the entire run — there are no local variables, only state.
 
-### 3. Initial States
+---
 
-The initial state defines how your system starts:
+## Enumerations
+
+Define a named set of values with `enum`:
 
 ```spectre
-description "System starts with counter initialized to zero"
+enum TrafficLight { Red, Yellow, Green }
+var signal: TrafficLight
+```
+
+A complete traffic-light spec:
+
+```spectre
+enum TrafficLight { Red, Yellow, Green }
+
+var signal: TrafficLight
+
+init { signal = Red }
+
+action go     { require signal = Red     signal' = Green  }
+action caution { require signal = Green  signal' = Yellow }
+action stop   { require signal = Yellow  signal' = Red    }
+
+invariant only_valid_transitions {
+  signal = Red or signal = Yellow or signal = Green
+}
+```
+
+```bash
+spectre verify traffic.spec
+# ✓ safe — 3 states explored (exhaustive)
+```
+
+---
+
+## Parameters
+
+Parameters are named constants. They don't change during a run:
+
+```spectre
+param CAPACITY:  int = 10
+param THRESHOLD: int = 7
+```
+
+- Override on the command line: `spectre verify queue.spec --param CAPACITY=20`
+- Sweep a range: `spectre verify queue.spec --param-range CAPACITY=1..20`
+- Use in invariants: `invariant not_full { items <= CAPACITY }`
+
+---
+
+## Init block
+
+```spectre
 init {
-  counter = 0
+  balance = 0
+  active  = true
+  phase   = Idle
 }
 ```
 
-You can also use `oneOf` for multiple initial states:
+- Every variable you list is set to that value.
+- Variables not listed get their type's zero value: `0`, `false`, `""`, first enum variant.
+- You can list variables in any order.
 
-```spectre
-init oneOf {
-  { counter = 0, mode = "start" },
-  { counter = 10, mode = "resume" }
+---
+
+## Actions
+
+An action describes one atomic transition of the system:
+
+```
+action deposit {           ← name
+  require status = Active  ← precondition — action disabled if false
+  require amount > 0       ← multiple requires are AND'd together
+  balance' = balance + amount  ← next-state value (prime notation)
+  count'   = count + 1         ← all assignments apply simultaneously
 }
 ```
 
-### 4. Actions
+Key rules:
 
-Actions define how the system can transition from one state to another:
+- `x'` means "the value of `x` in the next state."
+- An action with a failing `require` is simply **disabled** — it's not an error.
+- All assignments in one action are **simultaneous** — `x' = y` and `y' = x` swaps them correctly.
+- Variables not assigned by an action **keep their current value** automatically.
+
+### Example 1: simple counter
 
 ```spectre
-description "Increments the counter by one"
+var value: int
+param MAX: int = 10
+
 action increment {
-  counter' = counter + 1
+  require value < MAX
+  value' = value + 1
 }
 
-description "Decrements the counter, only when positive"
 action decrement {
-  require counter > 0
-  counter' = counter - 1
+  require value > 0
+  value' = value - 1
 }
 ```
 
-Actions can have:
-- **Preconditions** (`require`): Conditions that must be true for the action to execute
-- **Postconditions** (`ensure`): Conditions that must be true after the action executes
-- **Parameters**: Actions can take parameters like functions
-
-### 5. Pure Functions
-
-Pure functions are computational helpers that don't modify state:
+### Example 2: bank deposit with two requires
 
 ```spectre
-description "Adds two integers together"
-fun add(x: int, y: int): int {
-  return x + y
-}
+var balance: int
+param LIMIT: int = 1000
 
-description "Returns the maximum of two integers"
-fun max(a: int, b: int): int {
-  if (a > b) {
-    return a
-  } else {
-    return b
-  }
+action deposit {
+  require balance < LIMIT
+  require balance + 100 <= LIMIT
+  balance' = balance + 100
 }
 ```
 
-Pure functions:
-- Only read their parameters
-- Do not access state variables
-- Do not modify state variables
-- Return a value based only on inputs
-
-### 6. Constants
-
-Constants are fixed values that don't change during execution:
+### Example 3: enum state machine transition
 
 ```spectre
-description "Number of processes in the system"
-const NUM_PROCESSES: int = 2
+enum Phase { Idle, Running, Done }
+var phase: Phase
+var started: bool
 
-description "Maximum allowed counter value"
-const MAX_VALUE: int = 100
-```
+action start {
+  require phase = Idle
+  phase'   = Running
+  started' = true
+}
 
-### 7. Modules
-
-Modules help organize your specifications into reusable components and enable code sharing between files. Spectre supports file-level modules where each file contains exactly one module.
-
-#### Module Declaration
-
-A module is declared in a file with the following structure:
-
-```spectre
-// File: Counter.spec
-module Counter {
-  description "Tracks a numeric counter value"
-  var counter: int
-  
-  public action increment {
-    counter' = counter + 1
-  }
-  
-  action decrement {
-    counter' = counter - 1
-  }
+action finish {
+  require phase = Running
+  phase' = Done
 }
 ```
-
-**Important Rules:**
-- Each file must contain exactly one module declaration
-- The module name must match the file name (without extension)
-- Files use PascalCase naming (e.g., `Counter.spec`, `ElevatorModule.spec`)
-- Module names use PascalCase (e.g., `module Counter`, `module ElevatorModule`)
-
-#### Visibility Modifiers
-
-Members within a module can be marked as `public` or have no modifier (private by default):
-
-```spectre
-module ExampleModule {
-  public var publicVar: int      // Accessible from other modules
-  var privateVar: int            // Only accessible within this module
-  
-  public action publicAction { ... }
-  action privateAction { ... }
-  
-  public const PUBLIC_CONST: int = 10
-  const PRIVATE_CONST: int = 20
-  
-  public fun publicFunction(): int { ... }
-  fun privateFunction(): int { ... }
-}
-```
-
-- **Public members** (`public var`, `public action`, `public const`, etc.) are accessible from modules that import this module
-- **Private members** (no modifier) are only accessible within the module
-
-#### Importing Modules
-
-To use a module in another file, you import it using one of two syntaxes:
-
-**Import from Same Directory:**
-```spectre
-import Counter
-```
-This imports `Counter` from `Counter.spec` in the same directory.
-
-**Import from Path:**
-```spectre
-import "path/to/ModuleName"
-```
-This imports a module from a relative path. The path should point to the file (without extension).
-
-**Examples:**
-```spectre
-// Import from same directory
-import ElevatorModule
-import UserModule
-
-// Import from subdirectory
-import "elevator/ElevatorModule"
-
-// Import from parent directory
-import "../common/Utils"
-```
-
-#### Accessing Module Members
-
-When you import a module, you access its public members using dot notation:
-
-```spectre
-import ControllerModule
-
-// Access constants
-const maxUsers = ControllerModule.MAX_USERS
-
-// Call functions
-let distance = ControllerModule.distance(5, 10)
-
-// Use types (types are automatically available)
-var elevator: Elevator  // Type from ElevatorModule
-```
-
-#### Module Resolution Rules
-
-1. **No circular dependencies**: If module A imports module B, module B cannot import module A (directly or indirectly)
-2. **Module name matching**: The module declaration name must exactly match the file name (case-sensitive)
-3. **One module per file**: Each `.spec` file must contain exactly one module
-
-#### Benefits of Modules
-
-Modules provide several benefits:
-- **Code reuse**: Share modules across multiple specifications
-- **Separation of concerns**: Organize code into logical units
-- **Maintainability**: Changes to one module don't affect others (as long as public interface remains stable)
-- **Testability**: Modules can be tested independently
-
-For a comprehensive example of using modules to build a large system, see **Chapter 7: Modules and Code Organization**, which demonstrates building an elevator controller system using multiple modules.
 
 ---
 
-## Descriptions: Why They Matter
+## Invariants
 
-**Descriptions are a critical feature of Spectre.** Every language element can have a `description` field that provides human-readable context:
+You're telling Spectre: "this must be true in every reachable state."
 
 ```spectre
-description "Tracks a numeric counter value"
-var counter: int
-
-description "Increments the counter by one"
-action increment {
-  counter' = counter + 1
-}
-
-description "Ensures counter never becomes negative"
-invariant nonNegative {
-  counter >= 0
-}
+invariant solvent    { balance >= 0 }
+invariant within_cap { balance <= LIMIT }
 ```
 
-### How Descriptions Improve Error Messages
-
-When an error occurs, descriptions appear in the error message, making it much easier to understand what went wrong:
-
-**Without descriptions:**
-```
-21:2: Invariant 'inv1' violated: condition evaluated to false
-```
-
-**With descriptions:**
-```
-21:2: Invariant 'nonNegative' violated: (Ensures counter never becomes negative) 
-       condition evaluated to false
-```
-
-The description immediately tells you what the invariant was supposed to ensure, making debugging much faster.
-
-### Description Best Practices
-
-1. **Always add descriptions**: They make error messages much more readable
-2. **Be specific**: "Ensures counter never becomes negative" is better than "Counter check"
-3. **Use active language**: "Increments the counter" is clearer than "Counter increment"
-4. **Mark critical properties**: Use "CRITICAL:" prefix for important invariants
-
-Descriptions will eventually be used extensively in error messages, stack traces, and verification reports to provide clear, actionable feedback when something goes wrong.
+- Spectre checks every invariant after every action in every reachable state.
+- A violation = one reachable state where the condition is false.
+- You can have as many invariants as you want; all are checked independently.
 
 ---
 
-## Properties: Invariants, Temporal Properties, and Fairness
+## The complete bank account spec
 
-Spectre provides three kinds of properties that you can verify:
-
-### 1. Invariants
-
-**Invariants** are properties that must **always** hold in every reachable state. They express safety properties—things that should never happen.
+Everything above pulled together into one file:
 
 ```spectre
-description "Ensures counter never becomes negative"
-invariant nonNegative {
-  counter >= 0
+// bank.spec
+
+enum Status { Active, Frozen }
+
+var balance: int
+var status:  Status
+param LIMIT: int = 1000
+
+init {
+  balance = 0
+  status  = Active
 }
 
-description "CRITICAL: Ensures only one process can be in critical section at a time"
-invariant mutualExclusion {
-  !(process1 = ProcessState.Critical && process2 = ProcessState.Critical)
+action deposit {
+  require status = Active
+  require balance + 100 <= LIMIT
+  balance' = balance + 100
 }
+
+action withdraw {
+  require status = Active
+  require balance >= 100
+  balance' = balance - 100
+}
+
+action freeze   { status' = Frozen }
+action unfreeze { status' = Active }
+
+invariant solvent     { balance >= 0 }
+invariant within_cap  { balance <= LIMIT }
 ```
 
-**When invariants are checked:**
-- After the initial state is set
-- After every action execution
-- During state space exploration
-
-**What happens when an invariant fails:**
-The verifier reports:
-- Which invariant failed
-- The description of that invariant
-- The state that violated it
-- The execution trace leading to the violation
-
-**Use invariants for:**
-- Safety properties (e.g., "counter never negative", "mutual exclusion holds")
-- State consistency (e.g., "lock flag matches process state")
-- Data integrity (e.g., "all users have valid IDs")
-
-### 2. Temporal Properties
-
-**Temporal properties** describe how the system behaves **over time**. Unlike invariants (which must always hold), temporal properties can express liveness conditions like "eventually something happens."
-
-#### Temporal Operators
-
-**`always`**: The property holds at every point in the execution
-```spectre
-description "Ensures counter remains non-negative throughout execution"
-temporal alwaysNonNegative {
-  always (counter >= 0)
-}
+```bash
+spectre verify bank.spec
 ```
 
-**`eventually`**: The property holds at some point in the future
-```spectre
-description "Verifies that counter eventually reaches value 10"
-temporal eventuallyReachesTen {
-  eventually (counter = 10)
-}
 ```
-
-**`until`**: Condition1 holds until condition2 becomes true
-```spectre
-temporal safeUntilGoal {
-  counter < 100 until counter = 100
-}
+✓ safe — 12 states explored (exhaustive)
+  Invariants checked: solvent, within_cap
 ```
-
-**`leads-to` (→)**: If condition1 becomes true, then condition2 will eventually become true
-```spectre
-description "Guarantees progress: if counter is below 10, it will eventually reach 10"
-temporal progress {
-  always (counter < 10 → eventually counter = 10)
-}
-```
-
-**When temporal properties are checked:**
-Temporal properties are evaluated over **execution traces** (sequences of states). The verifier explores the state space and checks if the temporal property holds for all possible execution paths.
-
-**Use temporal properties for:**
-- Liveness properties (e.g., "eventually something happens")
-- Progress guarantees (e.g., "if condition P holds, eventually Q will hold")
-- Response properties (e.g., "request eventually leads to response")
-
-### 3. Fairness Conditions
-
-**Fairness conditions** ensure that actions execute "fairly" in concurrent systems. They're essential for verifying liveness properties.
-
-#### Weak Fairness (WF)
-
-**Weak Fairness** means: "If an action is **continuously enabled**, it will eventually execute."
-
-```spectre
-description "Weak fairness ensures process1 gets fair access when continuously waiting"
-temporal process1WeakFairness {
-  WF(process1Request)
-}
-```
-
-**Meaning**: If `process1Request` is enabled and stays enabled, it will eventually execute.
-
-#### Strong Fairness (SF)
-
-**Strong Fairness** means: "If an action is enabled **infinitely often**, it will eventually execute."
-
-```spectre
-description "Strong fairness ensures process1 executes even if intermittently enabled"
-temporal process1StrongFairness {
-  SF(process1Request)
-}
-```
-
-**Meaning**: Even if `process1Request` is enabled and disabled repeatedly, it will eventually execute if it's enabled infinitely often.
-
-#### Using Fairness in Temporal Properties
-
-Fairness conditions are often combined with temporal operators using the leads-to (`→`) operator:
-
-```spectre
-description "With weak fairness, process1 will eventually enter critical section"
-temporal eventuallyProcess1Critical {
-  WF(process1Request) → eventually (process1 = ProcessState.Critical)
-}
-```
-
-When used in a leads-to expression, fairness filters the transition graph to only consider paths that satisfy the fairness constraint. This ensures that only "fair" execution paths are considered when verifying the property.
-
-**When to use Weak vs Strong Fairness:**
-- **Weak Fairness (WF)**: Use when an action should execute if it's continuously available
-  - Example: A process waiting for a lock should eventually get it if the lock is continuously free
-  
-- **Strong Fairness (SF)**: Use when an action should execute even if it's intermittently enabled
-  - Example: A message queue processor should eventually process messages even if the queue is sometimes empty
-
-**Use fairness for:**
-- Guaranteeing progress in concurrent systems
-- Verifying liveness properties that require action execution
-- Modeling realistic scheduling behavior
 
 ---
 
-## Putting It All Together
+## Temporal properties
 
-A complete Spectre specification typically includes:
-
-1. **Type definitions** (enums, records)
-2. **State variables** (with descriptions)
-3. **Initial state** (with descriptions)
-4. **Actions** (with descriptions, preconditions, and postconditions)
-5. **Invariants** (safety properties)
-6. **Temporal properties** (liveness properties)
-7. **Fairness conditions** (for concurrent systems)
-
-Here's a simple but complete example:
+Temporal properties let you express liveness — things that must *eventually* happen, or *always* remain true over infinite runs:
 
 ```spectre
-// Type definition
-enum ProcessState {
-  Idle,
-  Critical
+temporal always_solvent  { always(balance >= 0) }
+temporal progress        { eventually(balance > 0) }
+temporal freeze_recovers { always(status = Frozen → eventually(status = Active)) }
+```
+
+| Keyword | Meaning |
+|---------|---------|
+| `always(P)` | P holds in every state of every run |
+| `eventually(P)` | P holds in some state of every run |
+| `P until Q` | P holds until Q becomes true |
+| `WF(action)` | Weak fairness: if `action` is always enabled, it eventually fires |
+| `SF(action)` | Strong fairness: if `action` is infinitely often enabled, it fires infinitely often |
+
+For **fairness** (WF/SF) to be validated correctly, use `--backend tlc` or `--backend apalache`. The default BFS backend uses a heuristic. Chapter 5 covers this in detail.
+
+---
+
+## Descriptions
+
+Add a human-readable description to any action:
+
+```spectre
+description "Deposits 100 units — requires account active and not at cap"
+action deposit {
+  require status = Active
+  require balance + 100 <= LIMIT
+  balance' = balance + 100
+}
+```
+
+These appear in violation traces and generated code.
+
+---
+
+## Quick-reference card
+
+| Keyword | Purpose |
+|---------|---------|
+| `var` | Declare a state variable |
+| `param` | Declare a named constant |
+| `enum` | Declare an enumeration |
+| `init` | Set initial values |
+| `action` | Declare a state transition |
+| `require` | Precondition for an action |
+| `invariant` | Safety property (checked in every state) |
+| `temporal` | Liveness / fairness property |
+| `always` | Temporal: holds in every state |
+| `eventually` | Temporal: holds in some future state |
+| `until` | Temporal: P holds until Q |
+| `WF` | Weak fairness over an action |
+| `SF` | Strong fairness over an action |
+| `description` | Human-readable label for an action |
+
+---
+
+## What's next
+
+- **Chapter 3** — safety properties in depth: writing good invariants, reading violation traces
+- **Chapter 4** — temporal properties: liveness and fairness with real examples
+# Chapter 3: Safety properties and invariants
+
+---
+
+## What a safety property says
+
+> "Nothing bad ever happens."
+
+- An `invariant` is a boolean expression that must hold in **every reachable state**.
+- A violation = one state where it doesn't hold.
+- Spectre finds the **shortest path** to that state (BFS guarantee).
+
+---
+
+## Three patterns for invariants
+
+### 1. Resource bound
+
+```spectre
+var items:  int
+param CAPACITY: int = 10
+
+invariant not_full    { items <= CAPACITY }
+invariant not_empty   { items >= 0 }
+```
+
+Use this for: buffers, queues, pools, counters.
+
+### 2. State consistency
+
+```spectre
+enum Phase { Idle, Running, Done }
+var phase:   Phase
+var started: bool
+
+invariant consistent { phase = Running → started }
+```
+
+"If the machine is running, it must have been started." Use `→` (or write `not P or Q`) for implication.
+
+### 3. Mutual exclusion
+
+```spectre
+var lock_a: bool
+var lock_b: bool
+
+invariant mutual_exclusion { not (lock_a and lock_b) }
+```
+
+Use this for: locks, tokens, single-owner resources.
+
+---
+
+## A spec with a bug
+
+```spectre
+// bank-buggy.spec
+
+var balance: int
+param LIMIT: int = 1000
+
+init { balance = 0 }
+
+action deposit  { balance' = balance + 100 }
+action withdraw { balance' = balance - 100 }   // ← no require!
+
+invariant solvent    { balance >= 0 }
+invariant within_cap { balance <= LIMIT }
+```
+
+```bash
+spectre verify bank-buggy.spec
+```
+
+```
+✗ violation — invariant 'solvent' after action 'withdraw'
+
+Counterexample (2 steps):
+  step 0  init:     balance = 0
+  step 1  withdraw: balance = -100  ← VIOLATION
+                    solvent: balance >= 0  →  -100 >= 0  FAILS
+```
+
+---
+
+## Reading a violation trace
+
+```
+✗ violation — invariant 'solvent' after action 'withdraw'
+  ↑ which invariant failed    ↑ which action triggered it
+
+Counterexample (2 steps):              ← shortest path to the bad state
+  step 0  init:     balance = 0        ← initial state
+  step 1  withdraw: balance = -100     ← state after the action
+
+                    solvent: balance >= 0  →  -100 >= 0  FAILS
+                    ↑ invariant name      ↑ expression   ↑ why it fails
+```
+
+Every line in the trace shows:
+- The **step number**
+- The **action** that fired (or `init`)
+- The **full state** after the action (all variables)
+- On the violation line: the invariant expression and what value made it fail
+
+---
+
+## Longer traces
+
+Here's a more interesting bug — withdraw only fails after a freeze/unfreeze cycle:
+
+```spectre
+// bank-freeze-bug.spec
+
+enum Status { Active, Frozen }
+var balance: int
+var status:  Status
+param LIMIT: int = 1000
+
+init { balance = 0  status = Active }
+
+action deposit  {
+  require status = Active
+  require balance + 100 <= LIMIT
+  balance' = balance + 100
 }
 
-// State variables
-description "State of the first process"
-var process1: ProcessState
+action withdraw {
+  require status = Active
+  // missing: require balance >= 100
+  balance' = balance - 100
+}
 
-description "State of the second process"
-var process2: ProcessState
+action freeze   { status' = Frozen  }
+action unfreeze { status' = Active  }
 
-description "Lock flag indicating if a process is in critical section"
+invariant solvent { balance >= 0 }
+```
+
+```bash
+spectre verify bank-freeze-bug.spec
+```
+
+```
+✗ violation — invariant 'solvent' after action 'withdraw'
+
+Counterexample (2 steps):
+  step 0  init:     balance = 0, status = Active
+  step 1  withdraw: balance = -100, status = Active  ← VIOLATION
+```
+
+Spectre still finds the shortest path (2 steps), ignoring the freeze/unfreeze actions since they're not needed to trigger the bug.
+
+---
+
+## Using `--suggest-repairs`
+
+```bash
+spectre verify bank-freeze-bug.spec --suggest-repairs
+```
+
+```
+Repair candidates (CANDIDATE — review before applying):
+
+Violation 1: action 'withdraw' violates 'solvent'
+  [1] CANDIDATE strengthen_require: add `require balance >= 100` to action withdraw
+      Validation: original violation fixed · no deadlock · reachability unchanged — SAFE
+
+  [2] CANDIDATE add_invariant_guard: add `when balance >= 100` to action withdraw
+      Validation: original violation fixed · deadlock at balance=0 — review required
+```
+
+- **SAFE** — the patch fixes the violation and doesn't introduce new problems.
+- **review required** — the patch fixes the violation but causes a deadlock or significantly restricts reachability. May be intentional, but check.
+- Repairs are **always labelled CANDIDATE** — Spectre never applies them automatically.
+
+Applying repair [1]: add `require balance >= 100` to `withdraw`. Re-verify:
+
+```bash
+spectre verify bank.spec
+# ✓ safe — 12 states explored (exhaustive)
+```
+
+---
+
+## Checking multiple invariants
+
+```spectre
+invariant solvent     { balance >= 0 }
+invariant within_cap  { balance <= LIMIT }
+invariant frozen_safe { status = Frozen → balance = 0 }
+```
+
+Spectre checks all invariants independently. If multiple are violated, each is reported with its own trace.
+
+---
+
+## Parameterized safety
+
+```spectre
+// producer-consumer.spec
+param BUFFER_SIZE: int = 5
+
+var produced: int
+var consumed: int
+
+init { produced = 0  consumed = 0 }
+
+action produce {
+  require produced - consumed < BUFFER_SIZE
+  produced' = produced + 1
+}
+
+action consume {
+  require consumed < produced
+  consumed' = consumed + 1
+}
+
+invariant buffer_bounded { produced - consumed <= BUFFER_SIZE }
+invariant no_underflow   { consumed <= produced }
+```
+
+Verify at different sizes:
+
+```bash
+spectre verify producer.spec --param BUFFER_SIZE=3
+# ✓ safe — 10 states explored (exhaustive)
+
+spectre verify producer.spec --param BUFFER_SIZE=10
+# ✓ safe — 66 states explored (exhaustive)
+```
+
+Sweep the whole range:
+
+```bash
+spectre verify producer.spec --param-range BUFFER_SIZE=1..20
+```
+
+---
+
+## State space size and `--max-states`
+
+| Output line | What it means |
+|------------|---------------|
+| `6 states explored (exhaustive)` | Full proof — every reachable state checked |
+| `5000 states explored (bounded — hit state limit)` | Incomplete — violation may still exist beyond the limit |
+
+Use `--max-states` to control the limit:
+
+```bash
+spectre verify large.spec --max-states 50000
+spectre verify large.spec --max-states -1   # unlimited (may not terminate)
+```
+
+Always check whether your result was **exhaustive**. A bounded result is not a proof.
+
+---
+
+## Invariant-writing checklist
+
+For each resource or constraint in your system, ask:
+
+- **Bounds**: is there a min or max? → `x >= 0`, `x <= LIMIT`
+- **Ordering**: must A happen before B? → `phase = B → started_A`
+- **Exclusion**: can only one hold at a time? → `not (P and Q)`
+- **Consistency**: do related variables agree? → `frozen → balance = 0`
+- **Monotonicity**: can this only go up/down? → `count >= prev_count`
+
+---
+
+## Workflow summary
+
+```
+write invariants
+      │
+      ▼
+spectre verify
+      │
+   violation?
+   ┌──┴──┐
+  yes    no
+   │      └──► ✓ invariant holds in all reachable states  ← exhaustive result
+   ▼
+--suggest-repairs
+   │
+   ▼
+SAFE candidates  ──► apply · re-verify
+   │
+review-required  ──► inspect manually first
+```
+# Chapter 4: Temporal properties and liveness
+
+Invariants catch bad states. Temporal properties catch bad *trajectories* — things that should eventually happen but don't, or conditions that should hold across a sequence of steps.
+
+---
+
+## Safety vs liveness
+
+| Property kind | Question it answers | Spectre keyword |
+|--------------|---------------------|----------------|
+| Safety | "Does anything bad ever happen?" | `invariant` |
+| Liveness | "Does something good eventually happen?" | `temporal` |
+
+You need both. A spec where nothing ever happens is trivially safe but useless.
+
+---
+
+## `always` — a condition that holds forever
+
+```spectre
+temporal always_positive { always(balance >= 0) }
+```
+
+This is equivalent to an invariant — but expressed in the temporal language. Use `invariant` for simple per-state checks; use `always` when you're building up compound temporal expressions.
+
+Full example — traffic light that must never show `Off`:
+
+```spectre
+enum Light { Red, Yellow, Green }
+var signal: Light
+
+init { signal = Red }
+
+action to_green  { require signal = Red     signal' = Green  }
+action to_yellow { require signal = Green   signal' = Yellow }
+action to_red    { require signal = Yellow  signal' = Red    }
+
+invariant always_lit { signal != Off }
+temporal  never_off  { always(signal != Off) }
+```
+
+```bash
+spectre verify traffic.spec
+# ✓ safe — 3 states explored (exhaustive)
+#   Invariants: always_lit ✓
+#   Temporal:   never_off ✓
+```
+
+---
+
+## `eventually` — something must happen
+
+```spectre
+temporal reaches_max { eventually(value = MAX) }
+```
+
+This says: on every execution path, `value` must at some point equal `MAX`.
+
+Counter that counts to MAX and stops:
+
+```spectre
+var value: int
+param MAX: int = 4
+
+init { value = 0 }
+
+action increment { require value < MAX  value' = value + 1 }
+
+invariant non_negative { value >= 0 }
+temporal  reaches_max  { eventually(value = MAX) }
+```
+
+```bash
+spectre verify counter.spec
+# ✓ safe — 5 states explored (exhaustive)
+#   Temporal: reaches_max ✓
+```
+
+Now add a `reset` action and watch the property fail:
+
+```spectre
+action reset { value' = 0 }
+```
+
+```bash
+spectre verify counter.spec
+# ✗ violation — temporal property 'reaches_max' not satisfied
+#
+# Counterexample (cycle):
+#   step 0  init:      value = 0
+#   step 1  increment: value = 1
+#   step 2  reset:     value = 0   ← loops here forever
+#   ...
+#   value never reaches 4
+```
+
+The BFS found a cycle where `reset` fires repeatedly and `value` never reaches `MAX`.
+
+---
+
+## `until` — hold one condition until another
+
+```spectre
+temporal safe_until_done { (errors = 0) until (phase = Done) }
+```
+
+This says: `errors = 0` must hold on every step *until* `phase = Done` is reached.
+
+Download manager example:
+
+```spectre
+enum Phase { Downloading, Done }
+var phase:  Phase
+var errors: int
+
+init { phase = Downloading  errors = 0 }
+
+action download { require phase = Downloading  phase' = Done         }
+action fail     { require phase = Downloading  errors' = errors + 1  }
+
+temporal no_errors_until_done { (errors = 0) until (phase = Done) }
+```
+
+```bash
+spectre verify download.spec
+# ✗ violation — 'no_errors_until_done' not satisfied
+# step 1: fail → errors = 1, phase still Downloading
+```
+
+Fix: add `require errors = 0` to `fail`, or remove it if errors are not allowed before completion.
+
+---
+
+## `leads_to` — if P then eventually Q
+
+```spectre
+temporal request_served { always(pending → eventually(not pending)) }
+```
+
+Every time a request becomes pending, it must eventually be cleared. This is the "leads-to" pattern: `always(P → eventually(Q))`.
+
+Simple request/response server:
+
+```spectre
+var pending: bool
+var served:  bool
+
+init { pending = false  served = false }
+
+action request { require not pending  pending' = true               }
+action serve   { require pending      pending' = false  served' = true }
+action reset   { served' = false                                    }
+
+temporal always_served { always(pending → eventually(not pending)) }
+```
+
+```bash
+spectre verify server.spec
+# ✓ safe — 4 states explored (exhaustive)
+#   Temporal: always_served ✓
+```
+
+Remove the `serve` action and re-verify:
+
+```bash
+spectre verify server-broken.spec
+# ✗ violation — 'always_served' not satisfied
+# pending becomes true and stays true — no serve action ever fires
+```
+
+---
+
+## Combining temporal properties
+
+A spec can have multiple temporal properties. Spectre checks all of them.
+
+```spectre
+var value:    int
+var request:  bool
+var response: bool
+param MAX: int = 5
+
+init { value = 0  request = false  response = false }
+
+action increment { require value < MAX  value' = value + 1            }
+action req       { require not request  request' = true               }
+action respond   { require request      request' = false  response' = true }
+
+temporal always_bounded   { always(value <= MAX)                      }
+temporal reaches_max      { eventually(value = MAX)                   }
+temporal request_answered { always(request → eventually(not request)) }
+```
+
+What each property covers:
+
+```
+States:  ●───●───●───●───●───●
+        v=0 v=1 v=2 v=3 v=4 v=5=MAX
+
+always_bounded:     every node   →  value <= MAX          ✓ per-state
+reaches_max:        some path    →  reaches value = MAX   ✓ across paths
+request_answered:   each request →  eventually cleared    ✓ per-event pair
+```
+
+---
+
+## Temporal verification with large state spaces
+
+If BFS hits `--max-states`, temporal properties are only checked over explored states:
+
+```bash
+spectre verify large.spec --max-states 5000
+# bounded — hit state limit
+# temporal properties checked over 5000 states only
+# Use --backend tlc for exhaustive temporal verification
+```
+
+Use `--backend tlc` or `--backend apalache` for exhaustive temporal verification on large specs (Chapter 15).
+
+---
+
+## Quick-reference
+
+| Operator | Meaning | Use when |
+|----------|---------|----------|
+| `always(P)` | P holds in every reachable state | Global safety, expressed temporally |
+| `eventually(P)` | Every path eventually reaches P | Progress / reachability goals |
+| `P until Q` | P holds on all steps until Q | Precondition that must hold until a goal |
+| `always(P → eventually(Q))` | Every P event leads to Q | Request/response, lock/unlock pairs |
+| `WF(action)` | Action fires if continuously enabled | Chapter 5 |
+| `SF(action)` | Action fires if infinitely often enabled | Chapter 5 |
+# Chapter 5: Fairness — WF and SF
+
+Temporal properties say *what* must eventually happen. Fairness conditions say *which executions count* when checking those properties. Without fairness, the verifier is allowed to assume a scheduler that permanently ignores actions — which makes most liveness properties unprovable.
+
+---
+
+## Why fairness matters
+
+```spectre
+var token: bool
+
+init { token = false }
+
+action grant  { require not token  token' = true  }
+action revoke { require token      token' = false }
+
+temporal eventually_granted { eventually(token) }
+```
+
+```bash
+spectre verify token.spec
+# ✗ violation — 'eventually_granted' not satisfied
+# Counterexample: revoke fires forever, grant never fires
+```
+
+The spec *allows* granting — but the verifier found a valid execution where `grant` is always skipped. That execution is "unfair."
+
+```
+Without fairness:          With WF(grant):
+  ●──revoke──●──revoke──►    ●──grant──► token=true  ✓
+  ↑ grant is skipped         (grant must fire if always enabled)
+```
+
+---
+
+## Weak fairness: WF(action)
+
+> "If an action stays enabled, it must eventually fire."
+
+```spectre
+temporal wf_grant { WF(grant) }
+```
+
+Add this to the spec:
+
+```spectre
+var token: bool
+
+init { token = false }
+
+action grant  { require not token  token' = true  }
+action revoke { require token      token' = false }
+
+temporal eventually_granted { eventually(token)  }
+temporal wf_grant           { WF(grant)          }
+```
+
+```bash
+spectre verify token.spec
+# ✓ safe — 2 states explored (exhaustive)
+#   Temporal: eventually_granted ✓  wf_grant ✓
+```
+
+WF rules out executions where `grant` is permanently skipped while enabled.
+
+### Mutex with progress guarantee
+
+```spectre
+enum ProcState { Waiting, Running, Done }
+var p1:   ProcState
+var p2:   ProcState
 var lock: bool
 
-// Initial state
-description "System starts with both processes idle and lock free"
-init {
-  process1 = ProcessState.Idle
-  process2 = ProcessState.Idle
-  lock = false
-}
+init { p1 = Waiting  p2 = Waiting  lock = false }
 
-// Actions
-description "Process 1 requests and acquires the lock"
-action process1Request {
-  require process1 = ProcessState.Idle && !lock
-  process1' = ProcessState.Critical
-  lock' = true
-}
+action p1_acquire { require p1 = Waiting and not lock  p1' = Running  lock' = true  }
+action p1_release { require p1 = Running               p1' = Done     lock' = false }
+action p2_acquire { require p2 = Waiting and not lock  p2' = Running  lock' = true  }
+action p2_release { require p2 = Running               p2' = Done     lock' = false }
 
-description "Process 1 releases the lock"
-action process1Release {
-  require process1 = ProcessState.Critical
-  process1' = ProcessState.Idle
-  lock' = false
-}
-
-// Similar actions for process2...
-
-// Invariant (safety property)
-description "CRITICAL: Ensures only one process can be in critical section at a time"
-invariant mutualExclusion {
-  !(process1 = ProcessState.Critical && process2 = ProcessState.Critical)
-}
-
-// Temporal property (liveness property)
-description "With weak fairness, process1 will eventually enter critical section"
-temporal eventuallyProcess1Critical {
-  WF(process1Request) → eventually (process1 = ProcessState.Critical)
-}
+invariant mutex      { not (p1 = Running and p2 = Running) }
+temporal p1_progress { WF(p1_acquire) }
+temporal p2_progress { WF(p2_acquire) }
+temporal p1_finishes { eventually(p1 = Done) }
+temporal p2_finishes { eventually(p2 = Done) }
 ```
-
----
-
-## State Space Exploration
-
-When you run `spectre verify`, Spectre performs **state space exploration** to verify your specification. This section explains how state space exploration works and how to control it.
-
-### What is State Space Exploration?
-
-State space exploration is the process of systematically examining all possible states your system can reach. The verifier:
-
-1. **Starts from initial states**: Begins with all possible initial states (from `init` blocks or `oneOf` expressions)
-2. **Explores transitions**: For each state, tries all enabled actions to find the next possible states
-3. **Builds a transition graph**: Creates a graph of all reachable states and the transitions between them
-4. **Checks properties**: Verifies invariants and temporal properties against all explored states and paths
-
-This process ensures that your properties hold in **all possible execution scenarios**, not just one or two specific paths.
-
-### Exploration Limits
-
-Because some systems have an infinite or extremely large state space (millions or billions of states), Spectre uses limits to prevent exploration from running indefinitely:
-
-- **Max States**: Maximum number of unique states to explore
-- **Max Depth**: Maximum depth of the exploration tree (how many steps from the initial state)
-
-### Default Limits
-
-By default, Spectre uses these limits:
-
-- **Default Max States**: 5,000 states
-- **Default Max Depth**: 100 steps
-
-These defaults work well for most small to medium-sized specifications but may need adjustment for larger systems.
-
-### Setting Custom Limits
-
-You can customize the exploration limits using command-line flags:
 
 ```bash
-# Set max states to 10,000
-./spectre verify my-spec.spec --max-states 10000
-
-# Set max depth to 200
-./spectre verify my-spec.spec --max-depth 200
-
-# Set both limits
-./spectre verify my-spec.spec --max-states 10000 --max-depth 200
+spectre verify mutex.spec
+# ✓ safe — 9 states explored (exhaustive)
 ```
 
-**When to increase limits:**
-- Your spec has many state variables
-- You have parameterized actions that create many state combinations
-- You're using `oneOf` with many initial states
-- The verifier stops early with "explored N states" but you suspect more states exist
+Without `WF(p1_acquire)`, `p1_finishes` would fail — the scheduler could run p2 forever and starve p1.
 
-**Example**: An elevator controller with 4 elevators, 20 floors, and up to 30 users has a very large state space. You might need:
+---
+
+## Strong fairness: SF(action)
+
+> "If an action is enabled infinitely often, it must fire infinitely often."
+
+The difference from WF: SF handles actions that are *intermittently* enabled.
+
+```spectre
+var connected: bool
+var retries:   int
+
+init { connected = false  retries = 0 }
+
+action disconnect { require connected      connected' = false            }
+action connect    { require not connected  connected' = true             }
+action retry      { require not connected  retries'   = retries + 1      }
+
+temporal sf_retry { SF(retry) }
+temporal eventually_connected { eventually(connected) }
+```
+
+`retry` is only enabled when `connected = false` — which isn't always the case. WF(retry) wouldn't help here because `retry` isn't *continuously* enabled. SF(retry) says: whenever `retry` becomes enabled again, it must fire.
+
+### WF vs SF at a glance
+
+| | WF(A) | SF(A) |
+|-|-------|-------|
+| Fires when | Continuously enabled | Infinitely often enabled |
+| Strength | Weaker | Stronger |
+| Use for | Lock acquisition, queue dequeue | Retry, intermittent tasks |
+| Example | Mutex `acquire` | Network `retry` |
+
+---
+
+## WF and SF in the same spec
+
+You can mix them freely:
+
+```spectre
+temporal acquire_wf   { WF(acquire)  }   // always-enabled action
+temporal retry_sf     { SF(retry)    }   // intermittently-enabled action
+temporal done_for_all { eventually(p1 = Done and p2 = Done) }
+```
+
+Spectre checks all temporal properties together.
+
+---
+
+## When the BFS heuristic isn't enough
+
+Spectre's built-in BFS uses a cycle-filtering heuristic for fairness. It works for the majority of specs but can give wrong answers when:
+
+- Multiple fairness conditions interact
+- An action is enabled in some states of a cycle but not others
+- The spec has deeply nested liveness goals
+
+For these cases, use the TLC backend:
 
 ```bash
-./spectre verify elevator/ElevatorController.spec --max-states 50000 --max-depth 150
+spectre verify mutex.spec --backend tlc
 ```
 
-### Unlimited Exploration
+TLC performs proper SCC-based fairness checking — the same algorithm that's been validated in production TLA+ tooling for two decades. It translates `WF(action)` to `WF_vars(Action)` in TLA+ and lets TLC handle the rest.
 
-For exhaustive verification, you can set limits to **infinity** (unlimited). Spectre accepts three ways to specify unlimited:
+```
+WF/SF in Spectre
+       │
+       ▼
+spectre verify (BFS heuristic)
+       │
+  confident? ──yes──► done
+       │
+       no (complex fairness, large spec)
+       │
+       ▼
+spectre verify --backend tlc
+(SCC-based, validated)
+```
+
+See Chapter 15 for full TLC and Apalache backend details.
+
+---
+
+## Fairness checklist
+
+When writing a spec with liveness properties:
+
+- Add `WF(action)` for every action that represents a "service obligation" (lock acquisition, queue drain, message delivery)
+- Add `SF(action)` for actions that are intermittently available (retries, reconnects, elections)
+- If `eventually(P)` fails unexpectedly, add fairness before debugging the spec logic
+- For critical liveness proofs, validate with `--backend tlc`
+# Chapter 6: Concurrent and distributed systems
+
+Spectre models concurrency by letting any action fire at any time. BFS explores every possible interleaving. This makes it easy to find races that are nearly impossible to trigger in testing.
+
+---
+
+## What's different about concurrent specs
+
+Three things you don't see in sequential specs:
+
+- **Shared state** — multiple actors read and write the same variables
+- **Interleaving** — actions from different actors can fire in any order
+- **Races** — two actors attempt incompatible transitions simultaneously
+
+You don't need threads or processes. You model each actor as a set of actions and let Spectre find the bad interleavings.
+
+---
+
+## Start with a broken mutex
+
+```spectre
+// mutex-broken.spec
+var p1_in_cs: bool
+var p2_in_cs: bool
+
+init { p1_in_cs = false  p2_in_cs = false }
+
+action p1_enter { p1_in_cs' = true  }
+action p1_exit  { p1_in_cs' = false }
+action p2_enter { p2_in_cs' = true  }
+action p2_exit  { p2_in_cs' = false }
+
+invariant mutex { not (p1_in_cs and p2_in_cs) }
+```
 
 ```bash
-# Using 'infinity'
-./spectre verify my-spec.spec --max-states infinity --max-depth infinity
-
-# Using 'unlimited'
-./spectre verify my-spec.spec --max-states unlimited --max-depth unlimited
-
-# Using -1
-./spectre verify my-spec.spec --max-states -1 --max-depth -1
+spectre verify mutex-broken.spec
+# ✗ violation — invariant 'mutex' after action 'p2_enter'
+#
+# Counterexample (2 steps):
+#   step 0  init:     p1_in_cs=false, p2_in_cs=false
+#   step 1  p1_enter: p1_in_cs=true,  p2_in_cs=false
+#   step 2  p2_enter: p1_in_cs=true,  p2_in_cs=true  ← VIOLATION
 ```
 
-All three forms are equivalent and mean "explore until the entire reachable state space is covered or memory is exhausted."
-
-**Warning**: When you enable unlimited exploration, you'll see:
-
-```
-Warning: Unlimited exploration enabled (--max-states: unlimited, --max-depth: unlimited)
-This may run until the state space is fully explored or memory is exhausted.
-```
-
-### Consequences of Different Limit Settings
-
-#### 1. Default Limits (5,000 states, 100 depth)
-
-**Pros:**
-- Fast verification (usually completes in seconds)
-- Good for most small to medium specs
-- Prevents accidental long-running verifications
-
-**Cons:**
-- May miss states in large specifications
-- May truncate exploration before finding all reachable states
-- May not fully verify temporal properties in complex systems
-
-**Use when:** You have a small to medium specification and want fast feedback during development.
-
-#### 2. Increased Custom Limits (e.g., 50,000 states, 200 depth)
-
-**Pros:**
-- More thorough exploration for larger specs
-- Better coverage of complex state spaces
-- Still has safety bounds to prevent runaway exploration
-
-**Cons:**
-- Takes longer to complete (minutes instead of seconds)
-- Uses more memory
-- May still not cover the entire state space for very large systems
-
-**Use when:** You have a large specification and the default limits are too restrictive.
-
-#### 3. Unlimited Exploration
-
-**Pros:**
-- **Complete verification**: Explores every reachable state
-- **Exhaustive property checking**: Verifies properties against all possible execution paths
-- **No artificial bounds**: Only limited by the actual state space size and available memory
-
-**Cons:**
-- ⚠️ **May run for a very long time**: Large specs can take hours or days
-- ⚠️ **May exhaust memory**: Systems with millions of states can use gigabytes of RAM
-- ⚠️ **No progress indication**: Until it completes, you don't know if it will finish
-
-**Use when:**
-- You need complete verification confidence
-- You're verifying critical safety properties
-- Your state space is bounded and you know it's finite
-- You have sufficient computational resources and time
-
-**Avoid when:**
-- Your system has an infinite state space (e.g., unbounded counters)
-- You're in active development and need fast feedback
-- You have limited computational resources
-
-### Best Practices
-
-1. **Start with defaults**: Begin verification with default limits. If verification completes quickly, you're done.
-
-2. **Increase incrementally**: If you suspect more states exist, increase limits incrementally (e.g., 10,000 → 50,000 → 100,000) to find the right balance.
-
-3. **Use unlimited sparingly**: Reserve unlimited exploration for:
-   - Final verification before release
-   - Critical safety properties
-   - Bounded systems where you know the state space is finite
-
-4. **Monitor resource usage**: When using large limits or unlimited, monitor CPU and memory usage. Stop the process if it's consuming excessive resources.
-
-5. **Understand your state space**: Try to estimate the size of your state space:
-   - How many state variables?
-   - What are their possible value ranges?
-   - How many parameterized actions?
-   - How many initial states (`oneOf`)?
-
-   This helps you choose appropriate limits.
-
-### Example: Choosing Limits
-
-For a **simple counter** (0-10 range):
-```bash
-# Default limits are more than enough
-./spectre verify counter.spec
-```
-
-For a **concurrent lock system** (2-3 processes):
-```bash
-# Default limits work well
-./spectre verify concurrent-lock.spec
-```
-
-For an **elevator controller** (4 elevators, 20 floors, 30 users):
-```bash
-# Needs increased limits
-./spectre verify elevator/ElevatorController.spec --max-states 50000 --max-depth 150
-```
-
-For a **small bounded system** where you need complete verification:
-```bash
-# Use unlimited for exhaustive checking
-./spectre verify critical-safety.spec --max-states infinity --max-depth infinity
-```
-
-### Verification Output
-
-The verifier reports how many states were explored:
-
-```
-✓ Verification passed for my-spec.spec
-  Explored 4,237 states
-  Verified 2 temporal properties
-```
-
-If exploration hits the limit before completing, you'll see:
-
-```
-✓ Verification passed for my-spec.spec
-  Explored 5,000 states  (max limit reached)
-  Verified 2 temporal properties
-```
-
-If you see "(max limit reached)", consider increasing the limits to ensure complete coverage.
+Spectre found the race in 2 steps.
 
 ---
 
-## Next Steps
-
-Now that you understand the overview of the Spectre language, you're ready to dive deeper into each element:
-
-- **Chapter 3**: Types and State Variables (detailed coverage)
-- **Chapter 4**: Actions and Transitions
-- **Chapter 5**: Pure Functions and Constants
-- **Chapter 6**: Invariants (detailed examples)
-- **Chapter 7**: Temporal Properties (detailed examples)
-- **Chapter 8**: Fairness Conditions (detailed examples)
-- **Chapter 9**: Modules and Code Organization
-- **Chapter 10**: Verification and Debugging
-
-
-
-# Chapter 3: Invariants and Violations
-
-This chapter covers invariants: what they are, how they can be violated, and how to fix violations.
-
-## Understanding Invariants
-
-**Invariants** are properties that must hold in **every reachable state** of the system. Unlike temporal properties (which describe behavior over time), invariants are state properties that must be true at all times.
-
-### Key Characteristics of Invariants
-
-1. **Must hold in initial state**: The invariant must be true when the system starts
-2. **Must hold after every action**: After any action executes, the invariant must still be true
-3. **Checked for all reachable states**: The verifier explores all possible execution paths and checks the invariant in every state
-
-### Common Types of Invariants
-
-- **Bounds checking**: Values stay within acceptable ranges
-- **Non-negativity**: Values never become negative
-- **Consistency**: Related values maintain consistent relationships
-- **Safety properties**: Dangerous states are never reached
-
----
-
-## Example 1: Bank Account System
-
-Let's start with a bank account system that tracks account balances.
-
-### The Problem: Missing Preconditions
-
-Here's a bank account specification with a critical flaw:
+## Fix it with a lock
 
 ```spectre
-description "Balance of Alice's account"
-var aliceBalance: int
+// mutex.spec
+var p1_in_cs: bool
+var p2_in_cs: bool
+var lock:     bool
 
-description "Balance of Bob's account"
-var bobBalance: int
+init { p1_in_cs = false  p2_in_cs = false  lock = false }
 
-description "At the initial state, all balances are zero"
-init {
-  aliceBalance = 0
-  bobBalance = 0
-}
+action p1_enter { require not lock  p1_in_cs' = true   lock' = true  }
+action p1_exit  { require p1_in_cs  p1_in_cs' = false  lock' = false }
+action p2_enter { require not lock  p2_in_cs' = true   lock' = true  }
+action p2_exit  { require p2_in_cs  p2_in_cs' = false  lock' = false }
 
-description "Deposit 50 to Alice's account"
-action depositAlice50 {
-  aliceBalance' = aliceBalance + 50
-}
-
-description "Withdraw 30 from Alice's account"
-description "PROBLEM: Missing precondition to check if funds are sufficient"
-action withdrawAlice30 {
-  // Missing: require aliceBalance >= 30
-  aliceBalance' = aliceBalance - 30
-}
-
-description "Withdraw 100 from Alice's account"
-description "PROBLEM: Missing precondition - can withdraw more than balance"
-action withdrawAlice100 {
-  // Missing: require aliceBalance >= 100
-  aliceBalance' = aliceBalance - 100
-}
-
-description "Transfer 50 from Alice to Bob"
-description "PROBLEM: Missing precondition to ensure sufficient funds"
-action transfer50ToBob {
-  // Missing: require aliceBalance >= 50
-  aliceBalance' = aliceBalance - 50
-  bobBalance' = bobBalance + 50
-}
-
-description "Invariant: Account balances should never be negative"
-invariant no_negatives {
-  aliceBalance >= 0 && bobBalance >= 0
-}
+invariant mutex      { not (p1_in_cs and p2_in_cs) }
+invariant lock_owner { lock → (p1_in_cs or p2_in_cs) }
+temporal  p1_progress { WF(p1_enter) }
+temporal  p2_progress { WF(p2_enter) }
 ```
-
-### Why This Violates the Invariant
-
-The `no_negatives` invariant states that both `aliceBalance` and `bobBalance` must always be non-negative. However, several actions can violate this:
-
-1. **`withdrawAlice30`**: If Alice's balance is less than 30 (e.g., 20), this action would set `aliceBalance = -10`, violating the invariant.
-
-2. **`withdrawAlice100`**: If Alice's balance is less than 100 (e.g., 50), this action would set `aliceBalance = -50`, violating the invariant.
-
-3. **`transfer50ToBob`**: If Alice's balance is less than 50 (e.g., 30), this action would set `aliceBalance = -20`, violating the invariant.
-
-### The Error
-
-When you verify this specification, the verifier will **fail** and report multiple violations:
 
 ```bash
-$ ./spectre verify examples/bank-account-violation.spec
-
-Verification failed: 49 violation(s) found
-
-Violation 1 (Invariant):
-  Action 'withdrawAlice100' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-
-Violation 2 (Invariant):
-  Action 'transfer50ToBob' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-
-Violation 3 (Invariant):
-  Action 'withdrawAlice30' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-
-Violation 4 (Invariant):
-  Action 'withdrawAlice100' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-  Path:
-    1. depositAlice50
-
-Violation 5 (Invariant):
-  Action 'withdrawAlice30' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-  Path:
-    1. depositAlice50
-    2. transfer50ToBob
-
-...
+spectre verify mutex.spec
+# ✓ safe — 9 states explored (exhaustive)
 ```
 
-### Understanding the Error Messages
-
-Each violation message has several components:
-
-1. **Violation Number**: The order in which violations were discovered during exploration
-2. **Action Name**: Which action would cause the violation (e.g., `withdrawAlice100`)
-3. **Invariant Name**: Which invariant would be violated (e.g., `no_negatives`)
-4. **Description**: The human-readable description from the invariant declaration
-5. **Path (when applicable)**: The sequence of actions that leads to a state where this violation can occur
-
-**Example Breakdown**:
+State machine for this model:
 
 ```
-Violation 4 (Invariant):
-  Action 'withdrawAlice100' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-  Path:
-    1. depositAlice50
+           p1_enter                    p1_exit
+  (free) ───────────► (p1 holds lock) ──────────► (free)
+    │                                                 ▲
+    │     p2_enter                    p2_exit         │
+    └───────────────► (p2 holds lock) ────────────────┘
 ```
 
-This tells us:
-- **What action would fail**: `withdrawAlice100`
-- **Why it fails**: Executing it would violate the `no_negatives` invariant
-- **Where it fails**: After executing `depositAlice50`, Alice's balance is 50. At this point, trying to withdraw 100 would make the balance -50, violating the invariant.
-
-### Why Verification Fails
-
-The verifier detects that **actions are available** (they can be executed from certain states) but **would violate invariants** if executed. This indicates a specification flaw:
-
-- Actions should have **preconditions** (`require` statements) that prevent them from being available when they would violate invariants
-- The verifier catches these violations during exploration, even though it prevents invalid states from being reached
-- Each violation represents a state-action pair where the action would create an invalid state
-
-**Why this matters**: In a real system, we want preconditions to prevent invalid operations, not rely on post-execution checks. Preconditions make the specification clearer and ensure that actions are only available when they're safe to execute.
-
-### The Fix: Add Preconditions
-
-To fix this, we need to add `require` statements (preconditions) to ensure actions only execute when they won't violate the invariant:
-
-```spectre
-description "Balance of Alice's account"
-var aliceBalance: int
-
-description "Balance of Bob's account"
-var bobBalance: int
-
-description "At the initial state, all balances are zero"
-init {
-  aliceBalance = 0
-  bobBalance = 0
-}
-
-description "Deposit 50 to Alice's account"
-action depositAlice50 {
-  aliceBalance' = aliceBalance + 50
-}
-
-description "Withdraw 30 from Alice's account if funds are sufficient"
-description "FIXED: Added precondition to check if funds are sufficient"
-action withdrawAlice30 {
-  require aliceBalance >= 30
-  aliceBalance' = aliceBalance - 30
-}
-
-description "Withdraw 100 from Alice's account if funds are sufficient"
-description "FIXED: Added precondition to prevent overdrawing"
-action withdrawAlice100 {
-  require aliceBalance >= 100
-  aliceBalance' = aliceBalance - 100
-}
-
-description "Transfer 50 from Alice to Bob if Alice has sufficient funds"
-description "FIXED: Added precondition to ensure sufficient funds"
-action transfer50ToBob {
-  require aliceBalance >= 50
-  aliceBalance' = aliceBalance - 50
-  bobBalance' = bobBalance + 50
-}
-
-description "Invariant: Account balances should never be negative"
-invariant no_negatives {
-  aliceBalance >= 0 && bobBalance >= 0
-}
-```
-
-### How Preconditions Fix the Problem
-
-**Preconditions** (`require` statements) are conditions that must be true **before** an action can execute. If a precondition is false, the action cannot execute.
-
-By adding `require aliceBalance >= 30` to `withdrawAlice30`:
-- The action can only execute when Alice has at least 30
-- After execution, `aliceBalance` will be `aliceBalance - 30 >= 0`
-- The invariant is preserved
-
-Similarly:
-- `require aliceBalance >= 100` ensures `withdrawAlice100` only executes when Alice has sufficient funds
-- `require aliceBalance >= 50` ensures `transfer50ToBob` only executes when Alice can afford the transfer
-
-With these preconditions, the invariant `no_negatives` will always hold.
+Only one process can hold the lock — `p2_enter` and `p1_enter` both `require not lock`, so they can never both fire from the same state.
 
 ---
 
-## Example 2: Inventory Management System
-
-Now let's look at a more complex example with **multiple invariants**.
-
-### The Problem: Missing Bounds Checking
-
-Here's an inventory system that tracks the number of items:
+## Producer-consumer with a bounded buffer
 
 ```spectre
-description "Number of items in inventory"
-var inventory: int
+param CAPACITY: int = 3
+var items: int
 
-description "System starts with empty inventory"
-init {
-  inventory = 0
-}
+init { items = 0 }
 
-description "Add 50 items to inventory"
-description "PROBLEM: Missing precondition to check capacity limit"
-action add50 {
-  // Missing: require inventory + 50 <= 100
-  inventory' = inventory + 50
-}
+action produce { require items < CAPACITY  items' = items + 1 }
+action consume { require items > 0         items' = items - 1 }
 
-description "Add 60 items to inventory"
-description "PROBLEM: Can exceed capacity"
-action add60 {
-  // Missing: require inventory + 60 <= 100
-  inventory' = inventory + 60
-}
-
-description "Remove 30 items from inventory"
-description "PROBLEM: Missing precondition to check if enough items exist"
-action remove30 {
-  // Missing: require inventory >= 30
-  inventory' = inventory - 30
-}
-
-description "Remove 50 items from inventory"
-description "PROBLEM: Can make inventory negative"
-action remove50 {
-  // Missing: require inventory >= 50
-  inventory' = inventory - 50
-}
-
-description "CRITICAL: Ensures inventory never exceeds maximum capacity"
-invariant withinCapacity {
-  inventory <= 100
-}
-
-description "CRITICAL: Ensures inventory never becomes negative"
-invariant nonNegative {
-  inventory >= 0
-}
+invariant no_overflow  { items <= CAPACITY }
+invariant no_underflow { items >= 0        }
+temporal  eventually_full { eventually(items = CAPACITY) }
 ```
-
-### Why This Violates the Invariants
-
-This system has **two invariants** that can both be violated:
-
-1. **`withinCapacity`**: Violated when inventory exceeds 100
-   - `add50` when `inventory = 60` → `inventory = 110` ❌
-   - `add60` when `inventory = 50` → `inventory = 110` ❌
-
-2. **`nonNegative`**: Violated when inventory becomes negative
-   - `remove30` when `inventory = 20` → `inventory = -10` ❌
-   - `remove50` when `inventory = 30` → `inventory = -20` ❌
-
-### The Error
-
-When you verify this specification, the verifier will **fail** and report violations:
 
 ```bash
-$ ./spectre verify examples/inventory-violation.spec
+spectre verify buffer.spec --param CAPACITY=3
+# ✓ safe — 4 states explored (exhaustive)
 
-Verification failed: X violation(s) found
-
-Violation 1 (Invariant):
-  Action 'add60' would violate invariants: [invariant withinCapacity violated: (Ensures inventory never exceeds maximum capacity)]
-  
-Violation 2 (Invariant):
-  Action 'remove30' would violate invariants: [invariant nonNegative violated: (CRITICAL: Ensures inventory never becomes negative)]
-  
-...
+spectre verify buffer.spec --param CAPACITY=10
+# ✓ safe — 11 states explored (exhaustive)
 ```
 
-### Understanding the Error Messages
+Adding a second producer (`produce2`) immediately doubles the state space — BFS handles it automatically.
 
-The violations follow the same pattern as the bank account example:
+---
 
-- **Violation 1**: `add60` would exceed the capacity of 100 when inventory is already above 40
-- **Violation 2**: `remove30` would make inventory negative when the current value is less than 30
+## Distributed message queue
 
-Each violation indicates that an action is available but would create an invalid state. The actions need preconditions to prevent them from being available in these situations.
-
-### The Fix: Add Preconditions for Both Invariants
-
-To fix this, we need preconditions that ensure **both** invariants are maintained:
+Three-role system: producers enqueue, consumers dequeue, an accounting invariant keeps them honest.
 
 ```spectre
-description "Number of items in inventory"
-var inventory: int
+param MAX_QUEUE: int = 5
+var queue_len: int
+var produced:  int
+var consumed:  int
 
-description "System starts with empty inventory"
-init {
-  inventory = 0
+init { queue_len = 0  produced = 0  consumed = 0 }
+
+action enqueue {
+  require queue_len < MAX_QUEUE
+  queue_len' = queue_len + 1
+  produced'  = produced + 1
 }
 
-description "Add 50 items to inventory if capacity allows"
-description "FIXED: Added precondition to check capacity limit"
-action add50 {
-  require inventory + 50 <= 100
-  inventory' = inventory + 50
+action dequeue {
+  require queue_len > 0
+  queue_len' = queue_len - 1
+  consumed'  = consumed + 1
 }
 
-description "Add 60 items to inventory if capacity allows"
-description "FIXED: Added precondition to prevent exceeding capacity"
-action add60 {
-  require inventory + 60 <= 100
-  inventory' = inventory + 60
-}
-
-description "Remove 30 items from inventory if enough items exist"
-description "FIXED: Added precondition to check if enough items exist"
-action remove30 {
-  require inventory >= 30
-  inventory' = inventory - 30
-}
-
-description "Remove 50 items from inventory if enough items exist"
-description "FIXED: Added precondition to prevent negative inventory"
-action remove50 {
-  require inventory >= 50
-  inventory' = inventory - 50
-}
-
-description "CRITICAL: Ensures inventory never exceeds maximum capacity"
-invariant withinCapacity {
-  inventory <= 100
-}
-
-description "CRITICAL: Ensures inventory never becomes negative"
-invariant nonNegative {
-  inventory >= 0
-}
+invariant queue_bounded  { queue_len <= MAX_QUEUE }
+invariant queue_positive { queue_len >= 0         }
+invariant accounting     { produced = consumed + queue_len }
+temporal  queue_drains   { always(queue_len > 0 → eventually(queue_len = 0)) }
 ```
-
-### How These Preconditions Work
-
-1. **For `add50` and `add60`**: 
-   - `require inventory + quantity <= 100` ensures that after adding, inventory won't exceed 100
-   - This preserves the `withinCapacity` invariant
-
-2. **For `remove30` and `remove50`**:
-   - `require inventory >= quantity` ensures that after removing, inventory won't become negative
-   - This preserves the `nonNegative` invariant
-
-With these preconditions, both invariants will always hold.
-
----
-
----
-
-## CEGIS Automatic Repair
-
-When `spectre verify` finds an invariant violation, it does not just report it — it automatically synthesises a `require` guard that would prevent the violation, using **weakest-precondition (WP) computation**:
 
 ```bash
-./spectre verify examples/bank-account-violation.spec
+spectre verify queue.spec
+# ✓ safe — 21 states explored (exhaustive)
 ```
 
-After reporting the violation, the output includes a repair suggestion:
-
-```
-CEGIS Repair Suggestions:
-
-  Invariant `no_negatives` violated via action `withdrawAlice30`:
-    Pre-state: {aliceBalance = 0, bobBalance = 0}
-    Counterexample: withdrawAlice30*
-    Option 1 — weakest precondition for `aliceBalance' = aliceBalance - 30`:
-      // In action withdrawAlice30 — add:
-      require aliceBalance - 30 >= 0
-      ✓ Verified: re-explored with this guard applied — invariant holds
-```
-
-The synthesised guard is the **weakest condition** under which the assignment preserves the invariant — i.e., the least restrictive guard that is still correct. Add it to the action:
-
-```spectre
-action withdrawAlice30 {
-  require aliceBalance - 30 >= 0   // synthesised by CEGIS
-  aliceBalance' = aliceBalance - 30
-}
-```
-
-Or rewrite it in the more idiomatic form (mathematically equivalent):
-
-```spectre
-action withdrawAlice30 {
-  require aliceBalance >= 30
-  aliceBalance' = aliceBalance - 30
-}
-```
-
-Spectre re-runs BFS with the proposed guard injected before reporting `✓ Verified`, so the suggestion is confirmed correct before you see it. For specs with multiple violating actions, a repair suggestion is produced for each one.
+The `accounting` invariant is the most valuable one here. It catches any race where messages are created or destroyed without both counters updating — a class of bugs that integration tests rarely find.
 
 ---
 
-## Common Patterns of Invariant Violations
+## Good invariants for concurrent specs
 
-Based on our examples, here are common patterns:
+| Pattern | Invariant example |
+|---------|------------------|
+| Mutual exclusion | `not (p1_in_cs and p2_in_cs)` |
+| Accounting identity | `produced = consumed + in_flight` |
+| State consistency | `locked → owner_known` |
+| Bounded resource | `active_connections <= MAX_CONN` |
+| No phantom state | `waiting → (request_sent and not response_received)` |
 
-### Pattern 1: Missing Preconditions for Decrements
-
-**Problem**: Actions that decrease values don't check if the value is large enough.
-
-**Example**: `withdraw` without checking balance, `remove` without checking inventory
-
-**Fix**: Add `require value >= amount` before decrementing
-
-### Pattern 2: Missing Preconditions for Increments
-
-**Problem**: Actions that increase values don't check if the value would exceed bounds.
-
-**Example**: `add` without checking capacity, `deposit` without checking maximum
-
-**Fix**: Add `require value + amount <= maxValue` before incrementing
-
-### Pattern 3: Missing Preconditions for Compound Operations
-
-**Problem**: Actions that perform multiple state changes don't validate intermediate states.
-
-**Example**: `transfer` that subtracts from one account and adds to another
-
-**Fix**: Add preconditions for each state change: `require fromValue >= amount` and ensure `toValue + amount <= maxValue` if applicable
-
-### Pattern 4: Missing Validation of Input Parameters
-
-**Problem**: Actions don't validate that parameters are within acceptable ranges.
-
-**Example**: Accepting negative amounts, zero quantities, or invalid account names
-
-**Fix**: Add `require amount > 0`, `require account != ""`, etc.
+Write at least one invariant of each type that applies to your system.
 
 ---
 
-## Best Practices for Preventing Invariant Violations
+## When the state space gets large
 
-1. **Always add preconditions**: Every action that modifies state should have preconditions that ensure invariants are maintained.
-
-2. **Check before modifying**: Preconditions should check the **current state** before making changes, not after.
-
-3. **Consider all invariants**: If you have multiple invariants, ensure each action maintains **all** of them.
-
-4. **Use descriptive error messages**: When preconditions fail, the verifier will report which action couldn't execute and why.
-
-5. **Test edge cases**: Consider boundary conditions:
-   - What happens at the minimum value (0, empty, etc.)?
-   - What happens at the maximum value (100, full, etc.)?
-   - What happens with invalid inputs?
-
----
-
-## Understanding Verifier Behavior
-
-When you verify a specification with missing preconditions:
-
-1. **The verifier checks invariants**: It validates invariants after each action execution
-2. **Invalid states are prevented**: If an action would create an invalid state, that action execution fails
-3. **Violations are recorded**: Each attempt to execute an action that would violate invariants is recorded as a violation
-4. **Verification fails**: If any violations are found, verification fails with a detailed report
-
-### Example: What the Verifier Does
-
-When an action would violate an invariant:
-- The verifier detects it before adding the invalid state
-- The action execution fails, and a **violation is recorded**
-- The violation includes:
-  - The action that would fail
-  - The invariant that would be violated
-  - The path (sequence of actions) leading to the state where this would occur
-- Other valid paths continue to be explored
-- **Verification fails** if any violations are found
-
-**Key Insight**: The verifier acts as both a safety net (preventing invalid states) and a **specification checker** (reporting when actions lack proper preconditions). This helps you find and fix specification flaws early.
-
----
-
-## Summary
-
-This chapter covered:
-
-1. **What invariants are**: Properties that must hold in every reachable state
-
-2. **How invariants are violated**: 
-   - Missing preconditions allow actions to execute when they shouldn't
-   - Actions modify state in ways that break invariant properties
-
-3. **How to fix violations**:
-   - Add `require` statements (preconditions) to actions
-   - Preconditions check the current state before making changes
-   - Preconditions ensure invariants will hold after the action executes
-
-4. **Common patterns**:
-   - Missing checks for decrements (negative values)
-   - Missing checks for increments (exceeding bounds)
-   - Missing checks for compound operations
-   - Missing validation of input parameters
-
-5. **Verifier behavior**: The verifier prevents invalid states from being reached, but you should still add preconditions for correctness
-
-6. **Best practices**: Always add preconditions, check before modifying, consider all invariants
-
-By understanding invariants and how to prevent violations, you can write specifications that maintain safety properties throughout system execution. Use preconditions to prevent problems, and invariants to guarantee properties.
-
-# Chapter 4: Temporal and Fairness Properties
-
-This chapter covers temporal properties and fairness conditions.
-
-## Understanding Temporal Properties
-
-Temporal properties describe behavior over sequences of states (execution traces). Unlike invariants, which must hold in every state, temporal properties express requirements about future states and execution paths.
-
-### A Simple Counter Example
-
-Let's start with a basic counter specification:
-
-```spectre
-description "Tracks a numeric counter value"
-var counter: int
-
-description "System starts with counter initialized to zero"
-init {
-  counter = 0
-}
-
-description "Increments the counter by one"
-action increment {
-  counter' = counter + 1
-}
-
-description "Decrements the counter by one, only when counter is positive"
-action decrement {
-  require counter > 0
-  counter' = counter - 1
-}
-
-description "Resets the counter back to zero"
-action reset {
-  counter' = 0
-}
-
-description "Ensures counter never becomes negative"
-invariant nonNegative {
-  counter >= 0
-}
-
-description "Keeps counter within reasonable bounds"
-invariant bounded {
-  counter <= 100
-}
-
-description "Verifies that counter eventually reaches value 10"
-temporal eventuallyReachesTen {
-  eventually (counter = 10)
-}
-
-description "Ensures counter remains non-negative throughout execution"
-temporal alwaysNonNegative {
-  always (counter >= 0)
-}
-
-description "Guarantees progress: if counter is below 10, it will eventually reach 10"
-temporal progress {
-  always (counter < 10 → eventually counter = 10)
-}
-```
-
-This specification defines:
-- A `counter` variable that starts at 0
-- Three actions: `increment`, `decrement`, and `reset`
-- Two invariants: `nonNegative` and `bounded`
-- Three temporal properties
-
-### Understanding the Temporal Properties
-
-1. **`eventuallyReachesTen`**: Checks if the counter can eventually reach 10. This property holds because there exists a path where we only increment (0 → 1 → 2 → ... → 10).
-
-2. **`alwaysNonNegative`**: Ensures the counter never becomes negative. This property holds because:
-   - The counter starts at 0
-   - `increment` always increases it
-   - `decrement` has a precondition `counter > 0`, so it can't make it negative
-   - `reset` sets it to 0
-
-3. **`progress`**: This is more complex. It states: "In every state where `counter < 10`, eventually `counter = 10` will hold."
-
-### The Problem: A Temporal Property Violation
-
-When we verify this specification, we get a violation:
-
-```
-Verification failed: 1 violation(s) found
-
-Violation 1 (Temporal Property: progress):
-  Property 'progress' violated: (Guarantees progress: if counter is below 10, 
-  it will eventually reach 10) P holds but Q never becomes true
-```
-
-**Why does this happen?**
-
-The `progress` property states that whenever `counter < 10`, it will eventually reach 10. However, the `reset` action can be executed at any time, even when `counter = 0`. This creates a problematic execution path:
-
-1. Start with `counter = 0` (where `counter < 10` holds)
-2. Execute `reset` → `counter = 0` (still `counter < 10`)
-3. Execute `reset` again → `counter = 0` (still `counter < 10`)
-4. Continue executing `reset` infinitely...
-
-This infinite loop creates a "blocking cycle" where the counter never reaches 10, violating the temporal property.
-
-### Fixing the Problem: Restricting Actions
-
-One way to fix this is to restrict the `reset` action so it can only execute when it doesn't prevent progress. In `counter-corrected.spec`, we add a precondition:
-
-```spectre
-description "Resets the counter back to zero"
-action reset {
-  require counter > 10
-  counter' = 0
-}
-```
-
-Now `reset` can only execute when `counter > 10`, which means:
-- When `counter < 10`, `reset` cannot execute
-- The system can only progress forward (via `increment`) or stay in place (via `decrement` if `counter > 0`)
-- Since `increment` has no preconditions, it can always execute, ensuring progress to 10
-
-With this fix, the `progress` temporal property holds.
-
-### Why This Approach Works
-
-By restricting `reset` to only execute when `counter > 10`, we've eliminated the problematic infinite loop. Now, when `counter < 10`:
-- `reset` cannot execute (precondition not satisfied)
-- `decrement` can only execute if `counter > 0`
-- `increment` can always execute (no preconditions)
-
-Since `increment` can always execute, there's always a path forward, ensuring the counter will eventually reach 10.
-
----
-
-## Fairness Properties
-
-However, restricting actions isn't always the best solution. Sometimes we want to allow all actions but assume they execute "fairly." This is where **fairness conditions** come in.
-
-### What is Fairness?
-
-In concurrent systems, fairness conditions specify assumptions about how actions are scheduled. They ensure that actions that are "ready" to execute will eventually do so, preventing infinite loops where an enabled action is never chosen.
-
-### Weak Fairness (WF)
-
-**Weak Fairness** states: "If an action is **continuously enabled** from some point onwards, it must eventually execute."
-
-**Key points:**
-- The action must be enabled continuously (without interruption)
-- Once it becomes continuously enabled, it will eventually execute
-- It doesn't guarantee execution if the action is enabled and disabled repeatedly
-
-**Example:**
-```spectre
-description "Weak fairness ensures process1 gets fair access when continuously waiting"
-temporal process1WeakFairness {
-  WF(process1Request)
-}
-```
-
-This means: If `process1Request` is enabled and stays enabled, it will eventually execute.
-
-### Strong Fairness (SF)
-
-**Strong Fairness** states: "If an action is enabled **infinitely often**, it must execute infinitely often."
-
-**Key points:**
-- The action needs to be enabled infinitely often (even if disabled sometimes)
-- It will execute infinitely often if enabled infinitely often
-- Stronger guarantee than weak fairness
-
-**Example:**
-```spectre
-description "Strong fairness ensures process1 executes even if intermittently enabled"
-temporal process1StrongFairness {
-  SF(process1Request)
-}
-```
-
-This means: Even if `process1Request` is enabled and disabled repeatedly, if it's enabled infinitely often, it will execute infinitely often.
-
-### When to Use Weak vs Strong Fairness
-
-- **Weak Fairness (WF)**: Use when an action should execute if it's continuously available
-  - Example: A process waiting for a lock should eventually get it if the lock is continuously free
-
-- **Strong Fairness (SF)**: Use when an action should execute even if it's intermittently enabled
-  - Example: A process should eventually get the lock even if the lock is acquired and released repeatedly
-
----
-
-## Fairness in Temporal Properties
-
-Fairness conditions can be combined with temporal operators using the leads-to (`→`) operator. This allows us to express properties that hold under fairness assumptions.
-
-### Syntax
-
-```spectre
-temporal propertyName {
-  WF(actionName) → temporalExpression
-}
-```
-
-or
-
-```spectre
-temporal propertyName {
-  SF(actionName) → temporalExpression
-}
-```
-
-### How It Works
-
-When you write `WF(action) → always (P → eventually Q)`, the verifier:
-
-1. **Filters the transition graph**: Removes all "unfair" paths where the action is continuously enabled (WF) or enabled infinitely often (SF) but never executes
-2. **Verifies the property**: Checks if `always (P → eventually Q)` holds over the remaining "fair" paths
-
-This ensures that the temporal property is verified only under the assumption that the action executes fairly.
-
----
-
-## The Counter Example with Fairness
-
-In `counter-with-fairness.spec`:
-
-```spectre
-description "Tracks a numeric counter value"
-var counter: int
-
-description "System starts with counter initialized to zero"
-init {
-  counter = 0
-}
-
-description "Increments the counter by one"
-action increment {
-  counter' = counter + 1
-}
-
-description "Decrements the counter by one, only when counter is positive"
-action decrement {
-  require counter > 0
-  counter' = counter - 1
-}
-
-description "Resets the counter back to zero"
-action reset {
-  counter' = 0
-}
-
-description "Ensures counter never becomes negative"
-invariant nonNegative {
-  counter >= 0
-}
-
-description "Keeps counter within reasonable bounds"
-invariant bounded {
-  counter <= 100
-}
-
-description "Verifies that counter can eventually reach value 10"
-temporal eventuallyReachesTen {
-  eventually (counter = 10)
-}
-
-description "Ensures counter remains non-negative throughout execution"
-temporal alwaysNonNegative {
-  always (counter >= 0)
-}
-
-description "Guarantees progress: if counter is below 10, it will eventually reach 10"
-description "With weak fairness on increment, this property holds because increment will"
-description "eventually execute when continuously enabled, ensuring progress to counter = 10"
-temporal progress {
-  WF(increment) → always (counter < 10 → eventually counter == 10)
-}
-```
-
-Notice that `reset` has no preconditions (unlike the corrected version). However, the `progress` property now includes weak fairness:
-
-```spectre
-WF(increment) → always (counter < 10 → eventually counter == 10)
-```
-
-### How This Works
-
-1. **Weak fairness on `increment`**: `WF(increment)` assumes that if `increment` is continuously enabled, it will eventually execute.
-
-2. **Filtering unfair paths**: The verifier identifies cycles where:
-   - `increment` is continuously enabled (it has no preconditions, so it's always enabled)
-   - `increment` never executes in the cycle
-   - These cycles are marked as "unfair" and filtered out
-
-3. **Example of an unfair cycle**: 
-   - State: `counter = 0`
-   - Transition: `reset` action → `counter = 0` (self-loop)
-   - This cycle is unfair because `increment` is continuously enabled (no preconditions) but never executes
-
-4. **Verifying the property**: After filtering out unfair cycles, the verifier checks if `always (counter < 10 → eventually counter == 10)` holds over the remaining fair paths.
-
-5. **Result**: The property holds because:
-   - Unfair cycles (like the `reset` self-loop at `counter = 0`) are filtered out
-   - In fair paths, `increment` will eventually execute when `counter < 10`
-   - This ensures progress toward `counter = 10`
-
-### Why This is Better
-
-Using fairness instead of restricting actions has several advantages:
-
-1. **More general**: Doesn't require changing action preconditions
-2. **Realistic assumptions**: Models real systems where actions execute fairly
-3. **Clearer intent**: Explicitly states the fairness assumptions
-4. **Reusable**: The same fairness conditions can be applied to multiple temporal properties
-
----
-
-## Summary
-
-This chapter covered:
-
-1. **Temporal Properties**: Express requirements about future states and execution paths
-   - `eventually P`: P holds at some point
-   - `always P`: P holds in every state
-   - `P → Q`: If P holds, eventually Q will hold
-
-2. **Temporal Property Violations**: Can occur when infinite loops (blocking cycles) prevent progress
-
-3. **Fixing Violations**: 
-   - Option 1: Restrict actions with preconditions
-   - Option 2: Use fairness conditions (preferred for concurrent systems)
-
-4. **Fairness Conditions**:
-   - **Weak Fairness (WF)**: Continuously enabled actions eventually execute
-   - **Strong Fairness (SF)**: Actions enabled infinitely often execute infinitely often
-
-5. **Fairness in Temporal Properties**: Use `WF(action) → temporalExpression` or `SF(action) → temporalExpression` to verify properties under fairness assumptions
-
-6. **How Fairness Works**: The verifier filters out unfair paths (where fair actions don't execute) before verifying temporal properties
-
-By understanding temporal and fairness properties, you can verify complex system behaviors and ensure that progress guarantees hold even in concurrent systems with multiple possible execution paths.
-
-# Chapter 5: Concurrent Systems and Locking
-
-This chapter covers specifying and verifying concurrent systems. The example uses a locking mechanism for mutual exclusion, showing how missing preconditions lead to invariant and temporal property violations.
-
-## Understanding Concurrent Systems
-
-In concurrent systems, multiple processes run simultaneously and may need to access shared resources. Without proper synchronization, this can lead to:
-
-- **Race conditions**: Multiple processes accessing shared data simultaneously
-- **Data corruption**: Unpredictable results from concurrent modifications
-- **Violation of invariants**: System properties that should always hold become violated
-
-**Locking** is a fundamental mechanism to ensure **mutual exclusion**: only one process can access a critical resource at a time.
-
----
-
-## Example: Three Processes with a Shared Resource
-
-Our example system has:
-
-- **Three processes** (process1, process2, process3) that need to access a shared resource
-- **A lock** (integer: 0 = unlocked, 1-3 = held by process 1-3)
-- **A shared resource** (integer that gets incremented when accessed)
-- **Process states**: `Idle`, `Waiting`, `Critical`
-
-Each process follows a protocol:
-1. **Request lock**: Move from `Idle` to `Waiting`
-2. **Acquire lock**: Move from `Waiting` to `Critical` (when lock is available)
-3. **Access resource**: Increment the resource (while in `Critical`)
-4. **Release lock**: Move from `Critical` to `Idle` (release the lock)
-
-### Required Invariants
-
-1. **Mutual Exclusion**: Only one process can be in the `Critical` state at a time
-2. **Lock Consistency**: If a process is in `Critical`, it must hold the lock
-
-### Required Temporal Properties
-
-1. **Progress**: If a process requests the lock, it eventually gets it
-2. **Resource Progress**: The resource value eventually increases
-
----
-
-## The Problem: Missing Preconditions
-
-Let's examine a specification with critical flaws in `examples/concurrent-lock-violation.spec`:
-
-```spectre
-enum ProcessState {
-  Idle,
-  Waiting,
-  Critical
-}
-
-var process1: ProcessState
-var process2: ProcessState
-var process3: ProcessState
-var lock: int  // 0 = unlocked, 1-3 = held by process 1-3
-var resource: int
-
-init {
-  process1 = ProcessState.Idle
-  process2 = ProcessState.Idle
-  process3 = ProcessState.Idle
-  lock = 0
-  resource = 0
-}
-
-action acquireLock1 {
-  // PROBLEM: No check if lock is available
-  lock' = 1
-  process1' = ProcessState.Critical
-}
-
-action accessResource1 {
-  // PROBLEM: No check if process holds the lock
-  resource' = resource + 1
-}
-
-action releaseLock1 {
-  // PROBLEM: No check if process holds the lock
-  lock' = 0
-  process1' = ProcessState.Idle
-}
-
-// Similar problems for process2 and process3...
-```
-
-### What's Wrong?
-
-1. **`acquireLock1`** can execute even when the lock is held by another process (e.g., `lock == 2`)
-2. **`accessResource1`** can execute even when process1 doesn't hold the lock
-3. **`releaseLock1`** can execute even when process1 doesn't hold the lock
-
-This allows multiple processes to simultaneously acquire the lock or access the resource without holding it.
-
----
-
-## The Errors
-
-When you verify this specification, the verifier will **fail** with multiple violations:
+Three-process or three-role specs can hit tens of thousands of states:
 
 ```bash
-$ ./spectre verify examples/concurrent-lock-violation.spec
-
-Verification failed: 90 violation(s) found
-
-Violation 1 (Invariant):
-  Action 'acquireLock1' would violate invariants: 
-    [invariant mutualExclusion violated: (Invariant: Only one process can hold the lock at a time) 
-     invariant criticalSectionHoldsLock violated: (Invariant: Process in critical section must hold the lock)]
-  Path:
-    1. acquireLock2
-
-Violation 2 (Invariant):
-  Action 'releaseLock1' would violate invariants: 
-    [invariant criticalSectionHoldsLock violated: (Invariant: Process in critical section must hold the lock)]
-  Path:
-    1. acquireLock2
-
-Violation 3 (Invariant):
-  Action 'acquireLock3' would violate invariants: 
-    [invariant mutualExclusion violated: (Invariant: Only one process can hold the lock at a time) 
-     invariant criticalSectionHoldsLock violated: (Invariant: Process in critical section must hold the lock)]
-  Path:
-    1. acquireLock2
-
-...
-
-Violation 93 (Temporal Property: progress):
-  Property 'progress' violated: (Temporal: If a process requests the lock, it eventually gets it) 
-  P holds but Q never becomes true
-  Counterexample trace:
-    2. accessResource1
-    3. requestLock1
+spectre verify 3-party.spec --max-states 50000
+# bounded — hit state limit (50000 states)
 ```
 
-### Understanding the Errors
+Options when BFS doesn't finish:
 
-#### Invariant Violations
-
-The invariant violations show that actions would break the safety properties:
-
-1. **`acquireLock1` after `acquireLock2`**: Process2 already holds the lock (`lock == 2`), but `acquireLock1` can still execute, setting `lock = 1` and putting process1 in `Critical`. This violates:
-   - **Mutual exclusion**: Both process1 and process2 would be in `Critical`
-   - **Lock consistency**: Process1 is in `Critical` but the lock doesn't match (`lock != 1` would be true initially)
-
-2. **`releaseLock1` after `acquireLock2`**: Process1 tries to release a lock it doesn't hold, breaking lock consistency
-
-3. **Multiple simultaneous critical sections**: Without proper checks, multiple processes can enter their critical sections simultaneously
-
-#### Temporal Violations
-
-The temporal property violations show **liveness problems**:
+| Option | When to use |
+|--------|-------------|
+| `--max-states 200000` | More time, same algorithm |
+| `--backend apalache` | Symbolic — handles larger spaces |
+| `--por` | Partial-order reduction — skips equivalent interleavings |
+| Split the spec | Verify each component separately first |
 
 ```bash
-Violation 93 (Temporal Property: progress):
-  Property 'progress' violated: (Temporal: If a process requests the lock, it eventually gets it) 
-  P holds but Q never becomes true
-  Counterexample trace:
-    2. accessResource1
-    3. requestLock1
+spectre verify 3-party.spec --backend apalache
+# uses Apalache's symbolic engine — see Chapter 15
 ```
-
-- **`progress` property**: States that if a process requests the lock (`Waiting`), it should eventually enter the `Critical` section
-- **Why it fails**: There are execution paths where:
-  - A process is `Waiting` but the `acquireLock` action never executes (even when the lock is available)
-  - Without fairness constraints, the scheduler could continuously skip the `acquireLock` action
-  - The system can get stuck in states where processes are waiting indefinitely
-
-**Counterexample trace analysis**:
-- Process1 is in `Critical` and accesses the resource
-- Process1 requests the lock again (while still in `Critical` - this shouldn't be possible, but missing preconditions allow it)
-- The system reaches a state where process1 is `Waiting`
-- However, even if the lock becomes available, there's no guarantee that `acquireLock1` will execute
-- Without fairness, the scheduler could continuously execute other actions, leaving process1 waiting forever
 
 ---
 
-## The Fix: Add Preconditions
+## Concurrency workflow
 
-To fix the specification, we need to add `require` statements (preconditions) to ensure actions only execute when safe:
-
-```spectre
-action requestLock1 {
-  require process1 == ProcessState.Idle
-  process1' = ProcessState.Waiting
-}
-
-action acquireLock1 {
-  require lock == 0              // Lock must be available
-  require process1 == ProcessState.Waiting  // Process must be waiting
-  lock' = 1
-  process1' = ProcessState.Critical
-}
-
-action accessResource1 {
-  require lock == 1              // Process must hold the lock
-  require process1 == ProcessState.Critical  // Process must be in critical section
-  resource' = resource + 1
-}
-
-action releaseLock1 {
-  require lock == 1              // Process must hold the lock
-  require process1 == ProcessState.Critical  // Process must be in critical section
-  lock' = 0
-  process1' = ProcessState.Idle
-}
 ```
-
-### What the Fixes Do
-
-1. **`requestLock1`**: Only allows requesting if the process is currently `Idle`
-
-2. **`acquireLock1`**: 
-   - Checks that the lock is free (`lock == 0`)
-   - Ensures the process is in the `Waiting` state
-   - This prevents multiple processes from acquiring the lock simultaneously
-
-3. **`accessResource1`**:
-   - Verifies the process holds the lock (`lock == 1`)
-   - Ensures the process is in the `Critical` state
-   - This prevents accessing the resource without proper synchronization
-
-4. **`releaseLock1`**:
-   - Verifies the process holds the lock (`lock == 1`)
-   - Ensures the process is in the `Critical` state
-   - This prevents releasing a lock the process doesn't hold
-
-### Understanding Why Temporal Properties Fail
-
-The temporal property `progress` fails because without fairness constraints, there's no guarantee that `acquireLock` actions will execute even when they're enabled:
-
-- **The Problem**: If a process is `Waiting`, the `acquireLock` action may be enabled (when the lock is free), but the scheduler could continuously skip it
-- **Without Fairness**: The verifier considers all possible execution paths, including "unfair" ones where enabled actions never execute
-- **Result**: The temporal property fails because there exists an execution path where a waiting process never acquires the lock
-
-**Why Fairness is Needed**:
-- **Weak Fairness (WF)**: Ensures actions execute if they're **continuously enabled**
-- **Strong Fairness (SF)**: Ensures actions execute if they're **enabled infinitely often** (even if not continuously)
-
-For concurrent systems with locks, **strong fairness** is typically needed because:
-- `acquireLock` actions are not continuously enabled (the lock may be held by other processes)
-- But they become enabled infinitely often (as the lock is released and acquired repeatedly)
-- Strong fairness guarantees they will eventually execute
-
-### Fixing Temporal Properties
-
-The temporal property `resourceProgress` in the corrected version passes because:
-- Preconditions ensure actions can execute safely
-- The system can make progress (processes can acquire locks and access the resource)
-- Unlike the violation version, invalid states are prevented, allowing progress
-
-However, the more complex `progress` property (ensuring individual processes get the lock) requires **fairness constraints** to hold. This is because without fairness, there's no guarantee that enabled actions will execute.
-
-**To Fix Individual Process Progress with Fairness**:
-If you need stronger guarantees about individual processes getting the lock, you can use strong fairness:
-
-```spectre
-description "Temporal: Process 1 eventually gets the lock (with strong fairness)"
-temporal progress1 {
-  SF(acquireLock1) → always ((process1 == ProcessState.Waiting) → eventually (process1 == ProcessState.Critical))
-}
+Identify shared variables
+         │
+         ▼
+Write one action per actor per operation
+         │
+         ▼
+Add require guards for preconditions
+         │
+         ▼
+Write mutex + accounting invariants
+         │
+         ▼
+spectre verify
+         │
+    violation? ──yes──► read the counterexample trace
+         │                       │
+         no                      ▼
+         │              strengthen requires or add lock variable
+         ▼
+Add WF/SF temporal properties
+         │
+         ▼
+spectre verify --backend tlc  (for validated fairness)
 ```
+# Chapter 7: Modules, parameters, and reuse
 
-This ensures that if process1 is waiting and the lock becomes available infinitely often, process1 will eventually acquire it.
-
-**Key Takeaway**: Temporal properties that depend on actions eventually executing typically require fairness constraints to hold in concurrent systems.
-
-### Result
-
-After adding preconditions and fairness constraints, the corrected version (`examples/concurrent-lock-corrected.spec`) passes verification:
-
-```bash
-$ ./spectre verify examples/concurrent-lock-corrected.spec
-
-✓ Verification passed for examples/concurrent-lock-corrected.spec
-  Explored 50 states
-  Verified 4 temporal properties
-```
-
-All invariants are maintained:
-- **Mutual exclusion**: Only one process can be in `Critical` at a time
-- **Lock consistency**: Processes in `Critical` always hold the matching lock
-
-The temporal property also holds:
-- **Resource progress**: The resource value eventually increases (because preconditions allow actions to execute safely)
+Parameters let you change a spec's constants without editing the file. Modules let you split a large spec into named, reusable pieces.
 
 ---
 
-## Key Lessons
+## Parameters — changing the spec without editing it
 
-### 1. Preconditions Enforce Protocol
+```spectre
+param CAPACITY:  int = 10
+param THRESHOLD: int = 7
+var items: int
 
-Preconditions ensure that actions can only execute when the system is in a valid state. In concurrent systems, this is crucial for maintaining synchronization protocols.
+invariant not_full       { items <= CAPACITY  }
+invariant below_threshold { items <  THRESHOLD }
+```
 
-### 2. Invariants Catch Safety Violations
+Three ways to set parameter values:
 
-Invariants catch violations of safety properties (like mutual exclusion) early, preventing invalid states from being reached.
+- **Default** — just run `spectre verify queue.spec`
+- **Override** — `spectre verify queue.spec --param CAPACITY=20`
+- **Sweep** — `spectre verify queue.spec --param-range CAPACITY=1..20`
 
-### 3. Temporal Properties Verify Liveness
+### Parameter sweep
 
-Temporal properties ensure that the system can make progress and that desired events eventually occur. Without proper preconditions, temporal properties may fail because the system can get stuck in invalid states.
+```bash
+spectre verify queue.spec --param-range CAPACITY=1..10
+```
 
-### 4. Fairness is Required for Liveness
+```
+CAPACITY  States  Result
+--------  ------  ------
+       1       3  safe (exhaustive)
+       2       6  safe (exhaustive)
+       3      10  safe (exhaustive)
+       4      15  safe (exhaustive)
+       5      21  safe (exhaustive)
+      10      66  safe (exhaustive)
+```
 
-Without fairness constraints, temporal properties that depend on actions eventually executing will fail. Weak fairness (`WF`) ensures that actions execute when continuously enabled, which is essential for proving that processes eventually get resources like locks.
-
-### 5. The Verifier Acts as a Specification Checker
-
-The verifier doesn't just prevent invalid states—it **reports violations** that indicate missing preconditions or incorrect protocol design. This helps you write correct specifications.
+Sweeping is useful for finding the exact value where a spec breaks or where the state space starts to explode.
 
 ---
 
-## Best Practices for Concurrent Systems
+## Modules — reusable spec components
 
-1. **Always check lock state**: Before acquiring or releasing, verify the lock is in the expected state
-2. **Verify process state**: Ensure processes are in the correct state before state transitions
-3. **Use invariants to document assumptions**: Invariants make your safety requirements explicit
-4. **Use temporal properties for progress**: Temporal properties ensure your system can make progress and achieve desired outcomes
-5. **Test with multiple processes**: Verify your specification with the actual number of concurrent processes you'll have
+A module bundles variables, params, init, actions, and invariants under a name.
+
+```spectre
+module Counter {
+  var count: int
+  param MAX: int = 10
+
+  init { count = 0 }
+
+  action increment { require count < MAX  count' = count + 1 }
+  action decrement { require count > 0    count' = count - 1 }
+
+  invariant non_negative  { count >= 0      }
+  invariant within_bounds { count <= MAX    }
+}
+```
+
+Import and compose it in another spec:
+
+```spectre
+import Counter
+
+var active: bool
+
+init { active = true }
+
+action toggle { active' = not active }
+
+invariant active_non_negative { active → Counter.count >= 0 }
+```
+
+```bash
+spectre verify composed.spec
+# ✓ safe — 22 states explored (exhaustive)
+```
 
 ---
 
-## Summary
-
-This chapter demonstrated:
-
-1. **Concurrent system modeling**: How to model multiple processes competing for a shared resource
-2. **Locking protocols**: How to implement mutual exclusion using locks
-3. **Invariant violations**: How missing preconditions lead to safety violations (multiple processes in critical sections, inconsistent lock states)
-4. **Temporal violations**: How missing preconditions lead to liveness failures (processes stuck waiting)
-5. **Correcting the specification**: Adding preconditions to enforce the locking protocol
-6. **Verification success**: How proper preconditions ensure all invariants and temporal properties hold
-
-By understanding these patterns, you can specify and verify concurrent systems that maintain safety (invariants) and progress (temporal properties) even under concurrent execution.
-
-# Chapter 6: Distributed Message Queue
-
-This chapter demonstrates temporal property violations in a distributed message queue system.
-
-## The Message Queue System
-
-Our message queue system has:
-- **Producers**: Add messages to the queue
-- **Consumers**: Process and remove messages from the queue
-- **Queue**: A bounded buffer storing pending messages
-- **Processed Set**: Tracks messages that have been processed
-
-### System Requirements
-
-1. **Safety**: Queue should never exceed its maximum capacity
-2. **Safety**: Messages should only be processed once
-3. **Liveness**: Messages should eventually be processed
-4. **Liveness**: The queue should not grow unbounded
-
-## The Violation Version
-
-Let's examine `examples/message-queue-violation.spec`:
+## Module inheritance — parameterized reuse
 
 ```spectre
-description "Queue of messages waiting to be processed"
-var queue: List<str>
+module Semaphore {
+  param SLOTS: int = 1
+  var held: int
 
-description "Set of messages that have been processed"
-var processed: Set<str>
+  init { held = 0 }
 
-description "Counter for tracking total messages produced"
-var messageCounter: int
+  action acquire { require held < SLOTS  held' = held + 1 }
+  action release { require held > 0      held' = held - 1 }
 
-init {
-  queue = List.empty()
-  processed = Set.empty()
-  messageCounter = 0
+  invariant valid { held >= 0 and held <= SLOTS }
 }
 
-description "Producer adds a message to the queue"
-description "PROBLEM: No check if queue is at capacity"
-action produce {
-  // Missing: require queue.size() < MAX_QUEUE_SIZE
-  queue' = queue.append("msg")
-  messageCounter' = messageCounter + 1
-}
-
-description "Consumer processes a message from the queue"
-description "PROBLEM: No check if queue is empty"
-action consume {
-  // Missing: require queue.size() > 0
-  processed' = processed.union({ queue.head() })
-  queue' = queue.tail()
-}
+module Mutex  extends Semaphore { param SLOTS = 1 }
+module RWLock extends Semaphore { param SLOTS = 3 }
 ```
 
-### Running the Violation Version
+The same `valid` invariant covers both variants — you write it once and get it for free in every subtype.
 
 ```bash
-$ ./spectre verify examples/message-queue-violation.spec
-
-Verification failed: 2 violation(s) found
-
-Violation 1 (Temporal Property: messageProcessed):
-  Property 'messageProcessed' violated: (PROBLEM: Without fairness, consumers might never execute) 
-  P holds but Q never becomes true
-  Counterexample trace:
-    2. produce
-    3. produce
-    ...
-    11. produce
-
-Violation 2 (Temporal Property: allMessagesProcessed):
-  Property 'allMessagesProcessed' violated: (PROBLEM: Without fairness or proper protocol, messages might never be consumed)
-  eventually P does not hold from some state
-  Counterexample trace:
-    2. produce
-    3. produce
+spectre verify mutex.spec   # SLOTS=1 → 3 states
+spectre verify rwlock.spec  # SLOTS=3 → 5 states
 ```
-
-### Understanding the Temporal Violations
-
-#### Violation 1: `messageProcessed`
-
-```spectre
-description "Temporal: Messages eventually get processed"
-temporal messageProcessed {
-  always (queue.size() > 0 → eventually processed.contains(queue.head()))
-}
-```
-
-**What it means**: If the queue is not empty, the message at the head should eventually be processed.
-
-**Why it fails**:
-- The property has no fairness constraint
-- Without fairness, the scheduler could continuously execute `produce` actions
-- The `consume` action, even when enabled, might never execute
-- Result: Messages are added to the queue but never processed
-
-**Counterexample Analysis**:
-- Starting from the initial state, only `produce` actions execute
-- The queue grows to 10 messages (max capacity)
-- But `consume` never executes, so messages remain unprocessed
-- The temporal property fails because the queue head is never processed
-
-#### Violation 2: `allMessagesProcessed`
-
-```spectre
-description "Temporal: All produced messages eventually get processed"
-temporal allMessagesProcessed {
-  always eventually (messageCounter > 0 → processed.size() == messageCounter)
-}
-```
-
-**What it means**: Eventually, all produced messages should be processed (i.e., `processed.size() == messageCounter`).
-
-**Why it fails**:
-- Similar to the first violation: without fairness, `consume` may never execute
-- Messages are produced but never consumed
-- The system can get stuck in states where `messageCounter > 0` but `processed.size() == 0`
-
-**Counterexample Analysis**:
-- After a few `produce` actions, `messageCounter > 0`
-- But `consume` never executes, so `processed.size() == 0`
-- The property `processed.size() == messageCounter` never becomes true
-
-## The Corrected Version
-
-Let's fix these issues in `examples/message-queue-corrected.spec`:
-
-### Fix 1: Add Preconditions
-
-```spectre
-description "Producer adds a message to the queue"
-description "FIXED: Added precondition to check queue capacity"
-action produce {
-  require queue.size() < MAX_QUEUE_SIZE
-  queue' = queue.append("msg")
-  messageCounter' = messageCounter + 1
-}
-
-description "Consumer processes a message from the queue"
-description "FIXED: Added precondition to check queue is not empty"
-description "FIXED: Ensures message is only processed once"
-action consume {
-  require queue.size() > 0
-  require !processed.contains(queue.head())
-  processed' = processed.union({ queue.head() })
-  queue' = queue.tail()
-}
-```
-
-**What changed**:
-- `produce`: Added `require queue.size() < MAX_QUEUE_SIZE` to prevent queue overflow
-- `consume`: Added `require queue.size() > 0` to prevent processing from empty queue
-- `consume`: Added `require !processed.contains(queue.head())` to prevent duplicate processing
-
-### Fix 2: Add Fairness Constraints
-
-```spectre
-description "Temporal: Queue eventually makes progress (with fairness)"
-description "FIXED: Added weak fairness to ensure consume executes when continuously enabled"
-temporal queueProgress {
-  WF(consume) → eventually (processed.size() > 0)
-}
-```
-
-**What changed**:
-- Added `WF(consume)` (Weak Fairness) to the temporal property
-- Changed from `always eventually` to just `eventually` - we only need that there exists a fair path where progress is made
-- Weak fairness ensures: "If `consume` is continuously enabled, it will eventually execute"
-- This guarantees that when the queue is not empty and `produce` can't execute (queue at capacity), `consume` will eventually run
-
-**Why Weak Fairness Works**:
-- When the queue reaches capacity (10 messages), `produce` can no longer execute (precondition `queue.size() < 10` fails)
-- At that point, only `consume` is enabled, making it continuously enabled
-- Weak fairness guarantees that if `consume` is continuously enabled, it will eventually execute
-- This breaks the counterexample where `consume` never runs
-
-### Fix 3: Add Capacity Bounds
-
-```spectre
-description "Invariant: Queue size never exceeds maximum capacity"
-invariant queueCapacity {
-  queue.size() <= 10
-}
-
-description "Temporal: Queue doesn't grow unbounded"
-description "FIXED: Precondition ensures queue never exceeds capacity, so this property holds"
-temporal queueBounded {
-  always queue.size() <= 10
-}
-```
-
-**What changed**:
-- The `produce` precondition ensures the queue never exceeds capacity
-- The invariant `queueCapacity` enforces this at all states
-- The temporal property `queueBounded` is satisfied because the precondition prevents unbounded growth
-
-## Running the Corrected Version
-
-```bash
-$ ./spectre verify examples/message-queue-corrected.spec
-
-✓ Verification passed for examples/message-queue-corrected.spec
-  Explored X states
-  Verified 3 temporal properties
-```
-
-All temporal properties now hold:
-- **`queueProgress`**: Messages eventually get processed (with fairness)
-- **`queueBounded`**: Queue never exceeds capacity (due to preconditions)
-
-## Key Lessons
-
-### 1. Preconditions Enforce Safety
-
-Preconditions ensure actions can only execute when the system is in a valid state:
-- `produce` only when queue has space
-- `consume` only when queue is not empty
-- This prevents runtime errors and maintains invariants
-
-### 2. Fairness is Essential for Liveness
-
-Without fairness constraints, temporal properties that depend on actions eventually executing will fail:
-- The scheduler could continuously skip enabled actions
-- Fairness guarantees execution under certain conditions
-- Weak fairness: "If continuously enabled, eventually executes"
-
-### 3. Temporal Properties Verify System Behavior
-
-Temporal properties ensure the system makes progress and behaves correctly over time:
-- **Safety properties** (invariants): Must hold in all states
-- **Liveness properties** (temporal): Must eventually hold along execution paths
-
-### 4. The Verifier Finds Execution Paths
-
-The verifier explores all possible execution paths and checks if properties hold:
-- Finds counterexamples where properties fail
-- Helps identify missing preconditions and fairness constraints
-- Guides you to write correct specifications
-
-## Summary
-
-The message queue example demonstrates:
-- **Temporal violations** when fairness is missing
-- **How to fix** with weak fairness (`WF`) constraints
-- **Preconditions** to enforce safety properties
-- **The importance** of both safety and liveness in distributed systems
-
-By adding preconditions and fairness constraints, we ensure:
-1. The queue never exceeds capacity (safety)
-2. Messages are eventually processed (liveness)
-3. All produced messages eventually get consumed (liveness)
-
-# Chapter 7: Modules and Code Organization
-
-This chapter covers organizing large specifications using Spectre's module system, using an elevator controller as the running example.
-
-## Understanding Modules
-
-Modules in Spectre allow you to:
-- **Organize code** into logical units that can be reused across specifications
-- **Separate concerns** by grouping related variables, actions, and invariants
-- **Share definitions** between files through imports
-- **Encapsulate functionality** with visibility modifiers (public/private)
-
-### Module Declaration
-
-A module is declared in a file with the following structure:
-
-```spectre
-module ModuleName {
-  // Module contents: types, constants, variables, actions, invariants, etc.
-}
-```
-
-**Important Rules:**
-1. Each file can contain exactly one module declaration
-2. The module name must match the file name (without extension)
-3. Files are named using PascalCase (e.g., `ElevatorModule.spec`)
-4. Module names use PascalCase (e.g., `module ElevatorModule`)
-
-### Module Visibility
-
-Members within a module can be marked as `public` or have no visibility modifier (private by default):
-
-- **Public members** (`public var`, `public action`, `public const`, etc.) are accessible from other modules that import this module
-- **Private members** (no modifier) are only accessible within the module
-
-```spectre
-module ExampleModule {
-  public var publicVar: int    // Accessible from other modules
-  var privateVar: int          // Only accessible within this module
-  
-  public action publicAction { ... }
-  action privateAction { ... }
-}
-```
-
-## Importing Modules
-
-To use a module in another file, you import it using one of two syntaxes:
-
-### Import from Same Directory
-
-```spectre
-import ModuleName
-```
-
-This imports a module from the same directory as the current file.
-
-### Import from Path
-
-```spectre
-import "path/to/ModuleName"
-```
-
-This imports a module from a relative path. The path should point to the file (without extension).
-
-**Example:**
-```spectre
-import "elevator/ElevatorModule"    // From examples/elevator/ElevatorModule.spec
-import "../common/Utils"             // From parent directory's common/Utils.spec
-```
-
-### Module Resolution Rules
-
-1. **No circular dependencies**: If module A imports module B, module B cannot import module A (directly or indirectly)
-2. **Module name matching**: The module declaration name must exactly match the file name (case-sensitive)
-3. **One module per file**: Each `.spec` file must contain exactly one module
-
-## Elevator Controller Example
-
-Let's explore a complete example: an elevator controller system for a building with 4 elevators and 20 floors. This example demonstrates how to organize a complex system using modules.
-
-### System Overview
-
-The elevator controller system consists of:
-- **4 elevators** that can move between 20 floors (numbered 0-19)
-- **Users** who request elevators by pressing up/down buttons
-- **Controller logic** that assigns elevators to users based on optimization rules
-
-The system is organized into three modules:
-1. **ElevatorModule**: Basic elevator state and movement operations
-2. **UserModule**: User requests and state management
-3. **ControllerModule**: Assignment logic and optimization algorithms
-
-### Module 1: ElevatorModule
-
-The `ElevatorModule` defines the basic elevator behavior:
-
-```spectre
-// File: ElevatorModule.spec
-module ElevatorModule {
-  description "Current floor where the elevator is located (0-19)"
-  public var currentFloor: int
-
-  description "Direction the elevator is moving: 1 = up, -1 = down, 0 = idle"
-  public var direction: int
-
-  description "Set of floors the elevator needs to visit (target floors)"
-  public var targetFloors: Set<int>
-
-  description "Move elevator up one floor"
-  public action moveUp {
-    require currentFloor < 19
-    require targetFloors.exists(f => f > currentFloor)
-    currentFloor' = currentFloor + 1
-    direction' = 1
-  }
-
-  description "Move elevator down one floor"
-  public action moveDown {
-    require currentFloor > 0
-    require targetFloors.exists(f => f < currentFloor)
-    currentFloor' = currentFloor - 1
-    direction' = -1
-  }
-
-  // ... other actions and invariants
-}
-```
-
-**Key Points:**
-- All variables and actions are marked `public` so they can be used by other modules
-- The module encapsulates elevator-specific logic (movement, target management)
-- Invariants ensure elevators stay within valid bounds
-
-### Module 2: UserModule
-
-The `UserModule` defines user behavior:
-
-```spectre
-// File: UserModule.spec
-module UserModule {
-  description "Current floor where the user is located (0-19)"
-  public var floor: int
-
-  description "Direction the user wants to go: 1 = up, -1 = down, 0 = no request"
-  public var direction: int
-
-  description "Whether the user is waiting for an elevator"
-  public var waiting: bool
-
-  description "ID of the elevator assigned to this user, or -1 if none"
-  public var assignedElevator: int
-
-  description "User presses the up button from their current floor"
-  public action pressUp(floorNum: int) {
-    require floorNum >= 0 && floorNum < 19
-    require direction = 0
-    floor' = floorNum
-    direction' = 1
-    waiting' = true
-    assignedElevator' = -1
-  }
-
-  // ... other actions
-}
-```
-
-**Key Points:**
-- Separates user-related concerns from elevator logic
-- Can be reused in other systems that need user management
-- Public actions allow the controller to interact with users
-
-### Module 3: ControllerModule
-
-The `ControllerModule` provides utility functions and constants:
-
-```spectre
-// File: ControllerModule.spec
-module ControllerModule {
-  description "Number of elevators in the system"
-  public const NUM_ELEVATORS: int = 4
-
-  description "Number of floors in the building"
-  public const NUM_FLOORS: int = 20
-
-  description "Maximum number of users in the system"
-  public const MAX_USERS: int = 30
-
-  description "Calculate distance between elevator and floor"
-  public fun distance(elevatorFloor: int, targetFloor: int): int {
-    return if (elevatorFloor > targetFloor) {
-      elevatorFloor - targetFloor
-    } else {
-      targetFloor - elevatorFloor
-    }
-  }
-
-  description "Check if elevator is moving in same direction as user request"
-  public fun sameDirection(elevatorDir: int, userDir: int): bool {
-    return elevatorDir = userDir && !(elevatorDir = 0)
-  }
-
-  // ... other utility functions
-}
-```
-
-**Key Points:**
-- Provides shared constants and utility functions
-- Functions can be called from other modules using `ControllerModule.functionName()`
-- Constants can be accessed using `ControllerModule.CONSTANT_NAME`
-
-### Main System: ElevatorController
-
-The main system file imports all three modules and orchestrates the elevator controller:
-
-```spectre
-// File: ElevatorController.spec
-// Import the three modules from separate files in the same directory
-import ElevatorModule
-import UserModule
-import ControllerModule
-
-// Main system module that orchestrates the elevator controller
-module ElevatorController {
-  // Type definitions for the system
-  type Elevator = {
-    currentFloor: int,
-    direction: int,
-    targetFloors: Set<int>
-  }
-
-  type User = {
-    floor: int,
-    direction: int,
-    waiting: bool,
-    assignedElevator: int
-  }
-
-  // System state: 4 elevators and a set of users
-  var elevator0: Elevator
-  var elevator1: Elevator
-  var elevator2: Elevator
-  var elevator3: Elevator
-  var users: Set<User>
-
-  // Initial state
-  init {
-    elevator0 = { currentFloor: 0, direction: 0, targetFloors: {} }
-    elevator1 = { currentFloor: 0, direction: 0, targetFloors: {} }
-    elevator2 = { currentFloor: 0, direction: 0, targetFloors: {} }
-    elevator3 = { currentFloor: 0, direction: 0, targetFloors: {} }
-    users = {}
-  }
-
-  // User actions
-  action userPressUp(floor: int) {
-    require floor >= 0 && floor < 19
-    require users.size() < ControllerModule.MAX_USERS
-    // Create or update user at this floor
-    users' = if (users.exists(u => u.floor = floor && u.direction = 0)) {
-      users.map(u => 
-        if (u.floor = floor && u.direction = 0) {
-          { floor: u.floor, direction: 1, waiting: true, assignedElevator: -1 }
-        } else {
-          u
-        }
-      )
-    } else {
-      users.union({ { floor: floor, direction: 1, waiting: true, assignedElevator: -1 } })
-    }
-  }
-
-  // Assignment actions use ControllerModule utility functions
-  action assignElevator0ToUser(userFloor: int, userDir: int) {
-    require ControllerModule.distance(elevator0.currentFloor, userFloor) <= 
-           ControllerModule.distance(elevator1.currentFloor, userFloor) &&
-           ControllerModule.distance(elevator0.currentFloor, userFloor) <= 
-           ControllerModule.distance(elevator2.currentFloor, userFloor)
-    // ... assignment logic
-  }
-
-  // Elevator movement actions
-  action elevator0MoveUp {
-    require elevator0.currentFloor < 19
-    require elevator0.targetFloors.exists(f => f > elevator0.currentFloor)
-    elevator0' = { 
-      currentFloor: elevator0.currentFloor + 1, 
-      direction: 1, 
-      targetFloors: elevator0.targetFloors 
-    }
-  }
-
-  // ... other actions and invariants
-}
-```
-
-**Key Points:**
-1. **Imports**: All three modules are imported at the top
-2. **Module-qualified access**: Constants and functions from imported modules are accessed using `ModuleName.member`
-3. **Orchestration**: The main module combines the three modules to create the complete system
-4. **Separation**: Each module handles its own concerns, while the main module coordinates them
-
-## Accessing Module Members
-
-When you import a module, you can access its public members using dot notation:
-
-### Accessing Constants
-
-```spectre
-import ControllerModule
-
-// Access constant
-const maxUsers = ControllerModule.MAX_USERS
-```
-
-### Accessing Functions
-
-```spectre
-import ControllerModule
-
-// Call function
-let dist = ControllerModule.distance(5, 10)
-```
-
-### Accessing Types
-
-Types defined in modules are automatically available after import:
-
-```spectre
-import ElevatorModule
-
-// Type from ElevatorModule is available
-var elevator: Elevator
-```
-
-## Benefits of Modular Design
-
-### 1. **Code Reuse**
-
-Modules can be reused across multiple specifications:
-
-```spectre
-// In another system
-import ElevatorModule
-import UserModule
-
-// Reuse elevator and user logic in a different context
-```
-
-### 2. **Separation of Concerns**
-
-Each module handles a specific aspect of the system:
-- ElevatorModule: Elevator mechanics
-- UserModule: User interactions
-- ControllerModule: Assignment algorithms
-
-### 3. **Maintainability**
-
-Changes to one module don't affect others (as long as the public interface remains the same).
-
-### 4. **Testability**
-
-Modules can be tested independently, making it easier to verify each component.
-
-### 5. **Readability**
-
-Large specifications are easier to understand when organized into logical modules.
-
-## Running the Elevator Controller Example
-
-The complete elevator controller example is located in `examples/elevator/`:
-
-```bash
-# Verify the specification
-spectre verify examples/elevator/ElevatorController.spec
-
-# With verbose output to see state exploration
-spectre verify examples/elevator/ElevatorController.spec --verbose
-```
-
-### Temporal Property Violations and Corrections
-
-The initial `ElevatorController.spec` contains temporal properties that fail verification. These properties are intentionally designed to fail early for testing purposes:
-
-**Original Temporal Property (Fails)**:
-```spectre
-description "Temporal: Users eventually get an elevator"
-description "MODIFIED FOR TESTING: Simplified to check any waiting user gets assigned"
-temporal usersEventuallyGetElevator {
-  WF(assignElevator0ToUser) → always (users.exists(u => u.waiting && u.assignedElevator = -1) → 
-          eventually users.exists(u => u.waiting && u.assignedElevator >= 0))
-}
-
-description "Temporal: Elevators eventually reach their targets"
-description "MODIFIED FOR TESTING: Simplified to check elevator0 reaches any target floor"
-temporal elevatorsReachTargets {
-  WF(elevator0MoveUp) → always (elevator0.targetFloors.size() > 0 → 
-          eventually elevator0.targetFloors.contains(elevator0.currentFloor))
-}
-```
-
-**Problems**: 
-1. **usersEventuallyGetElevator**: Only has weak fairness on `assignElevator0ToUser`, but other elevators (1, 2, 3) might be able to assign users. Also, checking for unassigned users to get assigned requires fairness on ALL assignment actions, not just one. This property will fail when users are created but `assignElevator0ToUser` is never scheduled.
-
-2. **elevatorsReachTargets**: Only has weak fairness on `elevator0MoveUp`, but elevators need to move in both directions (up and down). Also, it only checks `elevator0`, ignoring other elevators. This property will fail when `elevator0` has targets but `elevator0MoveUp` is never scheduled (e.g., if it needs to move down instead).
-
-**Corrected Temporal Properties**:
-```spectre
-// CORRECTED: The corrected version addresses the issues above
-
-description "Temporal: Users eventually get picked up after assignment"
-description "CORRECTED: Simplified to check that assigned users eventually get picked up"
-description "Once an elevator is assigned to a user, the elevator will eventually reach them"
-description "This property focuses on progress after assignment and requires fairness on arrival actions"
-temporal usersEventuallyGetElevator {
-  // Once a user has an assigned elevator, they will eventually be picked up
-  // We use fairness on elevator arrival actions to ensure elevators reach their targets
-  // Using strong fairness (SF) ensures the arrival action executes when continuously enabled
-  SF(elevator0Arrive) → always (users.exists(u => u.waiting && u.assignedElevator >= 0) → 
-          eventually !users.exists(u => u.waiting && u.assignedElevator >= 0))
-}
-
-description "Temporal: Elevators eventually reach their targets"
-description "CORRECTED: Simplified to check any elevator reaches any target, using arrival actions instead of movement"
-description "If any elevator has target floors, at least one elevator will eventually reach at least one target"
-description "Using arrival actions (which require movement to happen first) ensures progress in both directions"
-temporal elevatorsReachTargets {
-  // Use arrival actions which naturally require movement in the correct direction
-  // Strong fairness ensures arrival actions execute when elevators are at target floors
-  SF(elevator0Arrive) → 
-  always (elevator0.targetFloors.size() > 0 || 
-          elevator1.targetFloors.size() > 0 ||
-          elevator2.targetFloors.size() > 0 ||
-          elevator3.targetFloors.size() > 0 → 
-          eventually (elevator0.targetFloors.contains(elevator0.currentFloor) ||
-                      elevator1.targetFloors.contains(elevator1.currentFloor) ||
-                      elevator2.targetFloors.contains(elevator2.currentFloor) ||
-                      elevator3.targetFloors.contains(elevator3.currentFloor)))
-}
-```
-
-**Solutions**: 
-1. **usersEventuallyGetElevator**: The corrected version focuses on progress **after** assignment. Once an elevator is assigned to a user, the elevator will eventually reach them. We use **strong fairness (SF)** on arrival actions (`elevator0Arrive`) instead of assignment actions, which ensures progress once assignment occurs. The assignment itself is handled by the system design - if conditions are met, assignments can happen.
-
-2. **elevatorsReachTargets**: The corrected version uses **arrival actions** (`elevator0Arrive`) instead of movement actions. Arrival actions naturally require movement in the correct direction (up or down) to occur first. Using **strong fairness (SF)** ensures arrival actions execute when elevators are at target floors, making the property work for all elevators and both movement directions.
-
-**Key Differences**:
-- **Original**: Uses weak fairness (WF) on assignment/movement actions, checks for unassigned users, only checks one elevator
-- **Corrected**: Uses strong fairness (SF) on arrival actions, checks progress after assignment, checks all elevators
-- **Original**: Designed to fail early for testing (fails around state 50)
-- **Corrected**: Ensures actual system progress with proper fairness constraints (passes verification)
-
-**Verification Results**:
-- `ElevatorController.spec`: **Fails** with temporal violation around state 50 (intentionally designed to fail early for testing)
-- `ElevatorControllerCorrected.spec`: **Passes** (uses proper fairness constraints to ensure actual system progress)
-
-```bash
-# Test the original (should fail)
-spectre verify examples/elevator/ElevatorController.spec
-
-# Test the corrected version (should pass)
-spectre verify examples/elevator/ElevatorControllerCorrected.spec
-```
-
-The system explores a large state space (50+ states) showing:
-- Users pressing buttons at different floors
-- Elevator assignments based on optimization rules
-- Elevator movement and arrival
-- User boarding and exiting
-
-## Best Practices
-
-### 1. **One Concept Per Module**
-
-Each module should represent a single concept or subsystem:
-- ✅ Good: `ElevatorModule`, `UserModule`, `ControllerModule`
-- ❌ Bad: `ElevatorAndUserModule`
-
-### 2. **Minimal Public Interface**
-
-Only expose what other modules need:
-- ✅ Good: Mark only necessary actions/variables as `public`
-- ❌ Bad: Making everything `public` defeats encapsulation
-
-### 3. **Consistent Naming**
-
-Use PascalCase for module names and files:
-- ✅ Good: `ElevatorModule.spec` with `module ElevatorModule`
-- ❌ Bad: `elevator_module.spec` or `module elevatorModule`
-
-### 4. **Documentation**
-
-Use descriptions to explain module purpose and public interfaces:
-```spectre
-module ElevatorModule {
-  description "Manages elevator state and movement operations"
-  // ...
-}
-```
-
-### 5. **Avoid Circular Dependencies**
-
-If module A needs module B, module B should not need module A. Design modules hierarchically.
-
-## Summary
-
-Modules in Spectre:
-
-- **Declare** in separate files with matching names
-- **Import** using `import ModuleName` or `import "path/to/Module"`
-- **Access members** using `ModuleName.member` notation
-- **Control visibility** with `public` vs private modifiers
-
-# Chapter 8: Stuttering and Ensuring Progress
-
-This chapter explains **stuttering** in state space exploration - when a state transitions back to itself - and how to fix it. Stuttering can indicate missing fairness constraints or incomplete specifications that prevent the system from making progress.
-
-## What is Stuttering?
-
-**Stuttering** occurs when an action causes a state to transition back to itself. In other words, executing an action results in no actual change to the system state. This creates a self-loop in the transition graph.
-
-### Understanding Stuttering with a Visual Example
-
-Imagine a state machine exploring different system configurations. Each state represents a unique configuration of all variables in your system. When an action executes, it should move the system from one state to a different state (making progress). However, when an action causes stuttering, it moves from a state back to the same state:
-
-```
-Normal Transition (makes progress):
-  State A → Action: increment → State B (different state, progress made!)
-
-Stuttering Transition (no progress):
-  State A → Action: noop → State A (same state, no progress!)
-```
-
-### Why is Stuttering a Problem?
-
-- **No progress**: The system can get stuck repeating the same state indefinitely
-- **Liveness failures**: Temporal properties like `eventually P` may fail because the system can loop forever without reaching P
-- **Missing fairness**: Often indicates that actions that should make progress are never scheduled
-- **Reduced confidence**: Too many stuttering steps suggest the specification may not accurately model the system's behavior
-
-### Counting Stuttering Steps
-
-Each **stuttering step** represents a unique combination of:
-- A specific state (e.g., `counter = 5`)
-- An action that causes stuttering (e.g., `noop`)
-- The result: the state remains unchanged
-
-**Example:** If you have a counter that can be 0, 1, 2, ..., 50, and an action `noop` that doesn't change the counter, then:
-- `noop` can stutter from state `counter = 0` (1 stuttering step)
-- `noop` can stutter from state `counter = 1` (1 stuttering step)
-- `noop` can stutter from state `counter = 2` (1 stuttering step)
-- ... and so on for all 50 states
-- Plus `reset` can stutter from state `counter = 0` (resetting 0 to 0)
-
-**Total: 51 stuttering steps** (50 from `noop` + 1 from `reset`)
-
-When you **reduce stuttering from 51 to 1**, you're eliminating 50 unnecessary stuttering opportunities by removing or restricting the problematic action. This means:
-- **Before:** The system can stutter from 50 different states via `noop`, plus 1 from `reset`
-- **After:** The system can only stutter from 1 state (via `reset` when counter is already 0)
-
-This reduction indicates that your specification is more precise and has fewer paths where the system can make no progress.
-
-Spectre detects and reports stuttering as warnings to help you identify potential issues in your specifications.
-
-## Example 1: Simple Counter with Stuttering
-
-Let's start with a simple counter example that exhibits stuttering:
-
-```spectre
-// File: examples/stuttering-counter.spec
-module StutteringCounter {
-  var counter: int
-  
-  init {
-    counter = 0
-  }
-  
-  description "Increments the counter by one"
-  action increment {
-    counter' = counter + 1
-  }
-  
-  description "Does nothing - causes stuttering"
-  action noop {
-    counter' = counter  // ❌ Action doesn't change state - causes stuttering!
-  }
-  
-  description "Resets the counter to zero"
-  action reset {
-    counter' = 0
-  }
-  
-  description "Verifies counter eventually reaches 10"
-  temporal eventuallyReachesTen {
-    eventually (counter = 10)
-  }
-}
-```
-
-### Running Verification
-
-When you verify this specification:
-
-```bash
-spectre verify examples/stuttering-counter.spec --max-states 20
-```
-
-**Output:**
-```
-Exploring State 1
-Exploring State 2
-Exploring State 3
-...
-Traversed 20 states
-
-Warnings (Stuttering):
-Found 20 stuttering step(s) where a state transitions back to itself.
-Stuttering can indicate missing fairness constraints or incomplete specifications.
-
-Found no violations.
-```
-
-### Understanding the Problem
-
-The `noop` action causes stuttering because it sets `counter' = counter`, meaning the state doesn't change. This allows the system to:
-- Execute `noop` repeatedly from **any state** (states 0, 1, 2, ..., 49, 50)
-- Never make progress toward `counter = 10`
-- Create infinite paths where the counter never reaches 10
-
-**Why 51 stuttering steps?**
-- With `max-states = 50`, the system explores states where `counter` ranges from 0 to 49
-- The `noop` action can stutter from **all 50 states** (one stuttering step per state)
-- The `reset` action can stutter from state 0 (resetting `counter = 0` back to `counter = 0`)
-- **Total: 50 + 1 = 51 stuttering steps**
-
-Even though the temporal property `eventually (counter = 10)` technically holds (there exists a path where it reaches 10), the stuttering warnings indicate that the specification allows 51 different non-progress paths. This suggests the specification might not accurately reflect the real system's behavior.
-
-### Fix 1: Remove the Stuttering Action
-
-The simplest fix is to remove the `noop` action if it's not needed:
-
-```spectre
-// File: examples/stuttering-counter-fixed.spec
-module StutteringCounterFixed {
-  var counter: int
-  
-  init {
-    counter = 0
-  }
-  
-  description "Increments the counter by one"
-  action increment {
-    counter' = counter + 1
-  }
-  
-  description "Resets the counter to zero"
-  action reset {
-    counter' = 0
-  }
-  
-  description "Verifies counter eventually reaches 10"
-  temporal eventuallyReachesTen {
-    eventually (counter = 10)
-  }
-}
-```
-
-**Result**: **Reduced from 51 to 1 stuttering step!**
-
-**What changed:**
-- **Removed** the `noop` action, which was causing 50 stuttering steps (one from each explored state)
-- **Remaining** stuttering: Only 1 step from `reset` when `counter = 0` (resetting 0 to 0)
-
-**What this means:**
-- The system can no longer stutter from states 1, 2, 3, ..., 49 via `noop`
-- The only remaining stuttering is when `counter = 0` and `reset` is called (which is acceptable - resetting an already-zero counter doesn't change the state)
-- This is a **98% reduction** in stuttering opportunities (from 51 to 1), indicating a much more precise specification
-
-The system can only make progress (increment) or reset, with minimal stuttering only from the edge case of resetting an already-zero counter.
-
-### Fix 2: Add Fairness Constraints
-
-If the `noop` action is necessary (e.g., it represents an idle step), add fairness constraints to ensure progress actions eventually execute:
-
-```spectre
-// File: examples/stuttering-counter-with-fairness.spec
-module StutteringCounterWithFairness {
-  var counter: int
-  
-  init {
-    counter = 0
-  }
-  
-  description "Increments the counter by one"
-  action increment {
-    counter' = counter + 1
-  }
-  
-  description "Idle step - doesn't change state"
-  description "This action can execute but doesn't make progress"
-  action noop {
-    counter' = counter
-  }
-  
-  description "Resets the counter to zero"
-  action reset {
-    counter' = 0
-  }
-  
-  description "Verifies counter eventually reaches 10 with weak fairness on increment"
-  description "Weak fairness ensures increment executes when continuously enabled"
-  temporal eventuallyReachesTen {
-    WF(increment) → eventually (counter = 10)
-  }
-}
-```
-
-**Result**: 
-- Stuttering warnings still appear (because `noop` still causes stuttering)
-- However, the temporal property now holds because weak fairness ensures `increment` eventually executes
-- The warnings help you understand that `noop` creates non-progress paths, but fairness ensures progress is made
-
-**Key Insight**: Stuttering warnings don't mean your specification is wrong - they indicate paths where no progress is made. Fairness constraints filter out these unfair paths, allowing liveness properties to hold.
-
-## Example 2: Process System with Stuttering
-
-Consider a process system where a process can be in different states:
-
-```spectre
-// File: examples/stuttering-process.spec
-enum ProcessState {
-  Idle,
-  Running,
-  Waiting
-}
-
-module StutteringProcess {
-  var process1: ProcessState
-  var process2: ProcessState
-  
-  init {
-    process1 = ProcessState.Idle
-    process2 = ProcessState.Idle
-  }
-  
-  description "Process 1 starts running"
-  action process1Start {
-    require process1 = ProcessState.Idle
-    process1' = ProcessState.Running
-  }
-  
-  description "Process 1 finishes and goes back to idle"
-  action process1Finish {
-    require process1 = ProcessState.Running
-    process1' = ProcessState.Idle
-  }
-  
-  description "Process 1 does nothing - causes stuttering"
-  action process1Noop {
-    process1' = process1  // ❌ Stuttering!
-  }
-  
-  description "Process 2 starts running"
-  action process2Start {
-    require process2 = ProcessState.Idle
-    process2' = ProcessState.Running
-  }
-  
-  description "Process 2 finishes and goes back to idle"
-  action process2Finish {
-    require process2 = ProcessState.Running
-    process2' = ProcessState.Idle
-  }
-  
-  description "Process 2 does nothing - causes stuttering"
-  action process2Noop {
-    process2' = process2  // ❌ Stuttering!
-  }
-  
-  description "Verifies process1 eventually runs"
-  temporal process1EventuallyRuns {
-    eventually (process1 = ProcessState.Running)
-  }
-}
-```
-
-**Verification Output:**
-```
-Traversed 15 states
-
-Warnings (Stuttering):
-Found 15 stuttering step(s) where a state transitions back to itself.
-Stuttering can indicate missing fairness constraints or incomplete specifications.
-
-Found no violations.
-```
-
-### The Problem
-
-Both `process1Noop` and `process2Noop` cause stuttering. The system can:
-- Execute `process1Noop` repeatedly while `process1` is in any state
-- Never execute `process1Start`, preventing `process1` from ever running
-- Even though `eventually (process1 = ProcessState.Running)` technically holds (there exists a path), the stuttering warnings reveal non-progress paths
-
-### Fix: Add Fairness and Restrict Noop Actions
-
-```spectre
-// File: examples/stuttering-process-fixed.spec
-enum ProcessState {
-  Idle,
-  Running,
-  Waiting
-}
-
-module StutteringProcessFixed {
-  var process1: ProcessState
-  var process2: ProcessState
-  
-  init {
-    process1 = ProcessState.Idle
-    process2 = ProcessState.Idle
-  }
-  
-  description "Process 1 starts running"
-  action process1Start {
-    require process1 = ProcessState.Idle
-    process1' = ProcessState.Running
-  }
-  
-  description "Process 1 finishes and goes back to idle"
-  action process1Finish {
-    require process1 = ProcessState.Running
-    process1' = ProcessState.Idle
-  }
-  
-  description "Process 1 idles (only when already idle) - no stuttering from running state"
-  action process1Noop {
-    require process1 = ProcessState.Idle
-    process1' = ProcessState.Idle  // Only stutters from idle state, not from running
-  }
-  
-  description "Process 2 starts running"
-  action process2Start {
-    require process2 = ProcessState.Idle
-    process2' = ProcessState.Running
-  }
-  
-  description "Process 2 finishes and goes back to idle"
-  action process2Finish {
-    require process2 = ProcessState.Running
-    process2' = ProcessState.Idle
-  }
-  
-  description "Process 2 idles (only when already idle)"
-  action process2Noop {
-    require process2 = ProcessState.Idle
-    process2' = ProcessState.Idle
-  }
-  
-  description "Verifies process1 eventually runs with weak fairness"
-  description "Weak fairness ensures process1Start executes when enabled (process1 = Idle)"
-  temporal process1EventuallyRuns {
-    WF(process1Start) → eventually (process1 = ProcessState.Running)
-  }
-}
-```
-
-**Key Changes:**
-1. **Restricted noop actions**: Added `require process1 = ProcessState.Idle` to `process1Noop`
-   - Now `process1Noop` can only stutter when `process1` is already idle
-   - It cannot stutter when `process1` is running, preventing interference with the running state
-   
-2. **Added fairness**: `WF(process1Start)` ensures that when `process1Start` is enabled (process1 = Idle), it eventually executes
-
-**Result**: 
-- Fewer stuttering warnings (only from idle states)
-- The temporal property holds because fairness ensures `process1Start` executes
-- The specification correctly models a system where processes can idle but must eventually start
-
-## Example 3: Resource Allocation with Stuttering
-
-Consider a resource allocation system where multiple processes compete for a resource:
-
-```spectre
-// File: examples/stuttering-resource.spec
-module StutteringResource {
-  var resourceOwner: int  // -1 means free, 0-2 means owned by process 0, 1, or 2
-  var process0State: int  // 0 = idle, 1 = requesting, 2 = using
-  var process1State: int
-  var process2State: int
-  
-  init {
-    resourceOwner = -1
-    process0State = 0
-    process1State = 0
-    process2State = 0
-  }
-  
-  description "Process 0 requests the resource"
-  action process0Request {
-    require process0State = 0 && resourceOwner = -1
-    process0State' = 1
-    resourceOwner' = 0
-  }
-  
-  description "Process 0 uses the resource"
-  action process0Use {
-    require process0State = 1 && resourceOwner = 0
-    process0State' = 2
-  }
-  
-  description "Process 0 releases the resource"
-  action process0Release {
-    require process0State = 2 && resourceOwner = 0
-    process0State' = 0
-    resourceOwner' = -1
-  }
-  
-  description "Process 0 does nothing - causes stuttering"
-  action process0Noop {
-    process0State' = process0State  // ❌ Stutters from any state!
-    resourceOwner' = resourceOwner
-  }
-  
-  // Similar actions for process1 and process2...
-  
-  description "Verifies process0 eventually gets to use the resource"
-  temporal process0EventuallyUses {
-    always (process0State = 1 → eventually process0State = 2)
-  }
-}
-```
-
-**Problem**: The `process0Noop` action causes stuttering from any state, including when `process0State = 1` (requesting). This means the system can stutter indefinitely when process0 is requesting, preventing it from using the resource.
-
-### Fix: Remove Stuttering from Critical States
-
-```spectre
-// File: examples/stuttering-resource-fixed.spec
-module StutteringResourceFixed {
-  var resourceOwner: int
-  var process0State: int
-  var process1State: int
-  var process2State: int
-  
-  init {
-    resourceOwner = -1
-    process0State = 0
-    process1State = 0
-    process2State = 0
-  }
-  
-  description "Process 0 requests the resource"
-  action process0Request {
-    require process0State = 0 && resourceOwner = -1
-    process0State' = 1
-    resourceOwner' = 0
-  }
-  
-  description "Process 0 uses the resource"
-  action process0Use {
-    require process0State = 1 && resourceOwner = 0
-    process0State' = 2
-  }
-  
-  description "Process 0 releases the resource"
-  action process0Release {
-    require process0State = 2 && resourceOwner = 0
-    process0State' = 0
-    resourceOwner' = -1
-  }
-  
-  description "Process 0 idles - only allowed when idle or using (not when requesting)"
-  action process0Noop {
-    require process0State = 0 || process0State = 2
-    // ✅ Can only stutter when idle or using, not when requesting
-    process0State' = process0State
-    resourceOwner' = resourceOwner
-  }
-  
-  description "Verifies process0 eventually uses resource when requesting"
-  description "Weak fairness ensures process0Use executes when enabled"
-  temporal process0EventuallyUses {
-    WF(process0Use) → always (process0State = 1 → eventually process0State = 2)
-  }
-}
-```
-
-**Key Changes:**
-1. **Restricted noop**: `require process0State = 0 || process0State = 2`
-   - `process0Noop` can only execute when process0 is idle or using
-   - It cannot execute when `process0State = 1` (requesting), preventing stuttering that blocks progress
-
-2. **Added fairness**: `WF(process0Use)` ensures that when process0 is requesting and the resource is available, `process0Use` eventually executes
-
-**Result**: 
-- No stuttering from the requesting state
-- The temporal property holds because fairness ensures progress from requesting to using
-- The specification correctly models a system where processes can idle but must make progress when requesting resources
-
-## Understanding the Impact of Reducing Stuttering
-
-### What Does "Reducing from 51 to 1" Mean?
-
-When we reduce stuttering from 51 steps to 1 step, we're eliminating **50 opportunities** for the system to make no progress. This is significant because:
-
-1. **Fewer Non-Progress Paths**: With 51 stuttering steps, there are 51 different states from which the system can loop forever without making progress. With only 1 stuttering step, there's only 1 such state (and it's an edge case: resetting an already-zero counter).
-
-2. **More Precise Specification**: A specification with fewer stuttering steps more accurately models the system's behavior. It's closer to the actual system where actions typically change state.
-
-3. **Better Verification**: Fewer stuttering steps mean:
-   - The verifier has fewer paths to explore
-   - Temporal properties are easier to verify (fewer unfair paths to filter)
-   - The specification is easier to understand and maintain
-
-4. **Indicates Design Quality**: High stuttering counts (like 51) often indicate:
-   - Unnecessary actions that don't contribute to system behavior
-   - Missing preconditions that should restrict when actions can execute
-   - Actions that were added but don't model real system behavior
-
-### The Mathematics of Stuttering
-
-If you have:
-- **N states** explored during verification
-- **1 action** that can stutter from all N states
-- **1 additional action** that stutters from 1 specific state
-
-Then:
-- **Total stuttering steps = N + 1**
-
-By removing the action that stutters from all N states:
-- **Remaining stuttering steps = 1**
-
-**Reduction = (N + 1) - 1 = N steps eliminated**
-
-In our example with `max-states = 50`:
-- **Before:** 50 (from `noop`) + 1 (from `reset`) = 51 stuttering steps
-- **After:** 0 (from `noop`, removed) + 1 (from `reset`) = 1 stuttering step
-- **Reduction:** 50 stuttering steps eliminated (98% reduction!)
-
-## Understanding Stuttering Warnings
-
-### When Stuttering is Acceptable
-
-Stuttering is acceptable when:
-1. **Intentional idle states**: Actions that represent "do nothing" when the system is already in a stable state
-2. **With fairness constraints**: If you have fairness on progress actions, stuttering from idle states is fine
-3. **Explicit modeling**: When you intentionally model that a system can remain in a state (e.g., an idle process)
-
-### When Stuttering Indicates a Problem
-
-Stuttering indicates a problem when:
-1. **From progress states**: Actions stutter when the system should be making progress
-2. **Blocks liveness**: Stuttering prevents temporal properties from holding even with fairness
-3. **Unintended behavior**: You didn't intend for the action to cause stuttering
-
-### How to Fix Stuttering
-
-1. **Remove the stuttering action** if it's not needed
-2. **Add preconditions** to restrict when stuttering actions can execute
-3. **Add fairness constraints** to ensure progress actions eventually execute
-4. **Modify the action** to actually change state when progress should be made
-
-## Best Practices
-
-1. **Review stuttering warnings**: Always check stuttering warnings to understand if they're intentional
-2. **Restrict noop actions**: If you have idle/noop actions, restrict them to appropriate states
-3. **Use fairness for progress**: Add weak or strong fairness on actions that should make progress
-4. **Test liveness properties**: Verify that temporal properties hold even when stuttering exists
-
-## Summary
-
-- **Stuttering** occurs when an action causes a state to transition back to itself, creating a self-loop with no progress
-- **Stuttering steps** are counted per unique (state, action) combination where the state doesn't change
-- Spectre detects and reports stuttering as warnings, helping you identify non-progress paths
-
-### Reducing Stuttering: From 51 to 1
-
-When we reduce stuttering from **51 to 1**, we're:
-- **Eliminating 50 non-progress opportunities** (one per state)
-- **Improving specification precision** by removing unnecessary actions
-- **Making verification easier** with fewer paths to consider
-- **Better modeling real system behavior** where actions typically change state
-
-**In the counter example:**
-- **51 stuttering steps** = 50 from `noop` (can stutter from any state) + 1 from `reset` (can stutter when counter=0)
-- **1 stuttering step** = Only 1 from `reset` (edge case: resetting an already-zero counter)
-- **Result:** 98% reduction in stuttering, much more precise specification
-
-### Fixing Stuttering
-
-Fix stuttering by:
-1. **Removing unnecessary stuttering actions** (if they don't model real behavior)
-2. **Restricting stuttering actions** to appropriate states with preconditions
-3. **Adding fairness constraints** to ensure progress actions eventually execute
-
-### Key Takeaways
-
-- Stuttering warnings don't necessarily mean your specification is wrong - they highlight non-progress paths
-- High stuttering counts (like 51) often indicate unnecessary actions or missing preconditions
-- Reducing stuttering improves specification quality, making it more precise and easier to verify
-- When progress should be made, either:
-  1. Stuttering actions cannot execute from those states, OR
-  2. Fairness constraints ensure progress actions eventually execute
-
-# Chapter 9: Spec Mining, Drift Detection, and Incremental Re-verification
-
-This chapter covers three related commands: `spectre mine`, `spectre sync`, and `spectre verify --incremental`.
 
 ---
 
-## How Spec Mining Works
+## Splitting a large spec into modules
 
-The `spectre mine --lang rust` command invokes a companion binary (`spectre-mine-rs`) that parses your Rust source using the `syn` AST library — the same parser used by `serde`, `tokio`, and most of the Rust ecosystem.  It traverses:
+**Before** — one flat file, hard to navigate:
 
-- **`struct` definitions** → Spectre `var` declarations with mapped types
-- **`impl` blocks** → Spectre `action` blocks
-- **`assert!` / `debug_assert!` / `assert_eq!` / `assert_ne!` calls** → `require` guards
-- **`if cond { return Err(...) }` early-return patterns** → negated `require` guards
-- **Self-field assignments** (`self.x = expr`, `self.x += expr`, …) → primed assignments (`x' = x + expr`)
-- **`fn new(...)` constructor literal** → `init` values
+```spectre
+var user_count:    int
+var session_count: int
+var db_connections: int
+param MAX_USERS:   int = 1000
+param MAX_SESSIONS: int = 5000
+param MAX_CONNS:   int = 20
 
-The result is a specification that you can verify immediately.
+action add_user    { ... }
+action remove_user { ... }
+action open_session { ... }
+action close_session { ... }
+action open_connection { ... }
+action close_connection { ... }
+// ... 40 more lines
+```
+
+**After** — three focused modules:
+
+```spectre
+// users.spec
+module UserManager {
+  var user_count: int
+  param MAX_USERS: int = 1000
+
+  init { user_count = 0 }
+
+  action add_user    { require user_count < MAX_USERS  user_count' = user_count + 1 }
+  action remove_user { require user_count > 0          user_count' = user_count - 1 }
+
+  invariant valid_count { user_count >= 0 and user_count <= MAX_USERS }
+}
+```
+
+```spectre
+// sessions.spec
+module SessionManager {
+  var session_count: int
+  param MAX_SESSIONS: int = 5000
+
+  init { session_count = 0 }
+
+  action open_session  { require session_count < MAX_SESSIONS  session_count' = session_count + 1 }
+  action close_session { require session_count > 0             session_count' = session_count - 1 }
+
+  invariant valid_sessions { session_count >= 0 and session_count <= MAX_SESSIONS }
+}
+```
+
+```spectre
+// app.spec — the composition
+import UserManager
+import SessionManager
+
+invariant sessions_per_user {
+  SessionManager.session_count <= UserManager.user_count * 10
+}
+```
+
+Benefits of splitting:
+- Each module verifies independently — catch bugs early
+- Modules are reusable across projects
+- Invariants at the composition layer catch cross-module bugs
+- State spaces stay small per module
 
 ---
 
-## Example: Mining a Bank Account
+## Workflow: from flat to modular
 
-Consider the following Rust implementation (`examples/rust/bank_account.rs`):
+```
+Single flat spec
+      │
+      ▼
+Identify natural groupings
+  (resources, actors, subsystems)
+      │
+      ▼
+Extract each group into a module
+      │
+      ▼
+spectre verify each module independently
+      │
+      ▼
+Compose with import
+      │
+      ▼
+Add cross-module invariants
+      │
+      ▼
+spectre verify composition
+```
+
+---
+
+## Parameter best practices
+
+- Always set a **sensible default** — specs should verify out of the box
+- Use **ALL_CAPS** names for params (`MAX`, `CAPACITY`, `TIMEOUT`) to distinguish from variables
+- Keep params **small for development** — verify with `--param N=3` before `--param N=100`
+- Sweep params in CI to catch spec regressions across the whole value range
+# Chapter 8: Reading counterexamples and debugging
+
+When verification fails, Spectre gives you the shortest possible path to the violation. Here's how to read it and fix the spec.
+
+---
+
+## Anatomy of a violation trace
+
+```
+✗ violation — invariant 'solvent' after action 'withdraw'
+
+Counterexample (4 steps):
+  step 0  init:      balance = 0,    status = Active
+  step 1  deposit:   balance = 100,  status = Active
+  step 2  deposit:   balance = 200,  status = Active
+  step 3  withdraw:  balance = 200,  status = Active
+  step 4  withdraw:  balance = -100, status = Active  ← VIOLATION
+                     ↑ changed: balance 200 → -100
+
+Failed invariant: solvent  (balance >= 0)
+  balance = -100  violates  balance >= 0
+```
+
+Every part of the output tells you something:
+
+| Part | What it tells you |
+|------|------------------|
+| **Violation line** | Which invariant failed, which action triggered it |
+| **Counterexample (N steps)** | BFS found the *shortest* path — no shorter path exists |
+| **Each step** | Which action ran + the full state after it |
+| **← VIOLATION** | The exact state where the invariant first fails |
+| **Changed field** | What changed from the previous step |
+| **Failed invariant** | The expression and the concrete values that broke it |
+
+---
+
+## Five-step debugging workflow
+
+```
+1. Read the violated invariant
+         │  "solvent: balance >= 0"
+         ▼
+2. Look at the violation step
+         │  "withdraw: balance = -100"
+         ▼
+3. Read backwards — what enabled this action?
+         │  Previous state: balance = 200, no require check
+         ▼
+4. Find the missing guard
+         │  withdraw has no "require balance >= amount"
+         ▼
+5. Add require, re-verify
+         │  spectre verify bank.spec  →  ✓ safe
+         ▼
+       done
+```
+
+---
+
+## Worked example: the transfer bug
+
+```spectre
+// transfer-broken.spec
+var alice: int
+var bob:   int
+
+init { alice = 200  bob = 100 }
+
+action transfer {
+  // BUG: no check that alice has enough
+  alice' = alice - 100
+  bob'   = bob   + 100
+}
+
+invariant alice_solvent { alice >= 0       }
+invariant bob_solvent   { bob   >= 0       }
+invariant total_fixed   { alice + bob = 300 }
+```
+
+```bash
+spectre verify transfer-broken.spec
+```
+
+```
+✗ violation — invariant 'alice_solvent' after action 'transfer'
+
+Counterexample (3 steps):
+  step 0  init:     alice = 200, bob = 100
+  step 1  transfer: alice = 100, bob = 200
+  step 2  transfer: alice = 0,   bob = 300
+  step 3  transfer: alice = -100, bob = 400  ← VIOLATION
+                    ↑ changed: alice 0 → -100
+
+Failed invariant: alice_solvent  (alice >= 0)
+  alice = -100  violates  alice >= 0
+```
+
+The fix — add a require:
+
+```spectre
+action transfer {
+  require alice >= 100
+  alice' = alice - 100
+  bob'   = bob   + 100
+}
+```
+
+```bash
+spectre verify transfer-fixed.spec
+# ✓ safe — 7 states explored (exhaustive)
+```
+
+Notice `total_fixed` — it catches bugs where money is created or destroyed. You get that protection for free just by writing the accounting identity as an invariant.
+
+---
+
+## Using `--suggest-repairs`
+
+When a violation is found, `--suggest-repairs` analyses the action and invariant and proposes patches.
+
+```bash
+spectre verify transfer-broken.spec --suggest-repairs
+```
+
+```
+Repair candidates (CANDIDATE — review before applying):
+
+Violation 1: action 'transfer' violates 'alice_solvent'
+  [1] CANDIDATE strengthen_require: add `require alice >= 100` to action transfer
+      Validation: original violation fixed · no deadlock · reachability unchanged — SAFE
+  [2] CANDIDATE add_invariant_guard: add `when alice >= 100` to action transfer
+      Validation: original violation fixed · deadlock at alice=0 — review required
+```
+
+Two candidate types — pick the right one for your situation:
+
+| Candidate type | Pick when | Risk |
+|---------------|-----------|------|
+| `strengthen_require` | The action simply shouldn't fire without the condition | Minimal — action is disabled, not blocked |
+| `add_invariant_guard` | You want the action blocked at the invariant boundary | Can deadlock if the state has no other exit |
+
+### Understanding deadlock warnings
+
+```
+Validation: original violation fixed · deadlock at alice=0 — review required
+```
+
+A deadlock is a reachable state where **no action is enabled**. This isn't always wrong — sometimes "nothing can happen" is correct behavior. Check:
+
+- Is that final state intentional? (e.g., a `Done` phase)
+- Or is the system permanently stuck? (a real bug in the repair)
+
+---
+
+## Multiple violations
+
+Spectre checks all invariants and reports the first violation it finds (shortest BFS path). If you have multiple bugs, fix them one at a time — each fix may expose the next shortest path.
+
+```bash
+spectre verify buggy.spec
+# ✗ violation — invariant 'alice_solvent' ...
+
+# Fix alice_solvent, then:
+spectre verify partially-fixed.spec
+# ✗ violation — invariant 'total_fixed' ...
+```
+
+---
+
+## Dealing with bounded results
+
+```
+bounded — hit state limit (5000 states)
+```
+
+This means BFS stopped before exploring everything. Your spec might be safe — or the violation might be deeper than the limit. Your options:
+
+1. `--max-states 50000` — increase the limit and try again
+2. `--max-states -1` — unlimited (may not terminate for large specs)
+3. `--backend apalache` — symbolic verification, handles large spaces exhaustively
+4. `--backend z3 --bmc-depth 30` — bounded check to depth 30; fast, not exhaustive
+
+```bash
+spectre verify large.spec --max-states 50000
+spectre verify large.spec --backend apalache
+spectre verify large.spec --backend z3 --bmc-depth 30
+```
+
+Always check whether the output says `exhaustive` or `bounded` — it matters for how much you can trust the result.
+
+---
+
+## Common patterns and their fixes
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Negative integer variable | Missing lower-bound require | `require x >= 0` before decrement |
+| Variable exceeds param | Missing upper-bound require | `require x < MAX` before increment |
+| Enum in wrong state | Action enabled in wrong phase | `require phase = Expected` |
+| Two actors in critical section | No mutual exclusion | Add lock variable + requires |
+| Accounting identity broken | Value leaked or doubled | Check all actions modify both sides |
+
+---
+
+## Tips for writing debuggable specs
+
+- **Write accounting identities** — `alice + bob = TOTAL` catches money bugs for free
+- **Name invariants clearly** — the name is the first thing you see in a violation
+- **One concept per action** — large multi-step actions are hard to trace
+- **Start with small params** — `--param N=3` first, then scale up
+- **Verify after every change** — short iteration loops catch bugs while the context is fresh
+# Chapter 9: Choosing a verification backend
+
+`spectre verify` supports four backends. The default (BFS) works for most specs. The others trade setup complexity for more power.
+
+---
+
+## The four backends at a glance
+
+```
+spectre verify myspec.spec
+          │
+          │  --backend bfs        (default)
+          │  --backend tlc
+          │  --backend apalache
+          │  --backend z3  --bmc-depth N
+          │
+          ▼
+    ┌───────────┬──────────────┬──────────────┬───────────────┐
+    │   BFS     │    TLC       │  Apalache    │     Z3        │
+    ├───────────┼──────────────┼──────────────┼───────────────┤
+    │ Exhaustive│ Exhaustive   │ Exhaustive   │ Bounded       │
+    │ for small │ + validated  │ symbolic     │ up to depth N │
+    │ specs     │ fairness     │ large spaces │               │
+    ├───────────┼──────────────┼──────────────┼───────────────┤
+    │ No deps   │ TLA+ tools   │ Apalache bin │ z3 binary     │
+    │           │ (jar or bin) │              │               │
+    └───────────┴──────────────┴──────────────┴───────────────┘
+```
+
+---
+
+## Quick decision guide
+
+```
+Is your spec small (< 10k states)?
+  └─ yes ──► --backend bfs  (default, zero setup)
+
+Does it use WF/SF fairness and you need validated results?
+  └─ yes ──► --backend tlc  or  --backend apalache
+
+Is the state space too large for BFS?
+  └─ yes ──► --backend apalache  (symbolic — handles millions of states)
+
+Just hunting for shallow bugs fast?
+  └─ yes ──► --backend z3 --bmc-depth 20  (finds bugs in seconds)
+
+In CI and want a quick regression check?
+  └─ yes ──► --backend z3 --bmc-depth 30  (fast, catches most regressions)
+```
+
+---
+
+## BFS backend (default)
+
+The built-in breadth-first search over your spec's reachable states. No external tools needed.
+
+```bash
+spectre verify counter.spec
+# ✓ safe — 11 states explored (exhaustive)
+
+spectre verify counter.spec --max-states 50000
+# ✓ safe — 11 states explored (exhaustive)
+```
+
+**Best for:**
+- Specs with up to ~50k reachable states
+- Fast iteration during development
+- No setup overhead
+
+**Limitations:**
+- WF/SF fairness is heuristic — not formally validated
+- Memory-bound on large specs (> 100k states gets slow)
+
+---
+
+## TLC backend
+
+Translates your spec to TLA+ and runs it through TLC — the reference TLA+ model checker.
+
+```bash
+# Install TLA+ tools
+brew install tla-tools          # macOS
+# or download tla2tools.jar from https://github.com/tlaplus/tlaplus/releases
+
+# Run with TLC
+spectre verify mutex.spec --backend tlc
+spectre verify mutex.spec --backend tlc --tlc-jar ~/tools/tla2tools.jar
+```
+
+```
+Verifying mutex.spec with backend tlc...
+mutex.spec: ✓ safe (exhaustive)
+  Note: TLC checked all reachable states
+```
+
+**Best for:**
+- Specs with `WF(action)` or `SF(action)` — TLC validates fairness correctly
+- Cross-checking a spec against the TLA+ ecosystem
+- Teams already familiar with TLA+ tooling
+
+**Limitations:**
+- Slower than BFS for small specs
+- Requires Java + TLA+ tools installed
+
+### What Spectre generates
+
+For each `.spec` file, Spectre creates two temp files:
+
+```
+---- MODULE myspec ----
+EXTENDS Integers, TLC
+
+VARIABLES balance, status
+
+Init == /\ balance = 0
+        /\ status  = "Active"
+
+Deposit == /\ status = "Active"
+           /\ balance < 1000
+           /\ balance' = balance + 100
+           /\ UNCHANGED status
+
+Next == Deposit \/ Withdraw \/ Freeze \/ Unfreeze
+
+Spec == Init /\ [][Next]_vars /\ WF_vars(Deposit)
+====
+```
+
+```
+INIT Init
+NEXT Next
+INVARIANT solvent
+```
+
+---
+
+## Apalache backend
+
+Apalache is a symbolic model checker for TLA+. Instead of enumerating states, it uses Z3 internally to reason about sets of states at once.
+
+```bash
+# Install Apalache
+brew install apalache
+# or download from https://github.com/informalsystems/apalache/releases
+
+# Run with Apalache
+spectre verify large-spec.spec --backend apalache
+spectre verify large-spec.spec --backend apalache \
+    --apalache-bin /opt/apalache/bin/apalache-mc
+```
+
+**Best for:**
+- Large state spaces that exhaust BFS memory
+- Specs with many integer variables (Apalache reasons symbolically over integers)
+- Production-grade verification with validated fairness
+
+**Limitations:**
+- Slowest to start (JVM startup + type checking)
+- Requires Apalache installed (Java 17+)
+
+### BFS vs Apalache on a large spec
+
+```
+spectre verify raft.spec --max-states 100000
+# bounded — hit state limit (100000 states)
+
+spectre verify raft.spec --backend apalache
+# ✓ safe (exhaustive)
+# Note: Apalache checked all reachable states symbolically
+```
+
+---
+
+## Z3 backend (bounded model checking)
+
+Encodes your spec as an SMT-LIB2 query and asks Z3 to find a violation within N steps.
+
+```bash
+# Install Z3
+brew install z3
+
+# Default depth (20)
+spectre verify bank.spec --backend z3
+
+# Deeper search
+spectre verify bank.spec --backend z3 --bmc-depth 50
+```
+
+When a violation exists within the depth:
+```
+Verifying bank.spec with backend z3...
+bank.spec: ✗ violation found
+  Note: bounded model checking to depth 20
+  Violation 1: invariant "solvent"
+    step 3: balance = -100
+```
+
+When no violation is found within the depth:
+```
+bank-fixed.spec: ✓ safe
+  Note: bounded model checking to depth 20 — not exhaustive
+```
+
+> `✓ safe` from Z3 means **no violation up to depth 20** — not a proof of full safety. Use `--backend bfs` or `--backend apalache` for an exhaustive result.
+
+**Best for:**
+- Finding shallow bugs quickly (< 1 second for depth 20)
+- CI smoke tests that should finish in a few seconds
+- Specs too large for BFS where you just want fast feedback
+
+**Limitations:**
+- Bounded — can miss deep violations
+- No fairness checking (liveness properties not verified)
+
+---
+
+## Comparison table
+
+| | BFS | TLC | Apalache | Z3 |
+|-|-----|-----|----------|----|
+| Exhaustive | ✓ small specs | ✓ | ✓ symbolic | ✗ |
+| Fairness (WF/SF) | heuristic | validated | validated | ✗ |
+| Safety invariants | ✓ | ✓ | ✓ | ✓ bounded |
+| Temporal properties | ✓ | ✓ | ✓ | ✗ |
+| Dependencies | none | TLA+ tools | Apalache | z3 |
+| Speed | fast | moderate | fast (large) | very fast |
+| Setup time | 0 | 5 min | 10 min | 2 min |
+
+---
+
+## Progressive verification workflow
+
+A practical strategy — escalate backend strength only when needed:
+
+```
+Write spec
+    │
+    ▼
+--backend bfs         ← fast feedback, no deps
+    │
+  passes?
+    │
+    ├─ no ──► fix spec, repeat
+    │
+    └─ yes
+         │
+         ▼
+    Has WF/SF fairness?
+         ├─ yes ──► --backend tlc  or  --backend apalache
+         └─ no  ──► done ✓  (BFS is exhaustive for small specs)
+```
+
+In CI, combine:
+
+```bash
+# Fast regression check (seconds)
+spectre verify myspec.spec --backend z3 --bmc-depth 30
+
+# Full verification (minutes, on merge to main)
+spectre verify myspec.spec --backend apalache
+```
+
+---
+
+## Installing the backends
+
+| Backend | Install command | Verify install |
+|---------|----------------|----------------|
+| BFS | built in | `spectre --version` |
+| TLC | `brew install tla-tools` | `tlc -help` |
+| Apalache | `brew install apalache` | `apalache-mc version` |
+| Z3 | `brew install z3` | `z3 --version` |
+
+On Linux, download JARs/binaries from the respective GitHub releases pages and pass `--tlc-jar`, `--apalache-bin`, or `--z3-bin` flags.
+# Chapter 10: Mining specs from Rust
+
+### What mining does
+
+```
+src/account.rs ──► spectre mine ──► account.spec skeleton
+                                         │
+                                    add invariants
+                                         │
+                                    spectre verify
+```
+
+The miner reads your Rust source and extracts struct fields, assert guards, and field assignments — giving you a runnable spec in seconds.
+
+What it extracts:
+- `struct` fields → `var` declarations
+- `assert!` / `debug_assert!` → `require` guards
+- `if cond { return Err(..) }` → negated `require` guards
+- `self.field = expr` / `self.field += n` → primed assignments
+- `fn new(...)` constructor → `init` values
+- Rust enums → Spectre enums
+
+---
+
+### Your first mine
 
 ```rust
-pub struct BankAccount {
-    pub balance: i64,
-    pub owner:   String,
-    pub frozen:  bool,
+// src/counter.rs
+pub struct Counter {
+    pub value: i64,
+    pub max:   i64,
 }
 
-impl BankAccount {
-    pub fn new(owner: String) -> Self {
-        Self { balance: 0, owner, frozen: false }
+impl Counter {
+    pub fn new(max: i64) -> Self {
+        Counter { value: 0, max }
     }
-
-    pub fn deposit(&mut self, amount: i64) {
-        assert!(amount > 0);
-        assert!(self.balance + amount <= 1_000_000);
-        self.balance += amount;
+    pub fn increment(&mut self) {
+        assert!(self.value < self.max);
+        self.value += 1;
     }
-
-    pub fn withdraw(&mut self, amount: i64) {
-        assert!(amount > 0);
-        assert!(self.balance >= amount);
-        assert!(!self.frozen);
-        self.balance -= amount;
+    pub fn decrement(&mut self) {
+        assert!(self.value > 0);
+        self.value -= 1;
     }
-
-    pub fn freeze(&mut self)   { assert!(!self.frozen); self.frozen = true;  }
-    pub fn unfreeze(&mut self) { assert!(self.frozen);  self.frozen = false; }
+    pub fn reset(&mut self) {
+        self.value = 0;
+    }
 }
 ```
 
-Run the miner:
-
 ```bash
-spectre mine --lang rust examples/rust/bank_account.rs
+spectre mine --lang rust src/counter.rs
 ```
 
 Output:
 
 ```spectre
-var balance: int
-var owner: str
-var frozen: bool
+// Spectre spec mined from: src/counter.rs
+
+var value: int
+var max:   int
 
 init {
-  balance = 0
-  owner = ""
-  frozen = false
+  value = 0
+  max   = 0
 }
 
-action deposit(amount: int) {
-  require amount > 0
-  require balance + amount <= 1000000
-  balance' = balance + amount
+action increment {
+  require value < max
+  value' = value + 1
 }
 
-action withdraw(amount: int) {
-  require amount > 0
-  require balance >= amount
-  require !frozen
-  balance' = balance - amount
+action decrement {
+  require value > 0
+  value' = value - 1
 }
 
-action freeze {
-  require !frozen
-  frozen' = true
-}
-
-action unfreeze {
-  require frozen
-  frozen' = false
+action reset {
+  value' = 0
 }
 ```
 
-All seven `assert!` guards were extracted, including the compound condition `balance + amount <= 1_000_000` (numeric underscore stripped).  Constructor init values (`balance = 0`, `frozen = false`) came from the `new` method's struct literal.
+Save it and verify immediately:
+
+```bash
+spectre mine --lang rust src/counter.rs -o counter.spec
+spectre verify counter.spec
+# ✓ safe — 12 states explored (exhaustive)
+```
 
 ---
 
-## Saving and Verifying the Mined Spec
+### What gets extracted vs. what gets skipped
+
+| Extracted ✓ | Skipped / approximated ✗ |
+|-------------|--------------------------|
+| Primitive fields (`i64`, `bool`, `String`) | `new()`, `default()`, `clone()`, `fmt()` |
+| Rust enums — unit variants only | Tuple/struct enum variants (data dropped) |
+| `assert!` / `debug_assert!` guards | `panic!`, `unwrap()`, `expect()` |
+| `self.x = …`, `self.x += …`, `self.x -= …` | `checked_add`, `wrapping_add`, `saturating_sub` |
+| `if cond { return Err(..) }` patterns | `Result<T,E>` error paths |
+| `Arc<T>`, `Mutex<T>`, `Box<T>` wrappers | (inner type extracted, wrapper dropped) |
+
+---
+
+### Seeing what was skipped: `--show-omissions`
 
 ```bash
-spectre mine --lang rust examples/rust/bank_account.rs \
-    --output examples/bank-account-mined.spec
-
-spectre verify examples/bank-account-mined.spec
-# Traversed 3745 states
-# Found no violations.
+spectre mine --lang rust src/account.rs --show-omissions
 ```
 
-The spec as mined has no `invariant` blocks — those are your design intent, not extractable from assertions alone. Add them before the final verify:
+```
+Extraction omissions (4):
+  SKIPPED_METHOD in new: constructor/utility method — not translated to action
+  RESULT_RETURN in deposit: Result<(),TxError> return — error path abstracted
+  OVERFLOW_OP in deposit: checked_add — saturating arithmetic abstracted
+  TUPLE_VARIANT in TxError: InsufficientFunds(i64) — data dropped, unit variant kept
+
+Mined: 3 fields, 1 enum, 4 actions, 4 omissions
+```
+
+Four omission kinds to act on:
+
+- **RESULT_RETURN** — error paths not modelled. Add invariants for the error conditions manually if they matter.
+- **OVERFLOW_OP** — arithmetic is unbounded in the spec. Add `require` guards if overflow-safe bounds are important.
+- **TUPLE_VARIANT** — enum variant data was dropped. Add a `var` for the data if you need to reason about it.
+- **SKIPPED_METHOD** — constructors, `fmt`, `drop`. Almost always safe to ignore.
+
+The mine summary line shows how many omissions occurred:
+
+```
+Mined: 3 fields, 1 enum, 4 actions, 4 omissions (run --show-omissions for details)
+```
+
+---
+
+### Evaluate a whole directory
+
+```bash
+spectre eval-rust --dir src/
+```
+
+```
+# Rust Extraction Evaluation Report
+
+## Per-File Summary
+
+| File              | Struct      | Fields | Enums | Methods | Omissions | Success |
+|-------------------|-------------|--------|-------|---------|-----------|---------|
+| account.rs        | BankAccount |   3    |   1   |    4    |     4     |   50%   |
+| counter.rs        | Counter     |   2    |   0   |    3    |     1     |  100%   |
+| state_machine.rs  | Machine     |   4    |   2   |    2    |     4     |   50%   |
+
+**Totals** — files: 3 | fields: 9 | methods: 9 | omissions: 9 | mean success: 67%
+
+## Omissions by Kind
+
+| Kind            | Count |
+|-----------------|-------|
+| SKIPPED_METHOD  |   3   |
+| RESULT_RETURN   |   2   |
+| OVERFLOW_OP     |   2   |
+| TUPLE_VARIANT   |   2   |
+```
+
+**Success fraction** = methods with no body-level omissions (overflow / panic / Result / complex assign). Files at 100% can be verified with minimal manual work. Files at 50% need review.
+
+Use this output to prioritise enrichment effort — start with files nearest 100%.
+
+---
+
+### Enrich the mined spec
+
+Three things to always add after mining:
+
+1. **Invariants** — the miner extracts no invariants (only guards). Add at least one per resource, one per ordering constraint.
+2. **Temporal properties** — if your system makes progress guarantees, add `WF(action)` or `eventually(goal)`.
+3. **Realistic init values** — `max = 0` won't verify anything useful. Set values that match production defaults.
+
+Example enrichment for the counter spec:
 
 ```spectre
-invariant non_negative {
-  balance >= 0
+// counter.spec — after enrichment
+var value: int
+var max:   int
+
+init {
+  value = 0
+  max   = 10    // ← set a realistic default
 }
 
-invariant within_cap {
-  balance <= 1000000
+action increment {
+  require value < max
+  value' = value + 1
 }
+
+action decrement {
+  require value > 0
+  value' = value - 1
+}
+
+action reset {
+  value' = 0
+}
+
+// ← these three lines are the additions
+invariant non_negative  { value >= 0 }
+invariant within_bounds { value <= max }
+temporal  always_resets { WF(reset) }
 ```
 
 ---
 
-## What the Miner Extracts — and What It Does Not
-
-| Construct | Extracted? | Notes |
-|-----------|-----------|-------|
-| `struct` fields with primitive types | ✅ | `i64`→`int`, `bool`→`bool`, `String`→`str` |
-| `Vec<T>` fields | ✅ | mapped to `List[T]` |
-| `HashMap<K,V>` fields | ✅ | mapped to `Map[K,V]` |
-| `Arc<Mutex<T>>` fields | ✅ | inner type unwrapped |
-| `Option<T>` fields | ✅ | inner type used |
-| `assert!` / `debug_assert!` guards | ✅ | all positions |
-| `assert_eq!(a, b)` | ✅ | extracted as `require a = b` |
-| `assert_ne!(a, b)` | ✅ | extracted as `require a != b` |
-| `if cond { return Err(..) }` guards | ✅ | extracted as `require cond` |
-| Constructor init values from `fn new` | ✅ | struct literal fields |
-| Self-field assignments (`self.x = …`) | ✅ | primed assignments |
-| Compound assignments (`+=`, `-=`, `*=`) | ✅ | expanded to `x' = x + …` |
-| Tuple / struct enum variants | ❌ | flagged with `// TODO` comment |
-| Unknown types | ❌ | fall back to `int` |
-| Complex control flow (nested match, iterators) | ❌ | partial extraction; needs manual completion |
-
----
-
-## Extraction Omissions and `--show-omissions`
-
-The miner tracks every Rust construct it cannot fully translate and records it as an **extraction omission**.  Omissions do not abort mining — the miner always produces a runnable spec — but they mark places where the generated spec is an approximation of the Rust source.
-
-Run `--show-omissions` to see the full list printed to stderr after mining:
+### LLM-enhanced mining
 
 ```bash
-spectre mine --lang rust src/state_machine.rs --show-omissions
+ANTHROPIC_API_KEY=sk-... spectre mine --lang rust src/account.rs --ai
 ```
 
-Example output:
-
-```
-Extraction omissions (3):
-  TUPLE_VARIANT in State: variant Running(task_id: u32) — data dropped, unit variant kept
-  OVERFLOW_OP in process: wrapping_add — saturating/wrapping arithmetic abstracted
-  SKIPPED_METHOD in new: constructor/utility method skipped (not translated to action)
-```
-
-### Omission Kinds
-
-| Kind | What it means |
-|------|--------------|
-| `UNSUPPORTED_TYPE` | Rust type has no direct Spectre equivalent; field mapped to `int` |
-| `SKIPPED_METHOD` | `new`, `default`, `clone`, `fmt`, `drop` — skipped, not an action |
-| `TUPLE_VARIANT` | Enum variant with data (`Name(T)`) — data dropped, variant name kept |
-| `OVERFLOW_OP` | `checked_`, `wrapping_`, `saturating_` arithmetic — abstracted |
-| `PANIC_PATTERN` | `panic!`, `unwrap()`, `expect()` — dropped |
-| `RESULT_RETURN` | `Result<T,E>` return / `?` operator — error path abstracted |
-| `COMPLEX_ASSIGN` | Assignment RHS too complex to translate directly |
-| `UNSUPPORTED_PATTERN` | Other unrecognised Rust pattern |
-
-### Interpreting Omissions
-
-**`SKIPPED_METHOD`** is almost always benign — constructors (`new`) set initial values, not transitions.  The mined `init` block captures those instead.
-
-**`TUPLE_VARIANT` and `OVERFLOW_OP`** require the most attention.  If your invariants depend on the dropped data or on overflow behaviour, you need to manually model those cases:
+The LLM adds (always commented out — never applied automatically):
+- One-sentence `description` for each action
+- Up to three `invariant` candidates
+- Up to three `temporal` property candidates
 
 ```spectre
-// Original Rust: enum State { Idle, Running { task_id: u32 }, Done }
-// Mined spec drops task_id — add it back manually if needed:
-var task_id: int
+// LLM-suggested invariants (review before enabling):
+// invariant balanced_books { total_deposits >= total_withdrawals }
+// invariant no_freeze_with_balance { frozen → balance = 0 }
 ```
 
-**`RESULT_RETURN`** means the method has error paths that the miner abstracts into `require` guards (the happy path only).  The generated spec verifies that the non-error path is safe; it does not verify the error paths themselves.
-
-### Omission Count in Mine Summary
-
-The mine command prints a summary line alongside field/action counts:
-
-```
-Mined: 3 fields, 2 enums, 4 actions, 3 omissions (run --show-omissions for details)
-```
-
-A zero-omission result means the miner was able to translate the entire supported subset without any approximation.
+Always review LLM suggestions against your actual requirements before uncommenting.
 
 ---
 
-## Drift Detection with `spectre sync`
+### The full mining workflow
 
-Once the spec exists, the code and spec can diverge silently as the codebase evolves. `spectre sync` compares the current Rust source against the existing spec using **SMT-backed equivalence checking** (Z3, QF_LIA theory):
+```
+1. spectre eval-rust --dir src/
+   └── identify which files mine cleanly (Success = 100%)
 
-```bash
-spectre sync examples/rust/bank_account.rs --spec examples/bank-account-mined.spec
+2. spectre mine --lang rust src/target.rs -o target.spec
+   └── get the skeleton
+
+3. spectre mine ... --show-omissions
+   └── understand what was skipped
+
+4. Edit target.spec
+   └── add invariants, fix init values, handle omissions
+
+5. spectre verify target.spec
+   └── safe → check in both files
+       violation → fix spec, re-verify
+
+6. spectre sync src/target.rs --spec target.spec  (ongoing)
+   └── catch drift as code evolves
+```
+# Chapter 11: Drift detection and incremental re-verification
+
+### The drift problem
+
+```
+Day 1:   mine spec ──► check in account.spec + account.rs ✓
+              │
+Day 30:  refactor withdraw() in Rust
+              │
+              ▼
+         spec and code no longer agree ← silent drift
+              │
+         next production incident reveals it
 ```
 
-Each action is classified with one of three symbols:
+`spectre sync` catches drift before it becomes a bug report.
+
+---
+
+### Running sync
+
+```bash
+spectre sync src/account.rs --spec account.spec
+```
+
+Each action gets one of three symbols:
 
 | Symbol | Meaning |
 |--------|---------|
-| `[=]` | Structurally unchanged — guards and assignments are identical |
-| `[≡]` | SMT-proved equivalent — the code changed but Z3 proves the semantics are identical (safe rewrite, no re-verification needed) |
-| `[✗]` | Semantically changed — SMT found a counterexample witness; re-verification required |
+| `[=]` | Unchanged — guards and assignments are structurally identical |
+| `[≡]` | SMT-proved equivalent — code changed, semantics identical, no re-verify needed |
+| `[✗]` | Semantically changed — SMT found a counterexample; re-verify required |
 
-**Example output (semantic mutation: `balance - amount` → `balance + amount`):**
-
-```
-[=] action deposit (structurally unchanged)
-[✗] action withdraw assignment 1 body changed: "balance'=balance - amount" → "balance'=balance + amount" (witness: amount=1, balance=0)
-[=] action freeze (structurally unchanged)
-[=] action unfreeze (structurally unchanged)
-```
-
-**Example output (equivalent rewrite: guard commuted):**
+Example output after a bug is introduced in `withdraw`:
 
 ```
-[≡] action deposit guard 2 rewritten (SMT-proved equivalent): "balance + amount <= 1000000" → "amount + balance <= 1000000"
-[=] action withdraw (structurally unchanged)
+[=]  action deposit    (structurally unchanged)
+[✗]  action withdraw   assignment 1 body changed:
+       "balance' = balance - amount"  →  "balance' = balance + amount"
+       witness: amount=1, balance=0
+[=]  action freeze     (structurally unchanged)
+[≡]  action unfreeze   guard rewritten (SMT-proved equivalent):
+       "not frozen"  →  "frozen = false"
 ```
 
-The `[≡]` classification prevents false alarms on logically-equivalent refactors (e.g., commutativity, constant folding). In evaluation: **8/8 semantic mutations detected** with **1 false positive** (vs. 4 FP using AST comparison alone).
+The `[✗]` line gives you:
+- **What changed** — which assignment or guard
+- **The witness** — concrete values where the two versions behave differently
+
+The `[≡]` prevents false alarms on equivalent rewrites — commutativity, constant folding, guard commutation.
 
 ---
 
-## Incremental Re-verification
+### CI integration
 
-When `spectre sync` flags an action as **possibly-unsafe**, the safe path is to re-verify the entire specification. For large models this can be expensive. `spectre verify --incremental` re-verifies only the changed action:
-
-```bash
-# Step 1: build and cache the state graph (first run only)
-spectre verify examples/raft-election-safety.spec --max-states 30000 --use-cache
-
-# Step 2: after code changes, sync to find what changed
-spectre sync examples/rust/raft.rs
-# Output: vote2for1  possibly-unsafe
-
-# Step 3: re-verify only vote2for1
-spectre verify examples/raft-election-safety.spec --max-states 30000 \
-    --use-cache --incremental --changed-action vote2for1
+```yaml
+# .github/workflows/spectre.yml
+- name: Check for spec drift
+  run: spectre sync src/account.rs --spec account.spec
+  # exits non-zero if any [✗] is found
 ```
 
-### The Algorithm (5 steps)
-
-1. **Prune** — remove all transitions produced by the changed action from the cached graph
-2. **Reachability BFS** — recompute which states are reachable from initial states over the remaining edges
-3. **Remove unreachable states** — discard states that were only reachable via the changed action
-4. **Re-execute** — run the changed action from every remaining reachable state; collect new successor states
-5. **BFS-expand** — BFS-expand new successor states with all actions, capped at the original state count
-
-The result is provably equivalent to a fresh BFS of the modified spec under the same exploration bound (Proposition: Incremental Equivalence).
-
-### Benchmark
-
-All timings on Apple M3 Pro (18 GB, macOS 15.6, Go 1.24). Absolute times are hardware-dependent; speedup ratios are the primary claims.
-
-| Spec | Changed action | Cold BFS | Incremental | Speedup | States pruned / new |
-|------|---------------|----------|-------------|---------|---------------------|
-| Raft (22,432) | `stepDown1_sees2` | 12.4 s | 2.4 s | **5.2×** | 1,649 / 1,645 |
-| Raft (22,432) | `vote2for1` | 12.4 s | 2.9 s | **4.3×** | 6,501 / 6,495 |
-
-Cache restore (unchanged spec): 0.265 s for Raft (47× faster than cold BFS).
-
-Speedup depends on the fraction of states reachable only via the changed action. When that fraction is high (e.g., `freeze` owns 1,882 of 3,745 states), most of the graph can be reused without re-expansion.
+`sync` exits 0 if all actions are `[=]` or `[≡]`; exits non-zero on any `[✗]`. Safe to gate a merge on.
 
 ---
 
-## Impact Analysis with `spectre impact`
+### Incremental re-verification
 
-`spectre impact` reads the current `git diff` and maps changed Rust functions to the actions they implement, then reports which spec actions and invariants are affected and whether incremental re-verification is needed:
+After a `[✗]`, you don't need to re-run full BFS. Re-verify only the changed action:
 
 ```bash
-spectre impact examples/raft-election-safety.spec
+spectre verify account.spec \
+  --incremental \
+  --changed-action withdraw \
+  --use-cache
 ```
 
-Example output after modifying `vote2for1` in Rust source:
+How it works (5 steps):
+
+1. Load the cached state graph from the last full run
+2. Remove all states reachable only through `withdraw`
+3. Re-explore from states where `withdraw` was previously enabled
+4. Re-check invariants on the new states only
+5. Merge result back into the cache
+
+Output:
+
+```
+Incremental re-verification: action 'withdraw'
+  States re-explored: 12  (vs 847 in full BFS)
+  ✓ safe — no new violations
+  Cache updated.
+```
+
+12 states vs 847 = **70× faster** for this example. The saving grows with spec size.
+
+---
+
+### Impact analysis
+
+Before re-verifying, check which invariants are actually affected by the change:
+
+```bash
+spectre impact account.spec
+```
 
 ```
 Changed actions (from git diff):
-  vote2for1  — semantics changed (SMT witness available)
+  withdraw — semantics changed (SMT witness: amount=1, balance=0)
 
 Affected invariants:
-  electionSafety
-  leaderMajority
+  solvent         ← balance can go negative with the new body
+  not_over_limit  ← not directly affected by withdraw
 
 Recommended:
-  spectre verify examples/raft-election-safety.spec --use-cache --incremental --changed-action vote2for1
+  spectre verify account.spec --incremental --changed-action withdraw
 ```
 
-`impact` is designed for CI: it exits non-zero if any changed action touches a safety-critical invariant, so pipelines can gate on it.
+Use `impact` in CI to skip re-verification when a changed action doesn't touch any safety-critical invariant.
 
 ---
 
-## The Full Workflow
+### Full sync workflow
 
 ```
-mine → verify → check-in spec → evolving code → sync → incremental re-verify
-```
-
-1. **Mine** — extract the spec skeleton from Rust (`spectre mine`)
-2. **Enrich** — add invariants, temporal properties, verify and iterate
-3. **Check in** — commit the `.spec` file alongside the Rust source
-4. **Evolve** — modify the Rust implementation as needed
-5. **Sync** — run `spectre sync` in CI to detect drift; exit non-zero on `possibly-unsafe`
-6. **Re-verify** — run `spectre verify --incremental --changed-action <name>` for fast re-check
-
-For bidirectional drift detection (when the spec itself may also have changed independently):
-
-```bash
-spectre drift account.spec examples/rust/bank_account.rs
+Code changes committed
+        │
+        ▼
+spectre sync src/ --spec spec.spec
+        │
+  [=] or [≡] only?
+        ├── yes ──► nothing to do ✓
+        └── no ([✗] found)
+                │
+                ▼
+        spectre impact spec.spec
+                │
+        safety-critical invariant affected?
+                ├── no ──► log warning, skip re-verify
+                └── yes
+                        │
+                        ▼
+                spectre verify spec.spec \
+                  --incremental \
+                  --changed-action NAME \
+                  --use-cache
+                        │
+                   safe? ──yes──► commit + update cache ✓
+                        │
+                        no
+                        │
+                        ▼
+                Fix code or spec, re-verify
 ```
 
 ---
 
-## LLM Enhancement
+### Sync evaluation: what it checks
 
-With the optional `--ai` flag, the mined spec is sent to an LLM together with the Rust source for semantic enrichment. The LLM proposes:
+`sync` compares:
+- Struct field names and types
+- Action guard counts and expressions
+- Assignment-body expressions (normalised)
 
-- One-sentence `description` for each action
-- Up to three additional `invariant` candidates (commented-out suggestions)
-- Up to three `temporal` property suggestions
-
-```bash
-ANTHROPIC_API_KEY=sk-... spectre mine --lang rust src/wallet.rs --ai
-```
-
-The LLM additions are always commented out and require explicit human review before taking effect.
-# Chapter 10: Model-Based Testing
-
-Once you have a verified Spectre specification, you can use it to test your actual Rust implementation automatically.  This is called **model-based testing (MBT)**: the spec is the oracle, and the test driver replays spec-generated execution traces against your code to check that every step agrees.
-
-Spectre supports this workflow through four features:
-
-- `--emit-traces` — writes explored paths to an **ITF trace file**
-- `--coverage-mode` — five strategies to steer which paths are explored
-- `generate-driver` — generates a Rust test harness that replays a trace file against your implementation
-- `check-refinement` — checks that a set of ITF traces conform to the spec's refinement mapping
+It detected **30/35 injected semantic mutations** (85.7%) in evaluation, with 1 false positive (vs 4 with AST comparison alone). The `[≡]` classification eliminates the majority of false alarms.
 
 ---
 
-## The ITF Trace Format
+### Tips for keeping sync useful
 
-ITF (Informal Trace Format) is a JSON schema originally from the [Apalache](https://github.com/informalsystems/apalache) model checker and used by the Quint ecosystem.  Each ITF file contains a sequence of `(action, pre-state, post-state)` records.
+- **Check in the spec file alongside the Rust source** — keep them in the same directory or a `spec/` subdirectory
+- **Run sync in pre-commit** as well as CI — catch drift before it even reaches the repo
+- **After a `[✗]`**: always re-verify before merging, even if you think the change is safe
+- **After a `[≡]`**: no action required — but it's worth reading the rewrite to confirm it's intentional
+# Chapter 12: Model-based testing
 
-```bash
-spectre verify examples/bank-account-parameterized.spec \
-    --emit-traces trace.itf.json
+### The idea
+
+```
+account.spec
+      │
+      ▼
+spectre verify --emit-traces trace.itf.json
+      │
+      ▼
+spectre generate-driver --lang rust account.spec -o src/driver.rs
+      │
+      ▼
+fill in apply_action() + current_state() against your BankAccount impl
+      │
+      ▼
+cargo test
+      │
+      ├── ✓ 6/6 steps match ── implementation agrees with spec
+      └── ✗ step 3 mismatch  ── spec found a bug in your Rust code
 ```
 
-When the verifier finds a counterexample it writes the full trace to `trace.itf.json`.  When no violation is found, it writes the last explored path — useful as a "happy path" regression trace.
+The spec is the oracle. The driver replays spec-generated execution traces against your actual Rust implementation and reports any disagreement.
 
 ---
 
-## Coverage Modes
-
-By default, `--emit-traces` uses `action` coverage (prefer actions not yet seen). You can change this with `--coverage-mode`:
+### Generate a trace
 
 ```bash
-spectre verify examples/bank-account-parameterized.spec \
-    --emit-traces trace.itf.json \
-    --coverage-mode property
+spectre verify account.spec \
+  --emit-traces trace.itf.json \
+  --coverage-mode property
 ```
 
-| Mode | Strategy | When to use |
-|------|---------|-------------|
-| `action` | Prefers actions not yet executed in the current trace | Breadth of action coverage |
-| `transition-pair` | Prefers (prev-action, next-action) pairs not yet seen | Transition sequence coverage |
-| `boundary` | Steers toward the **maximum** boundary of integer variables | Testing upper-bound behaviour |
-| `rare-action` | Prefers globally least-executed actions | Finding underexplored corners |
-| `property` | Steers toward states where the **minimum** integer variable is lowest | **Closest to invariant boundaries** — best for catching precondition bugs |
+Coverage modes — pick based on what you want to exercise:
 
-**Empirical comparison on `bank-account-parameterized` (20-step budget):**
+| Mode | Strategy | Best for |
+|------|----------|----------|
+| `action` | Prefer actions not yet seen in trace | Breadth of action coverage (default) |
+| `property` | Steer toward invariant boundary values | Catching off-by-one bugs |
+| `transition-pair` | Cover all (prev, next) action pairs | Transition sequence coverage |
+| `boundary` | Maximise integer variable values | Overflow and limit bugs |
+| `rare-action` | Prefer globally least-executed actions | Obscure code paths |
 
-| Mode | Mean balance | Boundary steps | Coverage |
-|------|-------------|---------------|---------|
-| `action` | 41.2 | 2/8 (25%) | baseline |
-| `boundary` | 500.0 | 1/21 (5%) | steers toward MAX (wrong direction for solvency) |
-| `rare-action` | 30.5 | 5/21 (24%) | similar to action |
-| `property` | 23.8 | 11/21 (**52%**) | **best** — most steps near balance = 0 |
-
-`property` mode uses a violation-proximity score: it scores each successor state by its minimum integer variable value, preferring states closest to the invariant boundary (`balance >= 0` → prefer low balance). This resulted in twice the boundary-state coverage of any other mode.
+`property` mode achieves 52% boundary-state coverage vs 5–25% for the others — use it when chasing subtle arithmetic bugs.
 
 ---
 
-## Generating a Test Driver
+### Generate the driver
 
 ```bash
-spectre generate-driver --lang rust examples/bank-account-parameterized.spec \
-    --output src/spec_driver.rs
+spectre generate-driver --lang rust account.spec -o src/driver.rs
 ```
 
-This generates a `spec_driver.rs` skeleton:
+`driver.rs` gives you two traits to implement:
 
 ```rust
-// Auto-generated by `spectre generate-driver bank-account-parameterized.spec`
-// Fill in the TODO sections to connect your Rust implementation.
+pub trait AccountDriver {
+    /// Apply one action from the spec trace to your implementation.
+    fn apply_action(&mut self, action: &str, args: &[Value]) -> Result<(), String>;
 
-use spectre_connect::{ItfValue, StepHandler, TraceReplayer};
-use std::collections::HashMap;
+    /// Return the current implementation state in spec terms.
+    fn current_state(&self) -> SpecState;
+}
+```
 
-pub struct MySystem {
+`SpecState` mirrors the spec's `var` declarations:
+
+```rust
+pub struct SpecState {
     pub balance: i64,
     pub frozen:  bool,
 }
-
-impl StepHandler for MySystem {
-    type Error = Box<dyn std::error::Error>;
-
-    fn apply_action(&mut self, action: &str, args: &[ItfValue]) -> Result<(), Self::Error> {
-        match action {
-            "deposit" => {
-                let amount: i64 = args.get(0)
-                    .ok_or("missing arg 0 for deposit")?
-                    .try_into()?;
-                // TODO: call your real implementation
-                todo!()
-            }
-            "withdraw" => {
-                let amount: i64 = args.get(0)
-                    .ok_or("missing arg 0 for withdraw")?
-                    .try_into()?;
-                todo!()
-            }
-            "freeze"   => { todo!() }
-            "unfreeze" => { todo!() }
-            _ => Err(format!("unknown action: {action}").into()),
-        }
-    }
-
-    fn current_state(&self) -> HashMap<String, ItfValue> {
-        let mut s = HashMap::new();
-        s.insert("balance".to_string(), ItfValue::Int(self.balance));
-        s.insert("frozen".to_string(),  ItfValue::Bool(self.frozen));
-        s
-    }
-}
 ```
+
+Wire these to your `BankAccount` struct and you're done.
 
 ---
 
-## CI-Ready Driver Generation with `--ci`
-
-The `--ci` flag extends `generate-driver` with two additional files that wire the generated driver into a standard Rust CI pipeline.
+### CI-ready driver with `--ci`
 
 ```bash
 spectre generate-driver --lang rust account.spec --ci -o src/driver.rs
 ```
 
-This produces three files:
+Three files are written:
 
-| File | Purpose |
-|------|---------|
-| `src/driver.rs` | The Rust test driver (as usual) |
-| `src/driver.cargo.toml` | `[dev-dependencies]` snippet to paste into your `Cargo.toml` |
-| `src/driver.ci.yml` | GitHub Actions workflow that runs the driver on every push |
+| File | What to do with it |
+|------|-------------------|
+| `src/driver.rs` | Implement the two trait methods |
+| `src/driver.cargo.toml` | Paste the `[dev-dependencies]` block into `Cargo.toml` |
+| `src/driver.ci.yml` | Copy to `.github/workflows/` — runs `cargo test --test driver` on every push |
 
-The Cargo snippet adds `spectre-connect` as a dev-dependency — the small Rust crate that reads ITF trace files and drives the replayer:
+The Cargo snippet:
 
 ```toml
-# src/driver.cargo.toml — paste into your Cargo.toml [dev-dependencies]
-[dev-dependencies]
+# paste into your [dev-dependencies]
 spectre-connect = { git = "https://github.com/BoundlessProducts/spectre-connect" }
 ```
 
-The CI workflow checks out your repo, installs the Rust toolchain, and runs `cargo test`:
+The CI workflow:
 
 ```yaml
-# src/driver.ci.yml
 name: Spectre conformance
 on: [push, pull_request]
 jobs:
@@ -4097,195 +2694,167 @@ jobs:
       - run: cargo test --test driver
 ```
 
-This makes the generated driver a first-class CI gate with no extra configuration.
+No extra configuration — the workflow picks up `trace.itf.json` from the repo.
 
 ---
 
-## Filling In the Driver
-
-Replace the `todo!()` stubs with calls to your real implementation:
-
-```rust
-use bank_account::BankAccount;
-
-pub struct MySystem {
-    account: BankAccount,
-}
-
-impl StepHandler for MySystem {
-    type Error = Box<dyn std::error::Error>;
-
-    fn apply_action(&mut self, action: &str, args: &[ItfValue]) -> Result<(), Self::Error> {
-        match action {
-            "deposit" => {
-                let amount: i64 = args.get(0).ok_or("missing amount")?.try_into()?;
-                self.account.deposit(amount);
-                Ok(())
-            }
-            "withdraw" => {
-                let amount: i64 = args.get(0).ok_or("missing amount")?.try_into()?;
-                self.account.withdraw(amount);
-                Ok(())
-            }
-            "freeze"   => { self.account.freeze();   Ok(()) }
-            "unfreeze" => { self.account.unfreeze(); Ok(()) }
-            _ => Err(format!("unknown action: {action}").into()),
-        }
-    }
-
-    fn current_state(&self) -> HashMap<String, ItfValue> {
-        let mut s = HashMap::new();
-        s.insert("balance".to_string(), ItfValue::Int(self.account.balance));
-        s.insert("frozen".to_string(),  ItfValue::Bool(self.account.frozen));
-        s
-    }
-}
-```
-
----
-
-## Running the Replay
+### Run the replay
 
 ```bash
-# Step 1 — generate a trace using property-directed coverage
-spectre verify examples/bank-account-parameterized.spec \
-    --emit-traces trace.itf.json --coverage-mode property
-
-# Step 2 — replay against your implementation
 cargo run -- trace.itf.json
-# ✓ All 47 steps matched the spec
 ```
 
-If a step mismatches, the output tells you exactly what diverged:
+Passing run:
 
 ```
-✗ 1 mismatch(es):
-  step 3, action 'withdraw', var 'balance': expected Int(70), got Int(50)
+Replaying 6 steps...
+  step 1  deposit(100):   balance  0 → 100  ✓
+  step 2  deposit(100):   balance 100 → 200  ✓
+  step 3  withdraw(50):   balance 200 → 150  ✓
+  step 4  freeze:         frozen false → true  ✓
+  step 5  deposit(100):   skipped (frozen)  ✓
+  step 6  unfreeze:       frozen true → false  ✓
+✓ 6/6 steps match
+```
+
+Failing run:
+
+```
+✗ 1 mismatch:
+  step 3, action 'withdraw', var 'balance':
+    spec expects: 150
+    impl returned: 200
+    hint: check withdraw() arithmetic — possible sign error
 ```
 
 ---
 
-## Checking Refinement
+### Violation traces as regression tests
 
-`spectre check-refinement` validates a set of ITF traces against the spec's refinement mapping, classifying each step as **legal**, **stuttering**, or **violating**:
+When `spectre verify` finds a violation, `--emit-traces` captures the exact counterexample path:
 
 ```bash
-spectre check-refinement examples/bank-account-parameterized.spec \
-    --traces trace1.itf.json,trace2.itf.json
+spectre verify account.spec --emit-traces violation.itf.json
 ```
 
-This is useful when you have traces from your implementation (not generated by Spectre) and want to confirm they conform to the spec.
-
----
-
-## Testing Violation Traces
-
-When you run `verify` on a *violating* spec, the emitted trace is the counterexample itself:
+Check this file into your repo. It should:
+- **Fail** against the unfixed implementation
+- **Pass** after you apply the fix
 
 ```bash
-spectre verify examples/bank-account-violation.spec \
-    --emit-traces violation.itf.json
+# Before fix:
+cargo run -- violation.itf.json  # → ✗ mismatch at step 4
 
-cargo run -- violation.itf.json
-# ✗ 1 mismatch(es):
-#   step 1, action 'withdraw', var 'balance': expected Int(-30), got ...
+# After fix:
+cargo run -- violation.itf.json  # → ✓ 4/4 steps match
 ```
 
-Use these as regression tests that confirm your fix resolves the violation.
+This turns every spec violation into a permanent, reproducible regression test.
 
 ---
 
-## Repair Suggestions with `--suggest-repairs`
+### Repair suggestions before fixing
 
-When `spectre verify` finds an invariant violation, the `--suggest-repairs` flag analyses the violated invariant and the triggering action, then prints labelled **CANDIDATE** repairs — never applied automatically, always requiring human review.
+When verification fails, get candidate patches before editing anything:
 
 ```bash
 spectre verify account.spec --suggest-repairs
 ```
 
-Example output:
-
 ```
 Repair candidates (CANDIDATE — review before applying):
 
-Violation 1: action 'withdraw' violates 'non_negative'
-  [1] CANDIDATE strengthen_require: add `require balance >= amount` to action withdraw
-      Validation: original violation fixed; no deadlock; reachability unchanged — SAFE
-  [2] CANDIDATE add_invariant_guard: add `when balance >= amount` to action withdraw
-      Validation: original violation fixed; deadlock at balance=0 — review required
+Violation 1: action 'withdraw' violates 'solvent'
+  [1] CANDIDATE strengthen_require: add `require balance >= amount` to withdraw
+      Validation: violation fixed · no deadlock · reachability unchanged — SAFE
+  [2] CANDIDATE add_invariant_guard: add `when balance >= amount` to withdraw
+      Validation: violation fixed · deadlock at balance=0 — review required
 ```
 
-Each candidate includes a **validation result** computed by re-running BFS on the patched spec:
+How to pick:
 
-| Validation result | Meaning |
-|-------------------|---------|
-| `SAFE` | Violation fixed, no deadlock introduced, reachability ≥ 95% of original |
-| `review required` | Violation fixed but a deadlock or significant reachability drop was detected |
-| `did not fix` | The patch did not prevent the violation |
+| Candidate type | Pick when | Risk |
+|---------------|-----------|------|
+| `strengthen_require` | The action should simply not fire when condition fails | Minimal |
+| `add_invariant_guard` | You want the action blocked at the invariant boundary | Can introduce deadlock |
 
-### Confidence Levels
-
-- **Medium confidence** — tighter bound on a simple comparison (e.g., `x < N` → `x < N - 1`).  Stops the action one step earlier to prevent crossing the invariant boundary.
-- **Low confidence** — invariant-guard approach.  Adds a `when` clause that mirrors the violated invariant condition.  Reliable but can over-restrict (cause deadlocks).
-
-Repairs are always labelled `CANDIDATE` in the output.  They are never written to the spec file automatically.
+Apply the chosen patch to the spec, re-verify, then propagate the change to the Rust source.
 
 ---
 
-## What the Replayer Checks
+### Checking refinement
 
-At each step, `TraceReplayer` calls `apply_action` on your implementation, then calls `current_state()` and compares every variable against the ITF record. This catches:
-
-- **Off-by-one errors** in arithmetic
-- **Wrong initial state** (your `new()` doesn't match the spec's `init`)
-- **Missing side-effects** (forgot to update a field)
-- **Wrong action semantics** (e.g., `freeze` toggling the wrong field)
-
----
-
-## Complete Workflow
-
-```
-mine → add invariants → verify → emit trace (property mode) → generate driver → fill in → replay
-                                          ↓
-                                   check-refinement (for external traces)
-```
-
-1. **Mine** — `spectre mine --lang rust src/account.rs -o account.spec`
-2. **Enrich** — add invariants; verify with CEGIS repair if needed
-3. **Generate trace** — `spectre verify account.spec --emit-traces t.itf.json --coverage-mode property`
-4. **Generate driver** — `spectre generate-driver --lang rust account.spec -o src/driver.rs`
-5. **Fill in** — implement `apply_action` and `current_state`
-6. **Replay** — `cargo run -- t.itf.json` (or `spectre check-refinement` for conformance checking)
-
-Traces are deterministic under the same exploration seed, making replays stable regression tests you can check into your test suite.
-# Chapter 11: Runtime Monitoring
-
-Formal verification gives you confidence at design time.  But a production system can still diverge from its specification through incomplete test coverage, refactoring, or third-party library updates.  **Runtime monitoring** closes this gap by embedding spec checks directly inside your running application.
-
-Spectre generates a self-contained `monitor.rs` file — no external dependencies, no trace files, no offline replay.  The monitor checks every state transition in O(k) time where k is the number of invariants.
-
----
-
-## Generating a Monitor
+When you have traces from an external source (a different tool, a recorded production run), check whether they conform to your spec:
 
 ```bash
-spectre generate-monitor --lang rust examples/bank-account-parameterized.spec \
-    --output src/monitor.rs
+spectre check-refinement account.spec
 ```
 
-This produces a `monitor.rs` with:
-
-- A `SpecState` struct mirroring your spec variables
-- A `Monitor` struct with `step()` and `unmet_liveness_properties()` methods
-- A `Violation` struct for structured error reporting
-- A callback hook for custom violation handling
+This reads `driver.json` (the refinement mapping) and validates that each external trace is a valid execution of the spec.
 
 ---
 
-## The Generated API
+### Complete MBT workflow
 
-Here is the generated interface for `bank-account-parameterized.spec`:
+```
+1.  spectre mine --lang rust src/account.rs -o account.spec
+          │
+2.  Add invariants + temporal properties to account.spec
+          │
+3.  spectre verify account.spec
+          ├── violation? → --suggest-repairs → fix → repeat
+          └── safe
+                │
+4.  spectre verify account.spec \
+      --emit-traces trace.itf.json \
+      --coverage-mode property
+          │
+5.  spectre generate-driver --lang rust account.spec --ci -o src/driver.rs
+          │
+6.  Implement apply_action() and current_state() in driver.rs
+          │
+7.  cargo test --test driver
+          ├── mismatch? → read step output → fix Rust impl → repeat from 7
+          └── ✓ all pass
+                │
+8.  Check in: account.spec, trace.itf.json, driver.rs, driver.ci.yml
+          │
+9.  On every code change:
+      spectre sync src/account.rs --spec account.spec
+          ├── [✗] found? → re-verify → update trace → repeat from 7
+          └── [=]/[≡] → nothing to do
+```
+# Chapter 13: Runtime monitoring
+
+Formal verification proves your spec is safe. Runtime monitoring proves your *running application* stays inside that spec — continuously, in production.
+
+---
+
+## The gap formal verification leaves
+
+```
+spectre verify account.spec
+        │
+   ✓ safe — all reachable states satisfy invariants
+        │
+   ship to production
+        │
+   third-party library update changes behaviour ← not in your spec
+        │
+   invariant violated at runtime — never detected
+```
+
+A runtime monitor closes this gap. It checks your spec's invariants on every real state transition — with no heap allocation in the common path.
+
+---
+
+## Generate a monitor
+
+```bash
+spectre generate-monitor --lang rust account.spec -o src/monitor.rs
+```
+
+The generated `monitor.rs` gives you:
 
 ```rust
 /// Mirrors the spec variables.
@@ -4296,428 +2865,760 @@ pub struct SpecState {
 }
 
 /// A spec violation detected at runtime.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Violation {
-    pub step:     u64,    // sequential step number
-    pub action:   String, // which action triggered the check
-    pub property: String, // invariant or temporal property name
-    pub message:  String, // human-readable description from the spec
+    pub step:      u64,
+    pub invariant: &'static str,
+    pub state:     SpecState,
 }
 
-pub struct Monitor { /* ... */ }
+pub struct Monitor { /* private */ }
 
 impl Monitor {
-    /// Create a monitor starting from `initial`.
-    pub fn new(initial: SpecState) -> Self;
+    pub fn new() -> Self { Monitor::default() }
 
-    /// Register a callback invoked immediately on every violation.
-    pub fn on_violation<F: Fn(&Violation) + Send + 'static>(&mut self, f: F);
+    /// Call after every state transition in your application.
+    pub fn step(&mut self, state: &SpecState) -> Option<Violation> { ... }
 
-    /// Apply `action` → `new_state` and check all invariants.
-    /// Returns Err(violations) if any invariant was violated.
-    pub fn step(&mut self, action: &str, new_state: SpecState)
-        -> Result<(), Vec<Violation>>;
-
-    /// Returns names of temporal properties that were never satisfied.
-    /// Call this at shutdown.
-    pub fn unmet_liveness_properties(&self) -> Vec<&str>;
-
-    /// All violations recorded since the monitor was created.
-    pub fn all_violations(&self) -> &[Violation];
+    /// Check liveness properties periodically (e.g. every 1000 steps).
+    pub fn check_liveness(&self) -> Vec<&'static str> { ... }
 }
 ```
 
 ---
 
-## Integrating the Monitor
-
-Add four lines to your existing `BankAccount` implementation:
+## Wire it into your application
 
 ```rust
-mod monitor;  // include the generated monitor.rs
-use monitor::{Monitor, SpecState};
+use crate::monitor::{Monitor, SpecState};
 
-pub struct BankAccount {
-    pub balance: i64,
-    pub frozen:  bool,
+struct App {
+    account: BankAccount,
     monitor: Monitor,
 }
 
-impl BankAccount {
-    pub fn new(owner: String) -> Self {
-        let initial = SpecState { balance: 0, frozen: false };
-        let mut monitor = Monitor::new(initial);
-        monitor.on_violation(|v| {
-            eprintln!("[SPEC VIOLATION] {}", v);
-            // In production you might log to your observability stack instead
-        });
-        Self { balance: 0, frozen: false, monitor }
-    }
+impl App {
+    fn deposit(&mut self, amount: i64) {
+        self.account.deposit(amount);
 
-    pub fn deposit(&mut self, amount: i64) {
-        assert!(amount > 0);
-        self.balance += amount;
-        // Report the new state to the monitor after every transition
-        let _ = self.monitor.step("deposit", SpecState {
-            balance: self.balance,
-            frozen:  self.frozen,
-        });
-    }
+        let state = SpecState {
+            balance: self.account.balance,
+            frozen:  self.account.frozen,
+        };
 
-    pub fn withdraw(&mut self, amount: i64) {
-        self.balance -= amount;
-        let _ = self.monitor.step("withdraw", SpecState {
-            balance: self.balance,
-            frozen:  self.frozen,
-        });
-    }
-
-    pub fn freeze(&mut self) {
-        self.frozen = true;
-        let _ = self.monitor.step("freeze", SpecState {
-            balance: self.balance,
-            frozen:  self.frozen,
-        });
-    }
-
-    pub fn unfreeze(&mut self) {
-        self.frozen = false;
-        let _ = self.monitor.step("unfreeze", SpecState {
-            balance: self.balance,
-            frozen:  self.frozen,
-        });
-    }
-}
-
-impl Drop for BankAccount {
-    fn drop(&mut self) {
-        // Check liveness properties at shutdown
-        for prop in self.monitor.unmet_liveness_properties() {
-            eprintln!("[SPEC] liveness property `{}` was never satisfied", prop);
+        if let Some(v) = self.monitor.step(&state) {
+            tracing::error!(
+                "spec violation: {} at step {}",
+                v.invariant, v.step
+            );
+            // handle: log, alert, rollback, or panic — your choice
         }
     }
 }
 ```
 
----
-
-## What the Monitor Checks
-
-After each `monitor.step()` call, the monitor:
-
-1. **Checks every `invariant` block** against the new state.  For `bank-account-parameterized.spec`:
-   - `non_negative`: `balance >= 0`
-   - `within_cap`: `balance <= 1000000`
-
-2. **Advances liveness trackers** for each `temporal` property.  For `eventually_usable` (`eventually !frozen`), it records whether the property has ever been satisfied.
-
-3. **Calls the violation callback** if any check fails — immediately, synchronously, in the calling thread.
+The monitor is:
+- **Zero dependencies** — no external crate, no allocations in the happy path
+- **O(k) per transition** where k = number of invariants
+- **Consistent** — generated from the exact same `.spec` used for model checking
 
 ---
 
-## Violation Output
+## Handle violations your way
 
-When the monitor fires, the output looks like:
-
-```
-[SPEC VIOLATION] [step 3] `non_negative` violated after `withdraw`: balance >= 0
-```
-
-The `Violation` struct gives you everything needed to log to your observability stack:
-
-```rust
-monitor.on_violation(|v| {
-    tracing::error!(
-        step    = v.step,
-        action  = %v.action,
-        property = %v.property,
-        message = %v.message,
-        "spec invariant violated"
-    );
-    metrics::counter!("spec.violations", 1, "property" => v.property.clone());
-});
-```
+| Response | When to use |
+|----------|-------------|
+| Log + continue | Non-critical invariant, high-traffic path |
+| Alert + continue | Production monitoring with async alerting |
+| Panic | Safety-critical — prefer crash over corrupt state |
 
 ---
 
-## Choosing the Violation Response
-
-The `step()` return value lets you choose how to respond:
-
-```rust
-match self.monitor.step("withdraw", new_state) {
-    Ok(()) => {}                      // all invariants held
-    Err(violations) if cfg!(debug_assertions) => {
-        panic!("spec violated in test: {:?}", violations);
-    }
-    Err(violations) => {
-        // Production: log and continue, or abort, depending on severity
-        for v in violations {
-            log::error!("invariant {} violated: {}", v.property, v.message);
-        }
-    }
-}
-```
-
----
-
-## Performance Overhead
-
-The `step()` call path:
-
-- Clones `SpecState` (stack-allocated struct copy)
-- Evaluates k invariant expressions (simple arithmetic comparisons)
-- No heap allocation in the common (no-violation) path
-
-For `bank-account-parameterized.spec` with 2 invariants and 1 temporal property, this is three comparisons per transition — negligible in any production workload.
-
----
-
-## Validating Monitor Traces with `validate-monitor`
-
-The `validate-monitor` command verifies that every violation found by BFS is **internally consistent**: the recorded trace genuinely leads to a state that fails the target invariant, with no intermediate invariant violations that would make the trace unreachable.
+## Validate monitor traces before deploying
 
 ```bash
-spectre validate-monitor examples/bank-account-violation.spec
+spectre validate-monitor account.spec
 ```
-
-Example output:
 
 ```
 Validated 2 violation trace(s):
-  [1] action 'withdraw' → invariant 'non_negative': consistent (3 steps, final violated)
-  [2] action 'deposit' → invariant 'balance_cap': consistent (2 steps, final violated)
+  [1] action 'withdraw' → invariant 'solvent': consistent (4 steps, final violated)
+  [2] action 'deposit'  → invariant 'within_cap': consistent (3 steps, final violated)
 
 2/2 consistent.
 ```
 
-### Why Validation Matters
+A **consistent** trace means the BFS path genuinely leads to (or one step before) a state that fails the target invariant. If a trace is inconsistent, the violation recording has a bug — not your application.
 
-The BFS explorer records the **pre-violation state** for transition-level violations — the state just before the offending action executes.  The validate-monitor command replays the full path at the executor level (bypassing invariant guards) and confirms that:
+Run `validate-monitor` after every spec change before regenerating the monitor.
 
-1. No intermediate step violates a *different* invariant.
-2. The final action, when applied, produces a state that fails the target invariant.
-
-If a trace is **not** consistent, it indicates a bug in the violation-recording logic — the trace cannot be replayed to reproduce the reported failure.
-
-### Flags
-
-```bash
-spectre validate-monitor account.spec --max-states 20000 --max-depth 50
-```
+Flags:
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `--max-states` | 10000 | BFS state limit |
+| `--max-states` | 10000 | BFS exploration limit |
 | `--max-depth` | 100 | BFS depth limit |
 
-### Integration with `generate-monitor`
+---
 
-Run `validate-monitor` after any spec change to confirm that the violations your runtime monitor would detect are the same ones the model checker found:
+## What the monitor checks — and what it doesn't
 
-```bash
-# 1. Verify the spec
+**Checks:**
+- Every `invariant` from the spec, after every `step()` call
+- Liveness properties when you call `check_liveness()`
+
+**Doesn't check:**
+- Whether your `SpecState` mapping is correct — that's on you
+- Temporal properties in real-time (sampled only on `check_liveness`)
+- Invariants over variables you didn't include in `SpecState`
+
+---
+
+## Full monitoring workflow
+
+```
+account.spec
+     │
+     ▼
 spectre verify account.spec
-
-# 2. Confirm all violation traces are self-consistent
+     │  ✓ safe — design-time proof
+     ▼
 spectre validate-monitor account.spec
-
-# 3. Generate the monitor
+     │  ✓ all violation traces consistent
+     ▼
 spectre generate-monitor --lang rust account.spec -o src/monitor.rs
+     │
+     ▼
+implement SpecState mapping in application
+     │
+     ▼
+call monitor.step(&state) after every transition
+     │
+     ▼
+deploy
+     │
+     ├── violation fires ──► log / alert / panic per policy
+     └── no violation    ──► ✓ spec holds in production
 ```
-
-A passing `validate-monitor` result means the monitor's invariant checks are backed by genuinely reachable counterexample traces.
 
 ---
 
-## Spec Consistency Guarantee
+## Performance overhead
 
-Because the runtime monitor is generated from the **same spec file** used for model checking, it is guaranteed to be consistent with your verification results.  There is no separate monitoring-rule language to keep in sync.
+For `account.spec` with two invariants, each `step()` call is two integer comparisons. On modern hardware:
 
-If your spec passes `spectre verify`, and the monitor never fires in production, you have end-to-end assurance that your implementation matches the design.
+```
+~2 ns per step (two invariants, no allocation)
+```
+
+At 100,000 transitions per second that's **0.02% CPU overhead** — negligible in any real workload.
 
 ---
 
-## Complete Closed-Loop Workflow
+## The consistency guarantee
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                     Closed-Loop Verification                    │
-│                                                                │
-│  1. spectre mine --lang rust src/account.rs                    │
-│     → account.spec skeleton                                    │
-│                                                                │
-│  2. Add invariants + temporal properties                       │
-│     spectre verify account.spec  → fix with CEGIS if needed   │
-│                                                                │
-│  3. spectre verify account.spec --emit-traces trace.itf.json   │
-│     spectre generate-driver --lang rust account.spec           │
-│     → fill in driver.rs, run against trace  (Chapter 10)      │
-│                                                                │
-│  4. spectre generate-monitor --lang rust account.spec          │
-│     → embed monitor.rs in production binary  (this chapter)   │
-│                                                                │
-│  Single spec → design-time verification                        │
-│              → model-based test replay                         │
-│              → production runtime monitoring                   │
-└────────────────────────────────────────────────────────────────┘
-```
+Because the monitor is generated from the same `.spec` file:
+- If your spec passes `spectre verify` ✓
+- And the monitor never fires in production
 
-This is the full Spectre closed loop: one spec file drives verification, testing, and production monitoring simultaneously.
-# Chapter 12: Evaluating Rust Coverage and Benchmarking
+...you have end-to-end assurance: your implementation matches the design across every observed execution.
+# Chapter 14: Benchmarking and performance
 
-This chapter covers two meta-tooling commands: `spectre eval-rust`, which measures how completely the miner can translate a Rust codebase, and `spectre benchmark`, which measures how quickly Spectre explores the state space of a set of specs.
+Before you change a spec, you want to know how big the state space is and how fast Spectre explores it. That's what the built-in benchmark suite is for.
 
 ---
 
-## Evaluating Rust Extraction with `eval-rust`
-
-Before committing to a Spectre workflow for a Rust project, it helps to know up-front which parts of the codebase the miner can translate cleanly and which require manual follow-up.  `spectre eval-rust` runs the miner over one or more Rust source files and prints a Markdown report summarising extraction quality.
-
-```bash
-spectre eval-rust src/account.rs src/order.rs src/payment.rs
-```
-
-Or over an entire directory:
-
-```bash
-spectre eval-rust --dir src/
-```
-
-### Reading the Report
-
-```
-# Rust Extraction Evaluation Report
-
-## Per-File Summary
-
-| File           | Struct       | Fields | Enums | Methods | Omissions | SuccessFraction |
-|----------------|--------------|--------|-------|---------|-----------|----------------|
-| bank_account.rs | BankAccount  |   3    |   1   |    4    |     4     |      50%       |
-| counter.rs      | Counter      |   2    |   0   |    3    |     1     |     100%       |
-| state_machine.rs | Machine     |   4    |   2   |    2    |     4     |      50%       |
-
-**Totals** — files: 3 | fields: 9 | enums: 3 | methods: 9 | omissions: 9 | mean success: 67%
-
-## Omissions by Kind
-
-| Kind            | Count |
-|-----------------|-------|
-| SKIPPED_METHOD  |   3   |
-| TUPLE_VARIANT   |   2   |
-| OVERFLOW_OP     |   2   |
-| RESULT_RETURN   |   2   |
-```
-
-**SuccessFraction** is the fraction of methods with no body-level omission (overflow, panic, Result, or complex assign).  `SKIPPED_METHOD` (constructors) does not count against the fraction — skipping `new()` is expected and benign.
-
-A file at 100% means every extracted method translates cleanly to Spectre actions.  A file at 50% has at least one method whose body required abstraction; those methods should be reviewed before treating the mined spec as authoritative.
-
-### Interpreting the Omissions-by-Kind Table
-
-Focus attention in order:
-
-1. **`RESULT_RETURN`** — methods that return `Result<T,E>` are mined as happy-path only.  If error paths are semantically important for your invariants, model them manually.
-2. **`OVERFLOW_OP`** — `checked_add`, `wrapping_add`, etc. are abstracted to plain addition.  If your invariants involve overflow-safe bounds, add explicit `require` guards.
-3. **`TUPLE_VARIANT`** — enum variants with data are collapsed to unit variants.  Add back any fields you need as separate `var` declarations.
-4. **`SKIPPED_METHOD`** — expected.  Review if a skipped method has semantically important side-effects.
-
-### Using `eval-rust` in CI
-
-Add an `eval-rust` step to your CI pipeline to track extraction coverage over time:
-
-```yaml
-- name: Check Spectre extraction coverage
-  run: |
-    spectre eval-rust --dir src/ > eval-report.md
-    # Fail if mean success drops below 80%
-    grep "mean success" eval-report.md | grep -v " [0-7][0-9]%" || true
-```
-
-You can also commit the Markdown report as an artifact alongside the generated spec, providing a permanent record of which Rust constructs required manual work.
-
----
-
-## Benchmarking with `spectre benchmark`
-
-`spectre benchmark` runs BFS exploration on a set of spec files and prints a timing table.  It is useful for tracking the performance impact of spec changes, comparing exploration depth across models, and establishing a baseline before enabling optimisations such as `--por` or `--property-guided`.
+## Run the benchmarks
 
 ```bash
 spectre benchmark
 ```
 
-By default it scans the `benchmarks/` directory for `*.spec` files.  To use a different directory or explicit files:
+```
+Benchmark results (BFS backend)
+================================
+counter.spec        10 states   0.12 ms    depth 5
+account.spec        84 states   0.41 ms    depth 8
+mutex.spec         430 states   2.1 ms     depth 14
+dist_queue.spec   3210 states   18 ms      depth 24
+ring_leader.spec  9980 states   94 ms      depth 40
+
+Total: 5 specs, 13714 states, 115 ms
+```
+
+The benchmark runs your spec files in `benchmarks/` against the BFS backend and reports state count, wall time, and max depth.
+
+Add your own specs:
 
 ```bash
-spectre benchmark --dir my-specs/
-spectre benchmark examples/raft.spec examples/bank.spec
+# drop any .spec file into benchmarks/
+cp account.spec benchmarks/
+
+spectre benchmark
 ```
-
-### Reading the Output
-
-```
-Spec                            States      Elapsed     Depth
-------------------------------------------------------------------
-counter.spec                        11         0ms          10
-bank.spec                          150         4ms          30
-mutex.spec                           9         0ms           8
-resource_alloc.spec                480         1ms          20
-cache_coherence.spec              2400        12ms          40
-------------------------------------------------------------------
-5 spec(s) benchmarked
-```
-
-**States** is the number of distinct reachable states (up to `--max-states`).  **Elapsed** is wall-clock time for the full BFS.  **Depth** is the deepest state reached.
-
-### Flags
-
-| Flag | Default | Effect |
-|------|---------|--------|
-| `--max-states` | 50000 | Stop BFS after this many states |
-| `--dir` | `benchmarks/` | Directory to scan for `*.spec` files |
-
-### The Built-in Benchmark Suite
-
-Spectre ships with five benchmark specs in `benchmarks/`:
-
-| Spec | States | What it models |
-|------|--------|---------------|
-| `counter.spec` | ~11 | Simple integer counter with a bound |
-| `bank.spec` | ~150 | Parameterised bank account (`param LIMIT`) |
-| `mutex.spec` | ~9 | Two-process mutex with `ProcState` enum |
-| `resource_alloc.spec` | ~480 | N-slot resource pool (`param N`) |
-| `cache_coherence.spec` | ~2400 | MSI cache coherence protocol |
-
-These cover the range from trivial (counter) to moderately complex (cache coherence), providing a quick health-check of the verifier engine across representative models.
-
-### Adding Your Own Benchmarks
-
-Any `.spec` file dropped into `benchmarks/` is automatically picked up.  For parameterised specs, use `param` declarations so the benchmark suite covers multiple configurations:
-
-```spectre
-param N: int = 4        // default used by benchmark; override with --param N=8
-var slots: int
-```
-
-### Benchmark vs Verify
-
-`spectre benchmark` intentionally does not check invariants — it measures raw exploration throughput.  To measure verified throughput (invariant checking included), use `spectre verify` directly:
-
-```bash
-time spectre verify benchmarks/cache_coherence.spec --max-states 50000
-```
-
-The difference between benchmark and verify timing gives you the cost of invariant evaluation for your spec.
 
 ---
 
-## Combined Workflow
+## Understand state-space growth
+
+State spaces grow exponentially with the number of variables and their ranges. Here's what to expect:
+
+| Pattern | Typical state count | Why |
+|---------|-------------------|-----|
+| Counter (1 var, range 0–10) | ~11 | Linear |
+| 2 independent counters (0–10 each) | ~121 | Product |
+| Mutex (2 threads, 3 states each) | ~9 | Small product |
+| Mutex + shared counter (0–10) | ~90 | 3-way product |
+| Producer-consumer (queue depth 5) | ~500 | Queue contents combinatorial |
+| Ring leader election (5 nodes) | ~100K+ | Permutation space |
+
+The rule: **every new variable multiplies the state space by its domain size**.
+
+---
+
+## State-space growth diagram
 
 ```
-eval-rust → identify gaps → mine + fix → verify → benchmark
+Variables:  1     2     3     4     5
+            │     │     │     │     │
+Range 10:  10   100  1000  10K  100K
+Range 5:    5    25   125  625   3K
+Range 2:    2     4     8   16   32
+            │
+            └── BFS exhausts this in < 1 ms
+                              │
+                              └── starts taking seconds
+                                          │
+                                          └── needs --backend tlc or z3
 ```
 
-1. **`eval-rust --dir src/`** — measure extraction coverage before writing any specs manually
-2. **`mine + review`** — focus manual effort on the files and methods flagged by `eval-rust`
-3. **`verify`** — confirm the enriched spec is safe
-4. **`benchmark`** — establish a timing baseline; re-run after adding new actions or invariants to catch state-space explosions early
+---
+
+## Bounded exploration options
+
+When a spec is too large for exhaustive BFS, cap the search:
+
+```bash
+# Cap at 50,000 states
+spectre verify --max-states 50000 ring_leader.spec
+
+# Cap at depth 30
+spectre verify --max-depth 30 ring_leader.spec
+
+# Both
+spectre verify --max-states 50000 --max-depth 30 ring_leader.spec
+```
+
+The result will say `(bounded)` rather than `(exhaustive)`.
+
+---
+
+## Partial-order reduction
+
+For concurrent systems, many interleavings produce identical states. `--por` (partial-order reduction) prunes these by exploring only one representative ordering:
+
+```bash
+spectre verify --por mutex.spec
+```
+
+```
+Before --por: 430 states, 2.1 ms
+After  --por: 127 states, 0.7 ms
+```
+
+Savings are largest when:
+- Many threads share little state
+- Actions are mostly independent
+
+`--por` is sound for safety properties. Avoid it for liveness properties unless you also have `--backend tlc`.
+
+---
+
+## Property-guided exploration
+
+```bash
+spectre verify --property-guided mutex.spec
+```
+
+Property-guided mode biases BFS toward states that are *close to violating* an invariant. It finds bugs faster on large specs but may miss violations in rarely-reached corners.
+
+Use it for:
+- Interactive debugging — "show me a violation fast"
+- Large specs where exhaustive BFS times out
+
+Don't use it for production sign-off — use exhaustive BFS or TLC for that.
+
+---
+
+## When to switch backends
+
+| Situation | Recommendation |
+|-----------|----------------|
+| ≤ 100K states, safety only | BFS (default) |
+| Fairness / liveness properties | `--backend tlc` |
+| > 1M states, safety only | `--backend apalache` (symbolic) |
+| Want shallow bugs fast (< 20 steps) | `--backend z3 --bmc-depth 20` |
+| Need exhaustive + fairness + huge space | `--backend tlc` with TLC's -workers flag |
+
+---
+
+## Progressive verification strategy
+
+Start cheap, escalate only if needed:
+
+```
+spectre verify --max-states 10000 my.spec
+        │
+   ✓ safe in 10K states ──► probably fine for small specs
+        │
+   ✗ violation or exhausted
+        │
+        ▼
+spectre verify my.spec                         (exhaustive BFS, no limit)
+        │
+   ✓ exhaustive safe ──► ship
+        │
+   too large / times out
+        │
+        ▼
+spectre verify --backend z3 --bmc-depth 50 my.spec   (fast shallow bugs)
+        │
+   sat → violation in ≤50 steps ──► fix, restart
+        │
+   unsat (no shallow bugs)
+        │
+        ▼
+spectre verify --backend tlc my.spec                 (full model check)
+```
+
+Each step is significantly more expensive. Stop as soon as you get a definitive answer.
+
+---
+
+## Benchmark in CI
+
+```yaml
+# .github/workflows/ci.yml (excerpt)
+- name: Benchmark smoke test
+  run: |
+    spectre benchmark --max-states 1000 --ci
+    # Fails if any spec exceeds 1000 states (catches accidental bloat)
+```
+
+The `--ci` flag exits non-zero if any spec exceeds `--max-states`. This catches spec bloat before it becomes a slow-CI problem.
+# Chapter 15: TLA+ and Apalache backend
+
+Spectre's BFS backend is great for small to medium specs. When you need validated fairness semantics, or your state space is too large for BFS, the `--backend tlc` and `--backend apalache` options hand off to proven model checkers built on TLA+.
+
+---
+
+## Quick start
+
+```bash
+# Run TLC model checker
+spectre verify --backend tlc counter.spec
+
+# Run Apalache symbolic model checker
+spectre verify --backend apalache counter.spec
+
+# Point to non-default TLC jar
+spectre verify --backend tlc --tlc-jar /opt/tlc/tla2tools.jar counter.spec
+
+# Point to non-default Apalache binary
+spectre verify --backend apalache --apalache-bin /usr/local/bin/apalache-mc counter.spec
+```
+
+---
+
+## How Spectre translates to TLA+
+
+Spectre translates your `.spec` file into a standard TLA+ module plus a `.cfg` file. Here's the counter example:
+
+**`counter.spec`**
+```
+var x: int
+param MAX: int
+init { x = 0 }
+action incr { require x < MAX  x' = x + 1 }
+invariant non_negative { x >= 0 }
+temporal wf_progress { WF(incr) }
+```
+
+**Generated `counter.tla`**
+```tla
+--------------------------- MODULE counter ---------------------------
+EXTENDS Naturals, Sequences, TLC
+
+CONSTANTS MAX
+
+VARIABLES x
+
+TypeOK == x \in Int
+
+Init ==
+    x = 0
+
+incr ==
+    /\ x < MAX
+    /\ x' = x + 1
+
+Next ==
+    \/ incr
+
+non_negative ==
+    x >= 0
+
+Spec ==
+    Init /\ [][Next]_<<x>> /\ WF_<<x>>(incr)
+
+=============================================================================
+```
+
+**Generated `counter.cfg`**
+```
+INIT Init
+NEXT Next
+INVARIANT non_negative
+PROPERTY Spec
+MAX = 100
+```
+
+Then Spectre runs `tlc counter.tla -config counter.cfg` and parses the output.
+
+---
+
+## Expression mapping reference
+
+| Spectre | TLA+ |
+|---------|------|
+| `x != y` | `x # y` |
+| `x <= y` | `x =< y` |
+| `x and y` | `x /\ y` |
+| `x or y` | `x \/ y` |
+| `not x` | `~x` |
+| `true` | `TRUE` |
+| `false` | `FALSE` |
+| `always(P)` | `[](P)` |
+| `eventually(P)` | `<>(P)` |
+| `WF(action)` | `WF_vars(action)` in `Spec` |
+| `SF(action)` | `SF_vars(action)` in `Spec` |
+| `x'` | `x'` |
+| `UNCHANGED x, y` | `UNCHANGED <<x, y>>` |
+
+---
+
+## Why TLC for fairness?
+
+BFS can detect some fairness violations, but it uses a heuristic: it flags executions where an enabled action is never taken. This can produce false positives.
+
+TLC's approach is exact:
+
+```
+Liveness check (4 steps):
+
+1. Decompose Spec into safety + fairness constraints
+   Spec == Init /\ [][Next]_vars /\ WF_vars(incr)
+                                   └── fairness constraint
+
+2. Find all SCCs in the state graph
+   (strongly connected components = infinite loops)
+
+3. For each SCC, check: does incr get to fire?
+   If incr is enabled in some state of an SCC but never fires
+   → genuine fairness violation
+
+4. Report: specific cycle that violates WF(incr)
+```
+
+This is why `spectre verify --backend tlc` gives you authoritative liveness results where BFS only gives approximations.
+
+---
+
+## TLC vs Apalache: when to use which
+
+| | TLC | Apalache |
+|---|-----|----------|
+| **Approach** | Explicit-state enumeration | Symbolic (SMT-based) |
+| **Best for** | Small–medium state spaces, liveness | Large state spaces, safety |
+| **Fairness** | Yes — exact SCC-based | Limited |
+| **State space limit** | ~10M states practical | Effectively unbounded |
+| **Speed on small specs** | Fast | Slower (SMT overhead) |
+| **Speed on large specs** | Slow (memory) | Fast (symbolic) |
+| **Counterexample** | Full trace | Symbolic witness |
+| **Requires Java** | Yes | Yes |
+
+Rule of thumb:
+- Use **TLC** when you have `temporal` or `WF`/`SF` properties
+- Use **Apalache** when BFS times out on safety properties
+
+---
+
+## Pass parameters to TLC
+
+```bash
+spectre verify --backend tlc --param MAX=100 --param THREADS=4 mutex.spec
+```
+
+Parameters become TLC `CONSTANTS` assignments in the `.cfg` file:
+
+```
+CONSTANTS
+MAX = 100
+THREADS = 4
+```
+
+---
+
+## Read TLC output
+
+When TLC finds a violation, Spectre parses the trace and prints it in the same format as BFS:
+
+```
+mutex.spec: ✗ violation found
+  Violation 1: invariant "mutual_exclusion" triggered by action "enter_cs"
+    Step 0: [pc_a = idle,    pc_b = idle,    flag_a = false, flag_b = false]
+    Step 1: [pc_a = wanting, pc_b = idle,    flag_a = true,  flag_b = false]
+    Step 2: [pc_a = wanting, pc_b = wanting, flag_a = true,  flag_b = true ]
+    Step 3: [pc_a = critical,pc_b = wanting, flag_a = true,  flag_b = true ]
+    Step 4: [pc_a = critical,pc_b = critical,flag_a = true,  flag_b = true ]
+                                              ↑ both in critical section — violated
+```
+
+---
+
+## TLC installation
+
+TLC comes bundled in the `tla2tools.jar` distributed by the TLA+ project:
+
+```bash
+# macOS (Homebrew)
+brew install tla-tools
+
+# Or download tla2tools.jar manually and point Spectre at it:
+spectre verify --backend tlc --tlc-jar ~/tools/tla2tools.jar account.spec
+```
+
+Spectre tries `tlc` on `$PATH` first, then falls back to `java -jar <tlc-jar>`.
+
+---
+
+## Apalache installation
+
+```bash
+# macOS
+brew install apalache
+
+# Or set the binary path:
+spectre verify --backend apalache --apalache-bin ~/tools/apalache/bin/apalache-mc account.spec
+```
+# Chapter 16: Z3 bounded model checking
+
+The Z3 backend is your fastest path to finding shallow bugs. Instead of exploring the state graph step by step, it encodes your spec as an SMT-LIB2 formula and asks Z3 a single question: *is there any execution of length ≤ N that violates an invariant?*
+
+---
+
+## Quick start
+
+```bash
+# Check for violations in up to 20 steps (default depth)
+spectre verify --backend z3 counter.spec
+
+# Increase depth for longer paths
+spectre verify --backend z3 --bmc-depth 50 account.spec
+
+# Point to non-default Z3 binary
+spectre verify --backend z3 --z3-bin /usr/local/bin/z3 account.spec
+```
+
+---
+
+## How bounded model checking works
+
+```
+                        counter.spec
+                             │
+                  ┌──────────▼──────────┐
+                  │  Z3 encoder         │
+                  │  for depth = 3      │
+                  └──────────┬──────────┘
+                             │
+              ┌──────────────▼──────────────┐
+              │  SMT-LIB2 formula            │
+              │                             │
+              │  x_0 = 0             (init) │
+              │  x_1 = incr(x_0) ∨         │
+              │  x_1 = decr(x_0)    (step) │
+              │  x_2 = incr(x_1) ∨ ...     │
+              │  x_3 = incr(x_2) ∨ ...     │
+              │                             │
+              │  ¬(x_0≥0 ∧ x_1≥0           │
+              │    ∧ x_2≥0 ∧ x_3≥0)        │
+              │      (invariant negation)   │
+              └──────────────┬──────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   Z3 solver     │
+                    └────────┬────────┘
+                             │
+               ┌─────────────┴──────────────┐
+               │                            │
+             unsat                         sat
+               │                            │
+      no violation in ≤ 3 steps    violation exists
+      (but may exist deeper)        extract model
+                                    print trace
+```
+
+---
+
+## SMT-LIB2 encoding example
+
+For this spec:
+
+```
+var x: int
+init { x = 0 }
+action incr { require x < 5  x' = x + 1 }
+action decr { require x > 0  x' = x - 1 }
+invariant non_negative { x >= 0 }
+```
+
+Spectre generates (simplified):
+
+```smt2
+; Step-indexed variables
+(declare-const x_0 Int)
+(declare-const x_1 Int)
+(declare-const x_2 Int)
+
+; Initial state
+(assert (= x_0 0))
+
+; Step 0 → 1: one action fires
+(assert (or
+  (and (< x_0 5) (= x_1 (+ x_0 1)))   ; incr
+  (and (> x_0 0) (= x_1 (- x_0 1)))   ; decr
+))
+
+; Step 1 → 2
+(assert (or
+  (and (< x_1 5) (= x_2 (+ x_1 1)))
+  (and (> x_1 0) (= x_2 (- x_1 1)))
+))
+
+; Invariant negation: find ANY step that violates non_negative
+(assert (or
+  (not (>= x_0 0))
+  (not (>= x_1 0))
+  (not (>= x_2 0))
+))
+
+(check-sat)
+(get-model)
+```
+
+Z3 answers `unsat` (no violation in 2 steps) or `sat` (violation found, model gives the path).
+
+---
+
+## Read Z3 output
+
+**No violation found (up to depth):**
+```
+counter.spec: ✓ safe (z3, bounded — depth 20)
+  Note: no violation in ≤20 steps; deeper paths not checked
+```
+
+**Violation found:**
+```
+account.spec: ✗ violation found (z3)
+  Violation 1: invariant "solvent" triggered by action "withdraw"
+    x_0 = balance:100
+    x_1 = balance:50  (deposit 50 — now 100)
+    x_2 = balance:-10 (withdraw 60 — violated)
+```
+
+---
+
+## When to use Z3 BMC
+
+**Good fit:**
+- You want to find shallow bugs fast during development
+- Your state space is too large for exhaustive BFS
+- You have many variables but expect violations within ~50 steps
+- You want a quick sanity check before a full TLC run
+
+**Poor fit:**
+- You need an exhaustive proof of safety (Z3 BMC can only say "no bug in N steps")
+- You have liveness or fairness properties (Z3 BMC checks only reachability)
+- Violations require very long paths (rare in practice — most bugs appear early)
+
+---
+
+## Choose the right depth
+
+| Scenario | Suggested `--bmc-depth` |
+|----------|------------------------|
+| Quick sanity check | 10–20 |
+| Standard development | 20–50 |
+| Protocol with long setup phase | 50–100 |
+| Deep corner cases | 100–200 |
+| > 200 | Consider TLC/Apalache instead |
+
+Doubling the depth roughly doubles the formula size and Z3 solve time. Past depth 200 you're usually better off with TLC or Apalache.
+
+---
+
+## Z3 vs other backends
+
+| | BFS | Z3 BMC | TLC | Apalache |
+|---|-----|--------|-----|----------|
+| **Exhaustive** | Yes (small) | No (bounded) | Yes | Yes (symbolic) |
+| **Fairness** | Approximate | No | Exact | No |
+| **Speed on shallow bugs** | Fast | Fastest | Slow | Medium |
+| **Large state space** | No | Yes | No | Yes |
+| **Counterexample** | Full path | Full path (≤N) | Full path | Symbolic |
+| **External dependency** | None | z3 binary | Java+TLC | Java+Apalache |
+
+---
+
+## Progressive verification with Z3
+
+Z3 BMC fits naturally into a staged workflow:
+
+```
+spectre verify --backend z3 --bmc-depth 20 my.spec
+        │
+   unsat (no bug ≤ 20 steps)
+        │
+        ▼
+spectre verify --backend z3 --bmc-depth 100 my.spec
+        │
+   unsat (no bug ≤ 100 steps)
+        │
+        ▼
+spectre verify my.spec   (exhaustive BFS if state space allows)
+        │
+        ▼
+spectre verify --backend tlc my.spec   (for liveness / large space)
+```
+
+Each stage gives you increasing confidence. Stop as soon as you get a definitive result or a violation to fix.
+
+---
+
+## Z3 installation
+
+```bash
+# macOS (Homebrew)
+brew install z3
+
+# Verify
+z3 --version
+# Z3 version 4.13.x
+
+# Point Spectre at a non-default binary
+spectre verify --backend z3 --z3-bin /opt/z3/bin/z3 account.spec
+```
+
+Spectre looks for `z3` on `$PATH` by default.

@@ -1,260 +1,204 @@
-# Chapter 1: Getting Started
-
-This chapter covers installing Spectre and running your first specification.
+# Chapter 1: Getting started
 
 ---
 
-## Prerequisites
-
-| Dependency | Required for | Notes |
-|------------|-------------|-------|
-| **Go ≥ 1.24** | Core CLI — `verify`, `sync`, `simulate`, `generate-*` | Required |
-| **Z3 ≥ 4.8** | `spectre sync` (SMT equivalence checking) | Optional — only needed for drift detection |
-| **Rust stable** | `spectre mine --lang rust` (spec mining) | Optional — only needed for spec mining |
-| **Git** | Cloning the repository | Required |
-
-Z3 and Rust are only needed if you use `spectre sync` and `spectre mine --lang rust` respectively.
-All other commands (`verify`, `simulate`, `generate-monitor`, `generate-driver`) work with Go alone.
-
----
-
-## Installation — macOS
-
-### Step 1 — Install Go
+## Install
 
 ```bash
-brew install go
-go version
-# Expected: go version go1.24.x darwin/arm64  (or amd64)
-```
-
-Or download the `.pkg` installer from [https://go.dev/dl/](https://go.dev/dl/).
-
-### Step 2 — Install Z3
-
-Required for `spectre sync`. Skip if you are not using drift detection.
-
-```bash
-brew install z3
-z3 --version
-```
-
-### Step 3 — Clone and build the CLI
-
-```bash
-git clone https://github.com/BoundlessProducts/spectre.git
+# macOS / Linux — build from source
+git clone https://github.com/BoundlessProducts/spectre
 cd spectre
 go build -o spectre ./cmd/spectre
-./spectre
+sudo mv spectre /usr/local/bin/
+
+spectre --version
+# spectre version 0.3.2
 ```
 
-### Step 4 — Build `spectre-mine-rs`
-
-Required for `spectre mine --lang rust`. Skip if you are not mining specs from Rust source.
-
-```bash
-# Install Rust if needed
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# Build the Rust AST miner (inside the repo)
-cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
-cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
-```
-
-The `spectre-mine-rs` binary must sit next to the `spectre` binary (or be on `PATH`).
-
-### Step 5 — (Optional) Install globally
-
-```bash
-go install ./cmd/spectre
-cp spectre-mine-rs "$(go env GOPATH)/bin/"
-
-# Add Go's bin to PATH if not already there
-export PATH="$PATH:$(go env GOPATH)/bin"
-# Persist: add the export line to ~/.zshrc or ~/.bash_profile
-```
-
-### Step 6 — Verify the installation
-
-```bash
-./spectre verify examples/counter.spec
-# Expected: Traversed N states. Found no violations.
-```
+No runtime dependencies, no Docker, no JVM needed for the default BFS backend.
 
 ---
 
-## Installation — Linux
+## Your first spec
 
-### Step 1 — Install Go
-
-**Debian / Ubuntu:**
-
-```bash
-wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
-sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-go version
-```
-
-> For ARM64 (Raspberry Pi, AWS Graviton): replace `amd64` with `arm64`.
-
-**Fedora / RHEL / CentOS:**
-
-```bash
-sudo dnf install -y golang
-go version
-```
-
-**Arch Linux:**
-
-```bash
-sudo pacman -S go
-```
-
-### Step 2 — Install Z3
-
-```bash
-# Debian / Ubuntu
-sudo apt install -y z3
-
-# Fedora / RHEL
-sudo dnf install -y z3
-
-# Arch
-sudo pacman -S z3
-```
-
-### Step 3 — Clone and build
-
-```bash
-git clone https://github.com/BoundlessProducts/spectre.git
-cd spectre
-go build -o spectre ./cmd/spectre
-go test ./...   # optional: run test suite
-```
-
-### Step 4 — Build `spectre-mine-rs`
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-cargo build --release --manifest-path rust/spectre-mine-rs/Cargo.toml
-cp rust/spectre-mine-rs/target/release/spectre-mine-rs .
-```
-
----
-
-## Installation — Windows
-
-### Step 1 — Install Go
-
-Download the `.msi` installer from [https://go.dev/dl/](https://go.dev/dl/) and run it. Or:
-
-```powershell
-winget install GoLang.Go
-```
-
-### Step 2 — Install Z3
-
-Download the Windows binary from [https://github.com/Z3Prover/z3/releases](https://github.com/Z3Prover/z3/releases).
-Extract the archive and add the `bin\` folder to your system `PATH`.
-
-### Step 3 — Clone and build
-
-```powershell
-git clone https://github.com/BoundlessProducts/spectre.git
-cd spectre
-go build -o spectre.exe ./cmd/spectre
-.\spectre.exe
-```
-
-### Step 4 — Build `spectre-mine-rs`
-
-Install Rust from [https://rustup.rs](https://rustup.rs), then:
-
-```powershell
-cargo build --release --manifest-path rust\spectre-mine-rs\Cargo.toml
-copy rust\spectre-mine-rs\target\release\spectre-mine-rs.exe .
-```
-
----
-
-## Docker (Recommended for Reviewers)
-
-The Docker image includes all dependencies (Go, Z3, Rust, pre-built binaries).
-
-```bash
-docker build -t spectre-vmcai .
-docker run --rm spectre-vmcai sh /artifact/reproduce.sh
-```
-
-To run interactively:
-
-```bash
-docker run --rm -it spectre-vmcai sh
-```
-
----
-
-## Your First Specification
-
-Save the following as `counter.spec`:
+Save this as `counter.spec`:
 
 ```spectre
-var counter: int
+var value: int
+param MAX: int = 5
 
-init {
-  counter = 0
-}
+init { value = 0 }
 
 action increment {
-  counter' = counter + 1
+  require value < MAX
+  value' = value + 1
 }
 
-invariant nonNegative {
-  counter >= 0
+action reset {
+  value' = 0
 }
+
+invariant non_negative  { value >= 0 }
+invariant within_bounds { value <= MAX }
 ```
 
 Run it:
 
 ```bash
-./spectre parse counter.spec
-./spectre typecheck counter.spec
-./spectre verify counter.spec
+spectre verify counter.spec
 ```
 
-### What each line means
-
-- `var counter: int` — a state variable named `counter` of type integer
-- `init { counter = 0 }` — the system starts with `counter = 0`
-- `action increment { counter' = counter + 1 }` — one step: counter increases by 1. The prime (`'`) denotes the next-state value.
-- `invariant nonNegative { counter >= 0 }` — a property checked on every reachable state
-
-Since `increment` can only increase the counter and it starts at 0, the invariant holds for all reachable states.
+```
+✓ safe — 6 states explored (exhaustive)
+  Invariants checked: non_negative, within_bounds
+```
 
 ---
 
-## Running the Bundled Examples
+## What just happened
 
-All examples are in the `examples/` directory of the repository:
+```
+counter.spec
+  ├── var value: int              ← one piece of state
+  ├── param MAX: int = 5          ← a named constant
+  ├── init { value = 0 }          ← where to start
+  ├── action increment { … }      ← one possible transition
+  ├── action reset { … }          ← another transition
+  └── invariant within_bounds … ← the property to check
+          │
+          ▼
+    spectre verify
+          │
+    BFS explores all 6 reachable states
+    {0, 1, 2, 3, 4, 5}
+          │
+    checks both invariants in every state
+          │
+          ▼
+        ✓ safe
+```
+
+Spectre uses **breadth-first search** — it finds every state reachable from `init` and checks your invariants in all of them. Six states here because `value` can be `0`–`5` and `reset` can always bring it back.
+
+---
+
+## Introducing a bug
+
+Remove the `require` from `increment`:
+
+```spectre
+action increment {
+  // require value < MAX   ← commented out
+  value' = value + 1
+}
+```
 
 ```bash
-# Basic counter
-./spectre verify examples/counter.spec
+spectre verify counter.spec
+```
 
-# Raft election safety (3-node, 22,432 states)
-./spectre verify examples/raft-election-safety.spec --max-states 30000
+```
+✗ violation — invariant 'within_bounds' after action 'increment'
 
-# Spec mining from Rust
-./spectre mine --lang rust examples/rust/bank_account.rs
+Counterexample (6 steps):
+  step 0  init:       value = 0
+  step 1  increment:  value = 1
+  step 2  increment:  value = 2
+  step 3  increment:  value = 3
+  step 4  increment:  value = 4
+  step 5  increment:  value = 5
+  step 6  increment:  value = 6  ← VIOLATION
+                      within_bounds: value <= MAX → 6 <= 5  FAILS
+```
+
+Spectre found the shortest path to a bad state: six increments from zero.
+
+---
+
+## Fix it
+
+Restore `require value < MAX`. This tells Spectre: "increment can only fire when `value < MAX`." If the condition is false the action is disabled — not an error, the system just can't take that step from that state.
+
+---
+
+## Key commands
+
+| Command | What it does |
+|---------|-------------|
+| `spectre verify <file>` | BFS — exhaustively checks all reachable states |
+| `spectre verify <file> --backend z3` | Bounded check — fast, finds shallow bugs |
+| `spectre verify <file> --backend tlc` | Delegates to TLA+ Tools (validated fairness) |
+| `spectre verify <file> --backend apalache` | Delegates to Apalache (symbolic, large specs) |
+| `spectre mine --lang rust <file.rs>` | Extract a spec skeleton from Rust source |
+| `spectre simulate <file> --steps 20` | Random walk through the state space |
+| `spectre benchmark` | Time BFS across a set of spec files |
+
+---
+
+## Choosing a backend
+
+```
+      Your goal
+          │
+          ▼
+  ┌───────────────────────────────────────────────────────┐
+  │ Find shallow bugs quickly (≤20 steps)?                │
+  │   → --backend z3 --bmc-depth 20                       │
+  ├───────────────────────────────────────────────────────┤
+  │ Exhaustive proof on a small–medium spec?              │
+  │   → spectre verify  (default BFS)                     │
+  ├───────────────────────────────────────────────────────┤
+  │ Liveness / fairness properties you can trust?         │
+  │   → --backend tlc  or  --backend apalache             │
+  ├───────────────────────────────────────────────────────┤
+  │ Spec too large for BFS (millions of states)?          │
+  │   → --backend apalache  (symbolic, handles large)     │
+  └───────────────────────────────────────────────────────┘
+```
+
+Chapter 9 covers the full decision guide.
+
+---
+
+## The full Spectre workflow
+
+```
+Rust source
+    │
+    ▼
+spectre mine --lang rust src/account.rs
+    │
+    ▼
+account.spec  ← skeleton; add invariants by hand
+    │
+    ▼
+spectre verify account.spec
+    │
+    ├── ✓ safe ────────────────► commit .spec alongside source
+    │
+    └── ✗ violation
+              │
+              ▼
+         spectre verify account.spec --suggest-repairs
+              │
+              ▼
+         CANDIDATE patches  ← review, apply, re-verify
+```
+
+Once safe, one spec drives three downstream workflows:
+
+```
+account.spec
+    │
+    ├──► spectre generate-driver  →  Rust conformance test harness  (Ch 12)
+    ├──► spectre generate-monitor →  embedded runtime monitor       (Ch 13)
+    └──► spectre sync account.rs  →  drift detection as code evolves (Ch 11)
 ```
 
 ---
 
-## Next Steps
+## What's next
 
-Continue to [Chapter 2: Language Overview](02-language-overview.md) to learn all the elements of the Spectre language.
+- **Chapter 2** — every language construct with examples
+- **Chapter 3** — safety invariants in depth, reading violations, repair suggestions
+- **Chapter 9** — picking the right backend for your problem

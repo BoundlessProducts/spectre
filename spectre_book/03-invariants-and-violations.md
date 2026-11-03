@@ -1,534 +1,290 @@
-# Chapter 3: Invariants and Violations
-
-This chapter covers invariants: what they are, how they can be violated, and how to fix violations.
-
-## Understanding Invariants
-
-**Invariants** are properties that must hold in **every reachable state** of the system. Unlike temporal properties (which describe behavior over time), invariants are state properties that must be true at all times.
-
-### Key Characteristics of Invariants
-
-1. **Must hold in initial state**: The invariant must be true when the system starts
-2. **Must hold after every action**: After any action executes, the invariant must still be true
-3. **Checked for all reachable states**: The verifier explores all possible execution paths and checks the invariant in every state
-
-### Common Types of Invariants
-
-- **Bounds checking**: Values stay within acceptable ranges
-- **Non-negativity**: Values never become negative
-- **Consistency**: Related values maintain consistent relationships
-- **Safety properties**: Dangerous states are never reached
+# Chapter 3: Safety properties and invariants
 
 ---
 
-## Example 1: Bank Account System
+## What a safety property says
 
-Let's start with a bank account system that tracks account balances.
+> "Nothing bad ever happens."
 
-### The Problem: Missing Preconditions
+- An `invariant` is a boolean expression that must hold in **every reachable state**.
+- A violation = one state where it doesn't hold.
+- Spectre finds the **shortest path** to that state (BFS guarantee).
 
-Here's a bank account specification with a critical flaw:
+---
+
+## Three patterns for invariants
+
+### 1. Resource bound
 
 ```spectre
-description "Balance of Alice's account"
-var aliceBalance: int
+var items:  int
+param CAPACITY: int = 10
 
-description "Balance of Bob's account"
-var bobBalance: int
-
-description "At the initial state, all balances are zero"
-init {
-  aliceBalance = 0
-  bobBalance = 0
-}
-
-description "Deposit 50 to Alice's account"
-action depositAlice50 {
-  aliceBalance' = aliceBalance + 50
-}
-
-description "Withdraw 30 from Alice's account"
-description "PROBLEM: Missing precondition to check if funds are sufficient"
-action withdrawAlice30 {
-  // Missing: require aliceBalance >= 30
-  aliceBalance' = aliceBalance - 30
-}
-
-description "Withdraw 100 from Alice's account"
-description "PROBLEM: Missing precondition - can withdraw more than balance"
-action withdrawAlice100 {
-  // Missing: require aliceBalance >= 100
-  aliceBalance' = aliceBalance - 100
-}
-
-description "Transfer 50 from Alice to Bob"
-description "PROBLEM: Missing precondition to ensure sufficient funds"
-action transfer50ToBob {
-  // Missing: require aliceBalance >= 50
-  aliceBalance' = aliceBalance - 50
-  bobBalance' = bobBalance + 50
-}
-
-description "Invariant: Account balances should never be negative"
-invariant no_negatives {
-  aliceBalance >= 0 && bobBalance >= 0
-}
+invariant not_full    { items <= CAPACITY }
+invariant not_empty   { items >= 0 }
 ```
 
-### Why This Violates the Invariant
+Use this for: buffers, queues, pools, counters.
 
-The `no_negatives` invariant states that both `aliceBalance` and `bobBalance` must always be non-negative. However, several actions can violate this:
+### 2. State consistency
 
-1. **`withdrawAlice30`**: If Alice's balance is less than 30 (e.g., 20), this action would set `aliceBalance = -10`, violating the invariant.
+```spectre
+enum Phase { Idle, Running, Done }
+var phase:   Phase
+var started: bool
 
-2. **`withdrawAlice100`**: If Alice's balance is less than 100 (e.g., 50), this action would set `aliceBalance = -50`, violating the invariant.
+invariant consistent { phase = Running → started }
+```
 
-3. **`transfer50ToBob`**: If Alice's balance is less than 50 (e.g., 30), this action would set `aliceBalance = -20`, violating the invariant.
+"If the machine is running, it must have been started." Use `→` (or write `not P or Q`) for implication.
 
-### The Error
+### 3. Mutual exclusion
 
-When you verify this specification, the verifier will **fail** and report multiple violations:
+```spectre
+var lock_a: bool
+var lock_b: bool
+
+invariant mutual_exclusion { not (lock_a and lock_b) }
+```
+
+Use this for: locks, tokens, single-owner resources.
+
+---
+
+## A spec with a bug
+
+```spectre
+// bank-buggy.spec
+
+var balance: int
+param LIMIT: int = 1000
+
+init { balance = 0 }
+
+action deposit  { balance' = balance + 100 }
+action withdraw { balance' = balance - 100 }   // ← no require!
+
+invariant solvent    { balance >= 0 }
+invariant within_cap { balance <= LIMIT }
+```
 
 ```bash
-$ ./spectre verify examples/bank-account-violation.spec
-
-Verification failed: 49 violation(s) found
-
-Violation 1 (Invariant):
-  Action 'withdrawAlice100' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-
-Violation 2 (Invariant):
-  Action 'transfer50ToBob' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-
-Violation 3 (Invariant):
-  Action 'withdrawAlice30' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-
-Violation 4 (Invariant):
-  Action 'withdrawAlice100' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-  Path:
-    1. depositAlice50
-
-Violation 5 (Invariant):
-  Action 'withdrawAlice30' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-  Path:
-    1. depositAlice50
-    2. transfer50ToBob
-
-...
+spectre verify bank-buggy.spec
 ```
 
-### Understanding the Error Messages
-
-Each violation message has several components:
-
-1. **Violation Number**: The order in which violations were discovered during exploration
-2. **Action Name**: Which action would cause the violation (e.g., `withdrawAlice100`)
-3. **Invariant Name**: Which invariant would be violated (e.g., `no_negatives`)
-4. **Description**: The human-readable description from the invariant declaration
-5. **Path (when applicable)**: The sequence of actions that leads to a state where this violation can occur
-
-**Example Breakdown**:
-
 ```
-Violation 4 (Invariant):
-  Action 'withdrawAlice100' would violate invariants: [invariant no_negatives violated: (Invariant: Account balances should never be negative)]
-  Path:
-    1. depositAlice50
+✗ violation — invariant 'solvent' after action 'withdraw'
+
+Counterexample (2 steps):
+  step 0  init:     balance = 0
+  step 1  withdraw: balance = -100  ← VIOLATION
+                    solvent: balance >= 0  →  -100 >= 0  FAILS
 ```
-
-This tells us:
-- **What action would fail**: `withdrawAlice100`
-- **Why it fails**: Executing it would violate the `no_negatives` invariant
-- **Where it fails**: After executing `depositAlice50`, Alice's balance is 50. At this point, trying to withdraw 100 would make the balance -50, violating the invariant.
-
-### Why Verification Fails
-
-The verifier detects that **actions are available** (they can be executed from certain states) but **would violate invariants** if executed. This indicates a specification flaw:
-
-- Actions should have **preconditions** (`require` statements) that prevent them from being available when they would violate invariants
-- The verifier catches these violations during exploration, even though it prevents invalid states from being reached
-- Each violation represents a state-action pair where the action would create an invalid state
-
-**Why this matters**: In a real system, we want preconditions to prevent invalid operations, not rely on post-execution checks. Preconditions make the specification clearer and ensure that actions are only available when they're safe to execute.
-
-### The Fix: Add Preconditions
-
-To fix this, we need to add `require` statements (preconditions) to ensure actions only execute when they won't violate the invariant:
-
-```spectre
-description "Balance of Alice's account"
-var aliceBalance: int
-
-description "Balance of Bob's account"
-var bobBalance: int
-
-description "At the initial state, all balances are zero"
-init {
-  aliceBalance = 0
-  bobBalance = 0
-}
-
-description "Deposit 50 to Alice's account"
-action depositAlice50 {
-  aliceBalance' = aliceBalance + 50
-}
-
-description "Withdraw 30 from Alice's account if funds are sufficient"
-description "FIXED: Added precondition to check if funds are sufficient"
-action withdrawAlice30 {
-  require aliceBalance >= 30
-  aliceBalance' = aliceBalance - 30
-}
-
-description "Withdraw 100 from Alice's account if funds are sufficient"
-description "FIXED: Added precondition to prevent overdrawing"
-action withdrawAlice100 {
-  require aliceBalance >= 100
-  aliceBalance' = aliceBalance - 100
-}
-
-description "Transfer 50 from Alice to Bob if Alice has sufficient funds"
-description "FIXED: Added precondition to ensure sufficient funds"
-action transfer50ToBob {
-  require aliceBalance >= 50
-  aliceBalance' = aliceBalance - 50
-  bobBalance' = bobBalance + 50
-}
-
-description "Invariant: Account balances should never be negative"
-invariant no_negatives {
-  aliceBalance >= 0 && bobBalance >= 0
-}
-```
-
-### How Preconditions Fix the Problem
-
-**Preconditions** (`require` statements) are conditions that must be true **before** an action can execute. If a precondition is false, the action cannot execute.
-
-By adding `require aliceBalance >= 30` to `withdrawAlice30`:
-- The action can only execute when Alice has at least 30
-- After execution, `aliceBalance` will be `aliceBalance - 30 >= 0`
-- The invariant is preserved
-
-Similarly:
-- `require aliceBalance >= 100` ensures `withdrawAlice100` only executes when Alice has sufficient funds
-- `require aliceBalance >= 50` ensures `transfer50ToBob` only executes when Alice can afford the transfer
-
-With these preconditions, the invariant `no_negatives` will always hold.
 
 ---
 
-## Example 2: Inventory Management System
+## Reading a violation trace
 
-Now let's look at a more complex example with **multiple invariants**.
+```
+✗ violation — invariant 'solvent' after action 'withdraw'
+  ↑ which invariant failed    ↑ which action triggered it
 
-### The Problem: Missing Bounds Checking
+Counterexample (2 steps):              ← shortest path to the bad state
+  step 0  init:     balance = 0        ← initial state
+  step 1  withdraw: balance = -100     ← state after the action
 
-Here's an inventory system that tracks the number of items:
-
-```spectre
-description "Number of items in inventory"
-var inventory: int
-
-description "System starts with empty inventory"
-init {
-  inventory = 0
-}
-
-description "Add 50 items to inventory"
-description "PROBLEM: Missing precondition to check capacity limit"
-action add50 {
-  // Missing: require inventory + 50 <= 100
-  inventory' = inventory + 50
-}
-
-description "Add 60 items to inventory"
-description "PROBLEM: Can exceed capacity"
-action add60 {
-  // Missing: require inventory + 60 <= 100
-  inventory' = inventory + 60
-}
-
-description "Remove 30 items from inventory"
-description "PROBLEM: Missing precondition to check if enough items exist"
-action remove30 {
-  // Missing: require inventory >= 30
-  inventory' = inventory - 30
-}
-
-description "Remove 50 items from inventory"
-description "PROBLEM: Can make inventory negative"
-action remove50 {
-  // Missing: require inventory >= 50
-  inventory' = inventory - 50
-}
-
-description "CRITICAL: Ensures inventory never exceeds maximum capacity"
-invariant withinCapacity {
-  inventory <= 100
-}
-
-description "CRITICAL: Ensures inventory never becomes negative"
-invariant nonNegative {
-  inventory >= 0
-}
+                    solvent: balance >= 0  →  -100 >= 0  FAILS
+                    ↑ invariant name      ↑ expression   ↑ why it fails
 ```
 
-### Why This Violates the Invariants
+Every line in the trace shows:
+- The **step number**
+- The **action** that fired (or `init`)
+- The **full state** after the action (all variables)
+- On the violation line: the invariant expression and what value made it fail
 
-This system has **two invariants** that can both be violated:
+---
 
-1. **`withinCapacity`**: Violated when inventory exceeds 100
-   - `add50` when `inventory = 60` → `inventory = 110` ❌
-   - `add60` when `inventory = 50` → `inventory = 110` ❌
+## Longer traces
 
-2. **`nonNegative`**: Violated when inventory becomes negative
-   - `remove30` when `inventory = 20` → `inventory = -10` ❌
-   - `remove50` when `inventory = 30` → `inventory = -20` ❌
+Here's a more interesting bug — withdraw only fails after a freeze/unfreeze cycle:
 
-### The Error
+```spectre
+// bank-freeze-bug.spec
 
-When you verify this specification, the verifier will **fail** and report violations:
+enum Status { Active, Frozen }
+var balance: int
+var status:  Status
+param LIMIT: int = 1000
+
+init { balance = 0  status = Active }
+
+action deposit  {
+  require status = Active
+  require balance + 100 <= LIMIT
+  balance' = balance + 100
+}
+
+action withdraw {
+  require status = Active
+  // missing: require balance >= 100
+  balance' = balance - 100
+}
+
+action freeze   { status' = Frozen  }
+action unfreeze { status' = Active  }
+
+invariant solvent { balance >= 0 }
+```
 
 ```bash
-$ ./spectre verify examples/inventory-violation.spec
-
-Verification failed: X violation(s) found
-
-Violation 1 (Invariant):
-  Action 'add60' would violate invariants: [invariant withinCapacity violated: (Ensures inventory never exceeds maximum capacity)]
-  
-Violation 2 (Invariant):
-  Action 'remove30' would violate invariants: [invariant nonNegative violated: (CRITICAL: Ensures inventory never becomes negative)]
-  
-...
+spectre verify bank-freeze-bug.spec
 ```
 
-### Understanding the Error Messages
+```
+✗ violation — invariant 'solvent' after action 'withdraw'
 
-The violations follow the same pattern as the bank account example:
-
-- **Violation 1**: `add60` would exceed the capacity of 100 when inventory is already above 40
-- **Violation 2**: `remove30` would make inventory negative when the current value is less than 30
-
-Each violation indicates that an action is available but would create an invalid state. The actions need preconditions to prevent them from being available in these situations.
-
-### The Fix: Add Preconditions for Both Invariants
-
-To fix this, we need preconditions that ensure **both** invariants are maintained:
-
-```spectre
-description "Number of items in inventory"
-var inventory: int
-
-description "System starts with empty inventory"
-init {
-  inventory = 0
-}
-
-description "Add 50 items to inventory if capacity allows"
-description "FIXED: Added precondition to check capacity limit"
-action add50 {
-  require inventory + 50 <= 100
-  inventory' = inventory + 50
-}
-
-description "Add 60 items to inventory if capacity allows"
-description "FIXED: Added precondition to prevent exceeding capacity"
-action add60 {
-  require inventory + 60 <= 100
-  inventory' = inventory + 60
-}
-
-description "Remove 30 items from inventory if enough items exist"
-description "FIXED: Added precondition to check if enough items exist"
-action remove30 {
-  require inventory >= 30
-  inventory' = inventory - 30
-}
-
-description "Remove 50 items from inventory if enough items exist"
-description "FIXED: Added precondition to prevent negative inventory"
-action remove50 {
-  require inventory >= 50
-  inventory' = inventory - 50
-}
-
-description "CRITICAL: Ensures inventory never exceeds maximum capacity"
-invariant withinCapacity {
-  inventory <= 100
-}
-
-description "CRITICAL: Ensures inventory never becomes negative"
-invariant nonNegative {
-  inventory >= 0
-}
+Counterexample (2 steps):
+  step 0  init:     balance = 0, status = Active
+  step 1  withdraw: balance = -100, status = Active  ← VIOLATION
 ```
 
-### How These Preconditions Work
-
-1. **For `add50` and `add60`**: 
-   - `require inventory + quantity <= 100` ensures that after adding, inventory won't exceed 100
-   - This preserves the `withinCapacity` invariant
-
-2. **For `remove30` and `remove50`**:
-   - `require inventory >= quantity` ensures that after removing, inventory won't become negative
-   - This preserves the `nonNegative` invariant
-
-With these preconditions, both invariants will always hold.
+Spectre still finds the shortest path (2 steps), ignoring the freeze/unfreeze actions since they're not needed to trigger the bug.
 
 ---
 
----
-
-## CEGIS Automatic Repair
-
-When `spectre verify` finds an invariant violation, it does not just report it — it automatically synthesises a `require` guard that would prevent the violation, using **weakest-precondition (WP) computation**:
+## Using `--suggest-repairs`
 
 ```bash
-./spectre verify examples/bank-account-violation.spec
+spectre verify bank-freeze-bug.spec --suggest-repairs
 ```
 
-After reporting the violation, the output includes a repair suggestion:
-
 ```
-CEGIS Repair Suggestions:
+Repair candidates (CANDIDATE — review before applying):
 
-  Invariant `no_negatives` violated via action `withdrawAlice30`:
-    Pre-state: {aliceBalance = 0, bobBalance = 0}
-    Counterexample: withdrawAlice30*
-    Option 1 — weakest precondition for `aliceBalance' = aliceBalance - 30`:
-      // In action withdrawAlice30 — add:
-      require aliceBalance - 30 >= 0
-      ✓ Verified: re-explored with this guard applied — invariant holds
+Violation 1: action 'withdraw' violates 'solvent'
+  [1] CANDIDATE strengthen_require: add `require balance >= 100` to action withdraw
+      Validation: original violation fixed · no deadlock · reachability unchanged — SAFE
+
+  [2] CANDIDATE add_invariant_guard: add `when balance >= 100` to action withdraw
+      Validation: original violation fixed · deadlock at balance=0 — review required
 ```
 
-The synthesised guard is the **weakest condition** under which the assignment preserves the invariant — i.e., the least restrictive guard that is still correct. Add it to the action:
+- **SAFE** — the patch fixes the violation and doesn't introduce new problems.
+- **review required** — the patch fixes the violation but causes a deadlock or significantly restricts reachability. May be intentional, but check.
+- Repairs are **always labelled CANDIDATE** — Spectre never applies them automatically.
+
+Applying repair [1]: add `require balance >= 100` to `withdraw`. Re-verify:
+
+```bash
+spectre verify bank.spec
+# ✓ safe — 12 states explored (exhaustive)
+```
+
+---
+
+## Checking multiple invariants
 
 ```spectre
-action withdrawAlice30 {
-  require aliceBalance - 30 >= 0   // synthesised by CEGIS
-  aliceBalance' = aliceBalance - 30
-}
+invariant solvent     { balance >= 0 }
+invariant within_cap  { balance <= LIMIT }
+invariant frozen_safe { status = Frozen → balance = 0 }
 ```
 
-Or rewrite it in the more idiomatic form (mathematically equivalent):
+Spectre checks all invariants independently. If multiple are violated, each is reported with its own trace.
+
+---
+
+## Parameterized safety
 
 ```spectre
-action withdrawAlice30 {
-  require aliceBalance >= 30
-  aliceBalance' = aliceBalance - 30
+// producer-consumer.spec
+param BUFFER_SIZE: int = 5
+
+var produced: int
+var consumed: int
+
+init { produced = 0  consumed = 0 }
+
+action produce {
+  require produced - consumed < BUFFER_SIZE
+  produced' = produced + 1
 }
+
+action consume {
+  require consumed < produced
+  consumed' = consumed + 1
+}
+
+invariant buffer_bounded { produced - consumed <= BUFFER_SIZE }
+invariant no_underflow   { consumed <= produced }
 ```
 
-Spectre re-runs BFS with the proposed guard injected before reporting `✓ Verified`, so the suggestion is confirmed correct before you see it. For specs with multiple violating actions, a repair suggestion is produced for each one.
+Verify at different sizes:
+
+```bash
+spectre verify producer.spec --param BUFFER_SIZE=3
+# ✓ safe — 10 states explored (exhaustive)
+
+spectre verify producer.spec --param BUFFER_SIZE=10
+# ✓ safe — 66 states explored (exhaustive)
+```
+
+Sweep the whole range:
+
+```bash
+spectre verify producer.spec --param-range BUFFER_SIZE=1..20
+```
 
 ---
 
-## Common Patterns of Invariant Violations
+## State space size and `--max-states`
 
-Based on our examples, here are common patterns:
+| Output line | What it means |
+|------------|---------------|
+| `6 states explored (exhaustive)` | Full proof — every reachable state checked |
+| `5000 states explored (bounded — hit state limit)` | Incomplete — violation may still exist beyond the limit |
 
-### Pattern 1: Missing Preconditions for Decrements
+Use `--max-states` to control the limit:
 
-**Problem**: Actions that decrease values don't check if the value is large enough.
+```bash
+spectre verify large.spec --max-states 50000
+spectre verify large.spec --max-states -1   # unlimited (may not terminate)
+```
 
-**Example**: `withdraw` without checking balance, `remove` without checking inventory
-
-**Fix**: Add `require value >= amount` before decrementing
-
-### Pattern 2: Missing Preconditions for Increments
-
-**Problem**: Actions that increase values don't check if the value would exceed bounds.
-
-**Example**: `add` without checking capacity, `deposit` without checking maximum
-
-**Fix**: Add `require value + amount <= maxValue` before incrementing
-
-### Pattern 3: Missing Preconditions for Compound Operations
-
-**Problem**: Actions that perform multiple state changes don't validate intermediate states.
-
-**Example**: `transfer` that subtracts from one account and adds to another
-
-**Fix**: Add preconditions for each state change: `require fromValue >= amount` and ensure `toValue + amount <= maxValue` if applicable
-
-### Pattern 4: Missing Validation of Input Parameters
-
-**Problem**: Actions don't validate that parameters are within acceptable ranges.
-
-**Example**: Accepting negative amounts, zero quantities, or invalid account names
-
-**Fix**: Add `require amount > 0`, `require account != ""`, etc.
+Always check whether your result was **exhaustive**. A bounded result is not a proof.
 
 ---
 
-## Best Practices for Preventing Invariant Violations
+## Invariant-writing checklist
 
-1. **Always add preconditions**: Every action that modifies state should have preconditions that ensure invariants are maintained.
+For each resource or constraint in your system, ask:
 
-2. **Check before modifying**: Preconditions should check the **current state** before making changes, not after.
-
-3. **Consider all invariants**: If you have multiple invariants, ensure each action maintains **all** of them.
-
-4. **Use descriptive error messages**: When preconditions fail, the verifier will report which action couldn't execute and why.
-
-5. **Test edge cases**: Consider boundary conditions:
-   - What happens at the minimum value (0, empty, etc.)?
-   - What happens at the maximum value (100, full, etc.)?
-   - What happens with invalid inputs?
+- **Bounds**: is there a min or max? → `x >= 0`, `x <= LIMIT`
+- **Ordering**: must A happen before B? → `phase = B → started_A`
+- **Exclusion**: can only one hold at a time? → `not (P and Q)`
+- **Consistency**: do related variables agree? → `frozen → balance = 0`
+- **Monotonicity**: can this only go up/down? → `count >= prev_count`
 
 ---
 
-## Understanding Verifier Behavior
+## Workflow summary
 
-When you verify a specification with missing preconditions:
-
-1. **The verifier checks invariants**: It validates invariants after each action execution
-2. **Invalid states are prevented**: If an action would create an invalid state, that action execution fails
-3. **Violations are recorded**: Each attempt to execute an action that would violate invariants is recorded as a violation
-4. **Verification fails**: If any violations are found, verification fails with a detailed report
-
-### Example: What the Verifier Does
-
-When an action would violate an invariant:
-- The verifier detects it before adding the invalid state
-- The action execution fails, and a **violation is recorded**
-- The violation includes:
-  - The action that would fail
-  - The invariant that would be violated
-  - The path (sequence of actions) leading to the state where this would occur
-- Other valid paths continue to be explored
-- **Verification fails** if any violations are found
-
-**Key Insight**: The verifier acts as both a safety net (preventing invalid states) and a **specification checker** (reporting when actions lack proper preconditions). This helps you find and fix specification flaws early.
-
----
-
-## Summary
-
-This chapter covered:
-
-1. **What invariants are**: Properties that must hold in every reachable state
-
-2. **How invariants are violated**: 
-   - Missing preconditions allow actions to execute when they shouldn't
-   - Actions modify state in ways that break invariant properties
-
-3. **How to fix violations**:
-   - Add `require` statements (preconditions) to actions
-   - Preconditions check the current state before making changes
-   - Preconditions ensure invariants will hold after the action executes
-
-4. **Common patterns**:
-   - Missing checks for decrements (negative values)
-   - Missing checks for increments (exceeding bounds)
-   - Missing checks for compound operations
-   - Missing validation of input parameters
-
-5. **Verifier behavior**: The verifier prevents invalid states from being reached, but you should still add preconditions for correctness
-
-6. **Best practices**: Always add preconditions, check before modifying, consider all invariants
-
-By understanding invariants and how to prevent violations, you can write specifications that maintain safety properties throughout system execution. Use preconditions to prevent problems, and invariants to guarantee properties.
-
+```
+write invariants
+      │
+      ▼
+spectre verify
+      │
+   violation?
+   ┌──┴──┐
+  yes    no
+   │      └──► ✓ invariant holds in all reachable states  ← exhaustive result
+   ▼
+--suggest-repairs
+   │
+   ▼
+SAFE candidates  ──► apply · re-verify
+   │
+review-required  ──► inspect manually first
+```
