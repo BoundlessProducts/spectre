@@ -7,7 +7,9 @@ import (
 	"strings"
 )
 
-const Version = "0.1.0"
+// Version is set at build time via -ldflags "-X main.Version=<tag>".
+// The fallback "dev" is used for local builds without ldflags.
+var Version = "dev"
 
 func main() {
 	// Check for version flag.
