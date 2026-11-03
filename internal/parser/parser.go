@@ -119,6 +119,12 @@ func (p *Parser) addErrorfAt(pos ast.Position, format string, args ...interface{
 	}
 }
 
+// ParseExpression parses a single expression from the current token stream.
+// Useful for REPL and standalone expression evaluation.
+func (p *Parser) ParseExpression() ast.Expr {
+	return p.parseExpression(0)
+}
+
 // ParseFile parses a complete Spectre file and returns an AST File node
 func (p *Parser) ParseFile() *ast.File {
 	file := &ast.File{
