@@ -1849,6 +1849,7 @@ func runVerify(args []string) error {
 func runGenerateDriver(args []string) error {
 	lang := "rust"
 	output := ""
+	ciMode := false
 	filteredArgs := []string{}
 
 	i := 0
@@ -1864,6 +1865,8 @@ func runGenerateDriver(args []string) error {
 				output = args[i+1]
 				i++
 			}
+		case "--ci":
+			ciMode = true
 		default:
 			filteredArgs = append(filteredArgs, args[i])
 		}
@@ -1910,13 +1913,68 @@ func runGenerateDriver(args []string) error {
 
 	if output == "" {
 		fmt.Print(code)
+		if ciMode {
+			stem := strings.TrimSuffix(specName, filepath.Ext(specName))
+			fmt.Print("\n// --- Cargo.toml snippet (--ci) ---\n")
+			fmt.Print(ciCargoSnippet(stem))
+			fmt.Print("\n// --- GitHub Actions workflow (--ci) ---\n// ")
+			fmt.Print(strings.ReplaceAll(ciWorkflowYAML(stem), "\n", "\n// "))
+		}
 		return nil
 	}
+
 	if err := os.WriteFile(output, []byte(code), 0644); err != nil {
 		return fmt.Errorf("error writing driver to %s: %w", output, err)
 	}
 	fmt.Printf("Rust driver written to %s\n", output)
+
+	if ciMode {
+		stem := strings.TrimSuffix(output, filepath.Ext(output))
+		cargoFile := stem + ".cargo.toml"
+		if err := os.WriteFile(cargoFile, []byte(ciCargoSnippet(stem)), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write Cargo snippet %s: %v\n", cargoFile, err)
+		} else {
+			fmt.Printf("Cargo.toml snippet written to %s\n", cargoFile)
+		}
+		ciFile := stem + ".ci.yml"
+		if err := os.WriteFile(ciFile, []byte(ciWorkflowYAML(stem)), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not write CI workflow %s: %v\n", ciFile, err)
+		} else {
+			fmt.Printf("GitHub Actions workflow written to %s\n", ciFile)
+		}
+	}
+
 	return nil
+}
+
+// ciCargoSnippet returns a Cargo.toml snippet for running the generated driver.
+func ciCargoSnippet(stem string) string {
+	return `# Add to your project's Cargo.toml:
+[dev-dependencies]
+spectre-connect = "0.1"
+
+# Declare the test binary:
+[[test]]
+name = "spectre_driver"
+path = "` + stem + `.rs"
+harness = false
+`
+}
+
+// ciWorkflowYAML returns a GitHub Actions workflow YAML for running the driver.
+func ciWorkflowYAML(stem string) string {
+	return `name: Spectre model-based tests
+on: [push, pull_request]
+
+jobs:
+  spectre:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run spectre driver
+        run: cargo test --test spectre_driver
+`
 }
 
 // runGenerateMonitor generates an embedded Rust runtime monitor for a Spectre spec.
@@ -1990,6 +2048,7 @@ func runMine(args []string) error {
 	specName := ""
 	useAI := false
 	proposeInvariants := false // --propose-invariants: print candidate invariants for approval
+	showOmissions := false     // --show-omissions: print extraction omissions report
 	filteredArgs := []string{}
 
 	i := 0
@@ -2014,6 +2073,8 @@ func runMine(args []string) error {
 			useAI = true
 		case "--propose-invariants":
 			proposeInvariants = true
+		case "--show-omissions":
+			showOmissions = true
 		default:
 			filteredArgs = append(filteredArgs, args[i])
 		}
@@ -2070,6 +2131,17 @@ func runMine(args []string) error {
 		}
 	}
 
+	if showOmissions {
+		if len(mined.Omissions) == 0 {
+			fmt.Fprintf(os.Stderr, "No extraction omissions detected.\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "Extraction omissions (%d):\n", len(mined.Omissions))
+			for _, o := range mined.Omissions {
+				fmt.Fprintf(os.Stderr, "  [%s] %s\n", o.Kind.String(), o)
+			}
+		}
+	}
+
 	specText := mined.Generate(suggestions)
 
 	if output == "" {
@@ -2094,6 +2166,9 @@ func runMine(args []string) error {
 	fmt.Printf("  Structs found:    %d fields from %s\n", len(mined.Fields), mined.StructName)
 	fmt.Printf("  Enums found:      %d\n", len(mined.Enums))
 	fmt.Printf("  Actions mined:    %d\n", len(mined.Methods))
+	if len(mined.Omissions) > 0 {
+		fmt.Printf("  Omissions:        %d (run with --show-omissions for details)\n", len(mined.Omissions))
+	}
 	if useAI && suggestions != nil {
 		fmt.Printf("  LLM invariants:   %d\n", len(suggestions.ExtraInvariants))
 		fmt.Printf("  LLM temporals:    %d\n", len(suggestions.ExtraTemporal))

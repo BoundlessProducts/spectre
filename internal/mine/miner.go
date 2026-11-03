@@ -56,6 +56,7 @@ type MinedSpec struct {
 	Enums      []RustEnum
 	Methods    []RustMethod
 	SourceFile string
+	Omissions  []ExtractionOmission // constructs that were skipped or abstracted
 }
 
 // ── Regex patterns ────────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ func MineFromRust(source, specName, filename string) *MinedSpec {
 
 	methods := extractMethods(cleaned, structName, fields, enumNames)
 
-	return &MinedSpec{
+	spec := &MinedSpec{
 		SpecName:   specName,
 		StructName: structName,
 		Fields:     fields,
@@ -103,6 +104,8 @@ func MineFromRust(source, specName, filename string) *MinedSpec {
 		Methods:    methods,
 		SourceFile: filename,
 	}
+	spec.Omissions = ScanOmissions(cleaned, spec)
+	return spec
 }
 
 // ── Struct extraction ─────────────────────────────────────────────────────────
