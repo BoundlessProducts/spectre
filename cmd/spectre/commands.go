@@ -747,6 +747,11 @@ func runVerify(args []string) error {
 	verifyIncremental := false     // --verify-incremental: cross-check incremental result vs fresh BFS
 	params := map[string]int64{}   // --param Name=Value spec parameter bindings
 	paramRanges := map[string][2]int64{} // --param-range Name=lo..hi: sweep parameter over range
+	backendName := "bfs"           // --backend bfs|tlc|apalache|z3
+	bmcDepth    := 20              // --bmc-depth N  (z3 only)
+	tlcJar      := "tlc"          // --tlc-jar path
+	apalacheBin := "apalache-mc"  // --apalache-bin path
+	z3Bin       := "z3"           // --z3-bin path
 	filteredArgs := []string{}
 
 	i := 0
@@ -840,6 +845,45 @@ func runVerify(args []string) error {
 			checkRepairMinimal = true
 		case "--suggest-repairs":
 			suggestRepairs = true
+		case "--backend":
+			if i+1 < len(args) {
+				backendName = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--backend requires a value (bfs|tlc|apalache|z3)")
+			}
+		case "--bmc-depth":
+			if i+1 < len(args) {
+				if n, err := parseInt(args[i+1]); err == nil && n > 0 {
+					bmcDepth = n
+				} else {
+					return fmt.Errorf("--bmc-depth requires a positive integer")
+				}
+				i++
+			} else {
+				return fmt.Errorf("--bmc-depth requires a value")
+			}
+		case "--tlc-jar":
+			if i+1 < len(args) {
+				tlcJar = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--tlc-jar requires a path")
+			}
+		case "--apalache-bin":
+			if i+1 < len(args) {
+				apalacheBin = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--apalache-bin requires a path")
+			}
+		case "--z3-bin":
+			if i+1 < len(args) {
+				z3Bin = args[i+1]
+				i++
+			} else {
+				return fmt.Errorf("--z3-bin requires a path")
+			}
 		case "--param-range":
 			if i+1 < len(args) {
 				kv := args[i+1]
@@ -892,6 +936,25 @@ func runVerify(args []string) error {
 	
 	if len(args) == 0 {
 		return fmt.Errorf("no file specified")
+	}
+
+	// Dispatch to external backend when --backend is not bfs.
+	if isExternalBackend(backendName) {
+		extParams := make(map[string]int64, len(params))
+		for k, v := range params {
+			extParams[k] = v
+		}
+		return runVerifyExternal(args, verifyExternalOpts{
+			backendName: backendName,
+			bmcDepth:    bmcDepth,
+			tlcJar:      tlcJar,
+			apalacheBin: apalacheBin,
+			z3Bin:       z3Bin,
+			params:      extParams,
+			maxStates:   maxStates,
+			maxDepth:    maxDepth,
+			silent:      !verbose,
+		})
 	}
 
 	processor := NewFileProcessor()
