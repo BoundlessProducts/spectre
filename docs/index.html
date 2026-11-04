@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Spectre — Formal Specification for Real Software</title>
-  <meta name="description" content="A formal specification language and verification toolchain for modelling systems as state machines and proving correctness properties." />
+  <title>Spectre — Formal Specification Language</title>
+  <meta name="description" content="A research-stage formal specification language for modelling systems as state machines and checking correctness properties." />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -247,7 +247,8 @@
     <span>◈</span> Spectre
   </div>
   <div class="nav-links">
-    <a href="#features">Features</a>
+    <a href="#features">Capabilities</a>
+    <a href="#limitations">Limitations</a>
     <a href="#install">Install</a>
     <a href="spec.md">Spec</a>
     <a href="spectre-book.pdf">Book</a>
@@ -258,12 +259,12 @@
 <!-- ── Hero ──────────────────────────────────────────────────── -->
 <div class="hero">
   <div class="hero-text">
-    <div class="hero-eyebrow">research preview</div>
-    <h1>Formal specification for <em>real software</em></h1>
+    <div class="hero-eyebrow">research prototype</div>
+    <h1>A formal specification language for <em>state machines</em></h1>
     <p>
-      Model your system as a state machine, write invariants, and let Spectre
-      exhaustively explore every reachable state. Catch protocol bugs before they
-      reach production — then keep your spec in sync as the code evolves.
+      Spectre is a research-stage tool inspired by TLA+ and Quint. Describe your
+      system as a state machine, write invariants and temporal properties, and
+      use the built-in BFS or an external backend (TLC, Z3, Apalache) to check them.
     </p>
     <div class="hero-buttons">
       <a href="#install" class="btn btn-primary">Get started</a>
@@ -307,55 +308,55 @@
 <!-- ── Features ──────────────────────────────────────────────── -->
 <hr class="divider" />
 <section class="section" id="features">
-  <div class="section-label">What Spectre does</div>
-  <h2>What Spectre can do</h2>
-  <p class="section-sub">From modelling a state machine to catching bugs before they ship.</p>
+  <div class="section-label">Capabilities</div>
+  <h2>What Spectre includes</h2>
+  <p class="section-sub">An overview of the current feature set. See the <a href="spectre-book.pdf">book</a> for scope and caveats on each.</p>
 
   <div class="features-grid">
     <div class="feature-card">
       <div class="feature-icon">🔍</div>
-      <h3>Exhaustive state exploration</h3>
-      <p>BFS explores every reachable state. Spectre reports the exact action sequence that triggers a bug — not just that one exists.</p>
+      <h3>BFS state exploration</h3>
+      <p>Exhaustive breadth-first search over reachable states. Reports the shortest action sequence leading to an invariant violation. Subject to state explosion on large models.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">⚡</div>
       <h3>Bounded model checking (Z3)</h3>
-      <p>Encode your spec as SMT-LIB2 and find shallow bugs instantly with Z3 — no full state graph needed. Scales to huge specs.</p>
+      <p>Encodes the spec as SMT-LIB2 and asks Z3 whether a violation exists within a fixed number of steps. Does not prove safety for all depths.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">🔄</div>
-      <h3>SMT-backed drift detection</h3>
-      <p><code>spectre sync</code> classifies each changed action as structurally unchanged, SMT-proved equivalent, or semantically changed — with a counterexample witness.</p>
+      <h3>Drift detection</h3>
+      <p><code>spectre sync</code> compares a Rust implementation to a spec using Z3/QF_LIA. Classifies each action as structurally unchanged, SMT-equivalent, or semantically changed — with a counterexample witness when available.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">🧬</div>
       <h3>Spec mining</h3>
-      <p>Extract a Spectre skeleton from existing Rust source automatically — fields become variables, methods become actions, guards are inferred.</p>
+      <p>Extracts a spec skeleton from Rust source: struct fields become variables, methods become action stubs. Guards and invariants are not inferred — they require manual completion.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">🧪</div>
       <h3>Model-based testing</h3>
-      <p>Generate ITF traces, Rust test drivers, and replay harnesses. Five coverage modes including property-directed steering.</p>
+      <p>Generates ITF execution traces and Rust test driver stubs. Supports five coverage modes. Requires manual wiring of the driver to the actual implementation.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">🛡️</div>
-      <h3>Runtime monitoring</h3>
-      <p>Generate a self-contained <code>monitor.rs</code> that checks all spec invariants in production — O(k) per step, zero external dependencies.</p>
+      <h3>Monitor generation</h3>
+      <p>Emits a <code>monitor.rs</code> that checks invariants at each step. Covers safety invariants only; liveness properties are not checked at runtime.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">⚙️</div>
       <h3>Incremental re-verification</h3>
-      <p>When one action changes, re-verify only that action without rerunning full BFS. 4–5× faster on Raft (22k states).</p>
+      <p>Prunes and re-expands only the affected portion of the BFS graph when one action changes. Requires a valid cached graph from a prior run.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">🗜️</div>
       <h3>Partial-order reduction</h3>
-      <p><code>--por</code> skips redundant interleavings using the ample-set heuristic. 3-node Raft: 22,432 → 6,818 states (7.6× reduction).</p>
+      <p><code>--por</code> skips redundant action interleavings using the ample-set heuristic. Reduces 3-node Raft from 22,432 to 6,818 states; effectiveness varies by spec.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">🎯</div>
       <h3>Property-directed exploration</h3>
-      <p>Best-first BFS steers toward invariant boundaries — finds all 29 violations in a queue spec in 204 states vs. 150k random steps.</p>
+      <p><code>--property-guided</code> steers BFS toward states near invariant boundaries. Useful for finding violations faster; not a substitute for exhaustive verification.</p>
     </div>
   </div>
 </section>
@@ -364,28 +365,28 @@
 <hr class="divider" />
 <section class="section">
   <div class="section-label">Verification backends</div>
-  <h2>Choose your backend</h2>
-  <p class="section-sub">Switch backends with a single flag — same spec, different trade-offs.</p>
+  <h2>Backends</h2>
+  <p class="section-sub">The same spec can be checked with different backends using <code>--backend &lt;name&gt;</code>. Each has different completeness guarantees and external dependencies.</p>
   <div class="backend-grid">
     <div class="backend-card">
       <span class="badge badge-green">Built-in</span>
-      <h3>BFS</h3>
-      <p>Default. Exhaustive exploration. Zero dependencies. Best for learning and small-to-medium specs.</p>
+      <h3>BFS (default)</h3>
+      <p>Exhaustive BFS. No external dependencies. Practical up to roughly tens of thousands of states; hits state explosion on larger models.</p>
     </div>
     <div class="backend-card">
       <span class="badge badge-blue">--backend z3</span>
       <h3>Z3 BMC</h3>
-      <p>Bounded model checking via SMT. Finds shallow bugs fast in large state spaces. Requires <code>z3</code> binary.</p>
+      <p>Bounded model checking over a fixed step horizon. Cannot prove safety for all depths. Requires the <code>z3</code> binary on PATH.</p>
     </div>
     <div class="backend-card">
       <span class="badge badge-purple">--backend tlc</span>
       <h3>TLC</h3>
-      <p>Exhaustive TLA+ model checker. Required for liveness and fairness properties. Requires Java + TLC jar.</p>
+      <p>Translates to TLA+ and runs TLC. Required for liveness and fairness properties. Requires Java and the TLC jar (~80 MB).</p>
     </div>
     <div class="backend-card">
       <span class="badge badge-purple">--backend apalache</span>
       <h3>Apalache</h3>
-      <p>Symbolic model checker via Z3. Handles large state spaces exhaustively. Requires Java + Apalache.</p>
+      <p>Symbolic model checker backed by Z3. Requires Java and the Apalache distribution. Support is less tested than TLC.</p>
     </div>
   </div>
 </section>
@@ -395,7 +396,7 @@
 <section class="section" id="install">
   <div class="section-label">Getting started</div>
   <h2>Install Spectre</h2>
-  <p class="section-sub">Download a pre-built binary or build from source in under a minute.</p>
+  <p class="section-sub">Pre-built binaries are available for macOS, Linux, and Windows. Go ≥ 1.24 is required to build from source.</p>
 
   <div class="tabs">
     <button class="tab active" onclick="showTab('mac')">macOS</button>
@@ -533,12 +534,58 @@ go build -o spectre ./cmd/spectre
   </div>
 </section>
 
+<!-- ── Limitations ────────────────────────────────────────────── -->
+<hr class="divider" />
+<section class="section" id="limitations">
+  <div class="section-label">Current limitations</div>
+  <h2>Known limitations</h2>
+  <p class="section-sub">Spectre is a research prototype. The following are known gaps as of v0.4.0.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <h3>State explosion</h3>
+      <p>The built-in BFS backend does not scale beyond roughly tens of thousands of states. Use TLC or Apalache for larger models.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Z3 BMC is not complete</h3>
+      <p>Bounded model checking can find violations within a fixed step depth but cannot prove absence of violations for all depths.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Z3 set cardinality</h3>
+      <p><code>.size()</code> on <code>Set&lt;T&gt;</code> values is unreliable under Z3's <code>ALL</code> logic for integer domains. Use TLC if your spec compares set sizes.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Liveness requires TLC</h3>
+      <p>The BFS backend cannot soundly check liveness (<code>eventually</code>, <code>always</code>, <code>WF</code>, <code>SF</code>) or fairness properties. Use <code>--backend tlc</code> for those.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Spec mining produces stubs only</h3>
+      <p>The miner extracts field names and method signatures from Rust. Guards, invariants, and initial values are not inferred and must be written by hand.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Rust only</h3>
+      <p>Spec mining, monitor generation, and test driver generation target Rust exclusively. Other languages are not supported.</p>
+    </div>
+    <div class="feature-card">
+      <h3>No stability guarantees</h3>
+      <p>This is a research project. The language syntax, CLI flags, and ITF format may change between releases without a migration path.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Windows less tested</h3>
+      <p>Windows binaries are cross-compiled and lightly tested. Some shell-dependent features (benchmark scripts, install scripts) assume a Unix environment.</p>
+    </div>
+    <div class="feature-card">
+      <h3>No IDE integration</h3>
+      <p>An experimental LSP server is included but is not published to any extension marketplace. Editor support requires manual configuration.</p>
+    </div>
+  </div>
+</section>
+
 <!-- ── CTA ───────────────────────────────────────────────────── -->
 <div class="cta-band">
-  <h2>Ready to specify?</h2>
-  <p>Read the book to go from zero to verifying a distributed protocol in under an hour.</p>
+  <h2>Documentation</h2>
+  <p>The Spectre Language Book covers the full syntax, all backends, collection types, spec mining, model-based testing, and the formal grammar.</p>
   <div class="cta-buttons">
-    <a href="spectre-book.pdf" class="btn btn-primary">Read the Spectre Book (PDF)</a>
+    <a href="spectre-book.pdf" class="btn btn-primary">Spectre Language Book (PDF)</a>
     <a href="https://github.com/BoundlessProducts/spectre" class="btn btn-secondary">View on GitHub</a>
   </div>
 </div>
