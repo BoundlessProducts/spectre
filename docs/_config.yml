@@ -1,4 +1,2 @@
-# GitHub Pages config
-# Exclude markdown source files from the built site (they are linked as raw files or not at all)
-exclude:
-  - "*.md"
+# GitHub Pages config — serves docs/ as the site root.
+# No special Jekyll processing needed; index.html is plain HTML.
