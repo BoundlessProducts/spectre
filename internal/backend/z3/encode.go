@@ -247,8 +247,11 @@ func exprToSMT(expr ast.Expr, step int, params map[string]string) string {
 
 	case *ast.UnaryExpr:
 		inner := exprToSMT(e.Expr, step, params)
-		if e.Op == ast.Not {
+		switch e.Op {
+		case ast.Not:
 			return fmt.Sprintf("(not %s)", inner)
+		case ast.Neg:
+			return fmt.Sprintf("(- %s)", inner)
 		}
 
 	case *ast.ParenExpr:
@@ -395,14 +398,6 @@ func defaultSMTVal(t ast.Type, enums []*ast.EnumDecl) string {
 		return fmt.Sprintf("((as const (Array %s %s)) %s)", smtSort(ty.Key, enums), smtSort(ty.Value, enums), defaultSMTVal(ty.Value, enums))
 	case *ast.ListType:
 		return fmt.Sprintf("(as seq.empty (Seq %s))", smtSort(ty.Element, enums))
-	}
-	return "0"
-}
-
-// litValue extracts the string value from a literal expression.
-func litValue(expr ast.Expr) string {
-	if b, ok := expr.(*ast.BasicLit); ok {
-		return b.Value
 	}
 	return "0"
 }
