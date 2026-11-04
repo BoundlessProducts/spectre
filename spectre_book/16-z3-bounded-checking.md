@@ -1,6 +1,6 @@
-# Chapter 16: Z3 bounded model checking
+# Z3 bounded model checking
 
-The Z3 backend is your fastest path to finding shallow bugs. Instead of exploring the state graph step by step, it encodes your spec as an SMT-LIB2 formula and asks Z3 a single question: *is there any execution of length ≤ N that violates an invariant?*
+The Z3 backend is your fastest path to finding shallow bugs. Instead of exploring the state graph step by step, it encodes your spec as an SMT-LIB2 formula and asks Z3 a single question: *is there any execution of length <= N that violates an invariant?*
 
 ---
 
@@ -23,35 +23,35 @@ spectre verify --backend z3 --z3-bin /usr/local/bin/z3 account.spec
 
 ```
                         counter.spec
-                             │
-                  ┌──────────▼──────────┐
-                  │  Z3 encoder         │
-                  │  for depth = 3      │
-                  └──────────┬──────────┘
-                             │
-              ┌──────────────▼──────────────┐
-              │  SMT-LIB2 formula            │
-              │                             │
-              │  x_0 = 0             (init) │
-              │  x_1 = incr(x_0) ∨         │
-              │  x_1 = decr(x_0)    (step) │
-              │  x_2 = incr(x_1) ∨ ...     │
-              │  x_3 = incr(x_2) ∨ ...     │
-              │                             │
-              │  ¬(x_0≥0 ∧ x_1≥0           │
-              │    ∧ x_2≥0 ∧ x_3≥0)        │
-              │      (invariant negation)   │
-              └──────────────┬──────────────┘
-                             │
-                    ┌────────▼────────┐
-                    │   Z3 solver     │
-                    └────────┬────────┘
-                             │
-               ┌─────────────┴──────────────┐
-               │                            │
+                             |
+                  +----------v----------+
+                  |  Z3 encoder         |
+                  |  for depth = 3      |
+                  +----------+----------+
+                             |
+              +--------------v--------------+
+              |  SMT-LIB2 formula           |
+              |                             |
+              |  x_0 = 0             (init) |
+              |  x_1 = incr(x_0) or        |
+              |  x_1 = decr(x_0)    (step) |
+              |  x_2 = incr(x_1) or ...    |
+              |  x_3 = incr(x_2) or ...    |
+              |                             |
+              |  NOT(x_0>=0 AND x_1>=0      |
+              |    AND x_2>=0 AND x_3>=0)   |
+              |      (invariant negation)   |
+              +--------------+--------------+
+                             |
+                    +--------v--------+
+                    |   Z3 solver     |
+                    +--------+--------+
+                             |
+               +-------------+--------------+
+               |                            |
              unsat                         sat
-               │                            │
-      no violation in ≤ 3 steps    violation exists
+               |                            |
+      no violation in <=3 steps    violation exists
       (but may exist deeper)        extract model
                                     print trace
 ```
@@ -81,13 +81,13 @@ Spectre generates (simplified):
 ; Initial state
 (assert (= x_0 0))
 
-; Step 0 → 1: one action fires
+; Step 0 -> 1: one action fires
 (assert (or
   (and (< x_0 5) (= x_1 (+ x_0 1)))   ; incr
   (and (> x_0 0) (= x_1 (- x_0 1)))   ; decr
 ))
 
-; Step 1 → 2
+; Step 1 -> 2
 (assert (or
   (and (< x_1 5) (= x_2 (+ x_1 1)))
   (and (> x_1 0) (= x_2 (- x_1 1)))
@@ -112,17 +112,17 @@ Z3 answers `unsat` (no violation in 2 steps) or `sat` (violation found, model gi
 
 **No violation found (up to depth):**
 ```
-counter.spec: ✓ safe (z3, bounded — depth 20)
-  Note: no violation in ≤20 steps; deeper paths not checked
+counter.spec: safe (z3, bounded -- depth 20)
+  Note: no violation in <=20 steps; deeper paths not checked
 ```
 
 **Violation found:**
 ```
-account.spec: ✗ violation found (z3)
+account.spec: violation found (z3)
   Violation 1: invariant "solvent" triggered by action "withdraw"
     x_0 = balance:100
-    x_1 = balance:50  (deposit 50 — now 100)
-    x_2 = balance:-10 (withdraw 60 — violated)
+    x_1 = balance:50  (deposit 50 -- now 100)
+    x_2 = balance:-10 (withdraw 60 -- violated)
 ```
 
 ---
@@ -146,13 +146,13 @@ account.spec: ✗ violation found (z3)
 
 | Scenario | Suggested `--bmc-depth` |
 |----------|------------------------|
-| Quick sanity check | 10–20 |
-| Standard development | 20–50 |
-| Protocol with long setup phase | 50–100 |
-| Deep corner cases | 100–200 |
+| Quick sanity check | 10-20 |
+| Standard development | 20-50 |
+| Protocol with long setup phase | 50-100 |
+| Deep corner cases | 100-200 |
 | > 200 | Consider TLC/Apalache instead |
 
-Doubling the depth roughly doubles the formula size and Z3 solve time. Past depth 200 you're usually better off with TLC or Apalache.
+Doubling the depth roughly doubles the formula size and Z3 solve time. Past depth 200 you are usually better off with TLC or Apalache.
 
 ---
 
@@ -160,12 +160,15 @@ Doubling the depth roughly doubles the formula size and Z3 solve time. Past dept
 
 | | BFS | Z3 BMC | TLC | Apalache |
 |---|-----|--------|-----|----------|
-| **Exhaustive** | Yes (small) | No (bounded) | Yes | Yes (symbolic) |
-| **Fairness** | Approximate | No | Exact | No |
-| **Speed on shallow bugs** | Fast | Fastest | Slow | Medium |
-| **Large state space** | No | Yes | No | Yes |
-| **Counterexample** | Full path | Full path (≤N) | Full path | Symbolic |
-| **External dependency** | None | z3 binary | Java+TLC | Java+Apalache |
+| **Role** | learning / explore | production (bounded) | production | production |
+| **Exhaustive** | small specs | no (bounded) | yes | yes (symbolic) |
+| **Fairness (WF/SF)** | exploratory | none | validated (SCC) | limited |
+| **Temporal / liveness** | exploratory | none | validated | limited |
+| **Safety invariants** | exhaustive (small) | bounded | exhaustive | exhaustive (symbolic) |
+| **Speed on shallow bugs** | fast | fastest | slow | medium |
+| **Large state space** | no | yes | no | yes |
+| **Counterexample** | full path | full path (<=N) | full path | symbolic |
+| **External dependency** | none | z3 binary | Java+TLC | Java+Apalache |
 
 ---
 
@@ -175,19 +178,19 @@ Z3 BMC fits naturally into a staged workflow:
 
 ```
 spectre verify --backend z3 --bmc-depth 20 my.spec
-        │
-   unsat (no bug ≤ 20 steps)
-        │
-        ▼
+        |
+   unsat (no bug <=20 steps)
+        |
+        v
 spectre verify --backend z3 --bmc-depth 100 my.spec
-        │
-   unsat (no bug ≤ 100 steps)
-        │
-        ▼
-spectre verify my.spec   (exhaustive BFS if state space allows)
-        │
-        ▼
-spectre verify --backend tlc my.spec   (for liveness / large space)
+        |
+   unsat (no bug <=100 steps)
+        |
+        v
+spectre verify my.spec          (exhaustive BFS if state space allows)
+        |
+        v
+spectre verify --backend tlc my.spec    (for liveness / large space)
 ```
 
 Each stage gives you increasing confidence. Stop as soon as you get a definitive result or a violation to fix.

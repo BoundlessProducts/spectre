@@ -1,6 +1,6 @@
-# Chapter 14: Benchmarking and performance
+# Benchmarking and performance
 
-Before you change a spec, you want to know how big the state space is and how fast Spectre explores it. That's what the built-in benchmark suite is for.
+Before you change a spec, you want to know how big the state space is and how fast Spectre explores it. That is what the built-in benchmark suite is for.
 
 ---
 
@@ -37,14 +37,14 @@ spectre benchmark
 
 ## Understand state-space growth
 
-State spaces grow exponentially with the number of variables and their ranges. Here's what to expect:
+State spaces grow exponentially with the number of variables and their ranges. Here is what to expect:
 
 | Pattern | Typical state count | Why |
 |---------|-------------------|-----|
-| Counter (1 var, range 0–10) | ~11 | Linear |
-| 2 independent counters (0–10 each) | ~121 | Product |
+| Counter (1 var, range 0-10) | ~11 | Linear |
+| 2 independent counters (0-10 each) | ~121 | Product |
 | Mutex (2 threads, 3 states each) | ~9 | Small product |
-| Mutex + shared counter (0–10) | ~90 | 3-way product |
+| Mutex + shared counter (0-10) | ~90 | 3-way product |
 | Producer-consumer (queue depth 5) | ~500 | Queue contents combinatorial |
 | Ring leader election (5 nodes) | ~100K+ | Permutation space |
 
@@ -56,16 +56,16 @@ The rule: **every new variable multiplies the state space by its domain size**.
 
 ```
 Variables:  1     2     3     4     5
-            │     │     │     │     │
+            |     |     |     |     |
 Range 10:  10   100  1000  10K  100K
 Range 5:    5    25   125  625   3K
 Range 2:    2     4     8   16   32
-            │
-            └── BFS exhausts this in < 1 ms
-                              │
-                              └── starts taking seconds
-                                          │
-                                          └── needs --backend tlc or z3
+            |
+            +-- BFS exhausts this in < 1 ms
+                              |
+                              +-- starts taking seconds
+                                          |
+                                          +-- needs --backend tlc or z3
 ```
 
 ---
@@ -106,7 +106,7 @@ Savings are largest when:
 - Many threads share little state
 - Actions are mostly independent
 
-`--por` is sound for safety properties. Avoid it for liveness properties unless you also have `--backend tlc`.
+`--por` is sound for safety properties. Avoid it for liveness properties unless you also use `--backend tlc`.
 
 ---
 
@@ -116,13 +116,13 @@ Savings are largest when:
 spectre verify --property-guided mutex.spec
 ```
 
-Property-guided mode biases BFS toward states that are *close to violating* an invariant. It finds bugs faster on large specs but may miss violations in rarely-reached corners.
+Property-guided mode biases BFS toward states that are close to violating an invariant. It finds bugs faster on large specs but may miss violations in rarely-reached corners.
 
 Use it for:
 - Interactive debugging — "show me a violation fast"
 - Large specs where exhaustive BFS times out
 
-Don't use it for production sign-off — use exhaustive BFS or TLC for that.
+Do not use it for production sign-off — use exhaustive BFS or TLC for that.
 
 ---
 
@@ -130,11 +130,12 @@ Don't use it for production sign-off — use exhaustive BFS or TLC for that.
 
 | Situation | Recommendation |
 |-----------|----------------|
-| ≤ 100K states, safety only | BFS (default) |
-| Fairness / liveness properties | `--backend tlc` |
+| Learning or iterating on a spec | BFS (default, zero setup) |
+| Safety only, <= 100K states | BFS |
+| Fairness / liveness properties | `--backend tlc` (validated SCC-based) |
 | > 1M states, safety only | `--backend apalache` (symbolic) |
-| Want shallow bugs fast (< 20 steps) | `--backend z3 --bmc-depth 20` |
-| Need exhaustive + fairness + huge space | `--backend tlc` with TLC's -workers flag |
+| Fast shallow bug hunting (< 20 steps) | `--backend z3 --bmc-depth 20` |
+| Exhaustive + fairness + large space | `--backend tlc` |
 
 ---
 
@@ -143,27 +144,27 @@ Don't use it for production sign-off — use exhaustive BFS or TLC for that.
 Start cheap, escalate only if needed:
 
 ```
-spectre verify --max-states 10000 my.spec
-        │
-   ✓ safe in 10K states ──► probably fine for small specs
-        │
-   ✗ violation or exhausted
-        │
-        ▼
+spectre verify --max-states 10000 my.spec   (fast exploration)
+        |
+   safe in 10K states --> probably fine for small specs
+        |
+   violation or exhausted
+        |
+        v
 spectre verify my.spec                         (exhaustive BFS, no limit)
-        │
-   ✓ exhaustive safe ──► ship
-        │
+        |
+   exhaustive safe --> ship
+        |
    too large / times out
-        │
-        ▼
+        |
+        v
 spectre verify --backend z3 --bmc-depth 50 my.spec   (fast shallow bugs)
-        │
-   sat → violation in ≤50 steps ──► fix, restart
-        │
-   unsat (no shallow bugs)
-        │
-        ▼
+        |
+   sat -> violation in <=50 steps --> fix, restart
+        |
+   unsat (no shallow bugs found)
+        |
+        v
 spectre verify --backend tlc my.spec                 (full model check)
 ```
 

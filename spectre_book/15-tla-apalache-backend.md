@@ -1,6 +1,6 @@
-# Chapter 15: TLA+ and Apalache backend
+# TLA+ and Apalache backend
 
-Spectre's BFS backend is great for small to medium specs. When you need validated fairness semantics, or your state space is too large for BFS, the `--backend tlc` and `--backend apalache` options hand off to proven model checkers built on TLA+.
+BFS is the learning backend — great for writing and exploring specs. When you need validated fairness semantics or your state space is too large for BFS, `--backend tlc` and `--backend apalache` hand off to proven model checkers built on TLA+.
 
 ---
 
@@ -24,7 +24,7 @@ spectre verify --backend apalache --apalache-bin /usr/local/bin/apalache-mc coun
 
 ## How Spectre translates to TLA+
 
-Spectre translates your `.spec` file into a standard TLA+ module plus a `.cfg` file. Here's the counter example:
+Spectre translates your `.spec` file into a standard TLA+ module plus a `.cfg` file. Here is the counter example:
 
 **`counter.spec`**
 ```
@@ -87,9 +87,9 @@ Then Spectre runs `tlc counter.tla -config counter.cfg` and parses the output.
 |---------|------|
 | `x != y` | `x # y` |
 | `x <= y` | `x =< y` |
-| `x and y` | `x /\ y` |
-| `x or y` | `x \/ y` |
-| `not x` | `~x` |
+| `x && y` | `x /\ y` |
+| `x \|\| y` | `x \/ y` |
+| `!x` | `~x` |
 | `true` | `TRUE` |
 | `false` | `FALSE` |
 | `always(P)` | `[](P)` |
@@ -103,7 +103,7 @@ Then Spectre runs `tlc counter.tla -config counter.cfg` and parses the output.
 
 ## Why TLC for fairness?
 
-BFS can detect some fairness violations, but it uses a heuristic: it flags executions where an enabled action is never taken. This can produce false positives.
+BFS explores traces and flags cases where an enabled action is never taken. This is exploratory — useful for learning, but not an authoritative liveness result.
 
 TLC's approach is exact:
 
@@ -112,19 +112,19 @@ Liveness check (4 steps):
 
 1. Decompose Spec into safety + fairness constraints
    Spec == Init /\ [][Next]_vars /\ WF_vars(incr)
-                                   └── fairness constraint
+                                   +-- fairness constraint
 
 2. Find all SCCs in the state graph
-   (strongly connected components = infinite loops)
+   (strongly connected components = potential infinite loops)
 
 3. For each SCC, check: does incr get to fire?
    If incr is enabled in some state of an SCC but never fires
-   → genuine fairness violation
+   -> genuine fairness violation
 
-4. Report: specific cycle that violates WF(incr)
+4. Report: the specific cycle that violates WF(incr)
 ```
 
-This is why `spectre verify --backend tlc` gives you authoritative liveness results where BFS only gives approximations.
+This SCC-based approach is why `--backend tlc` gives you authoritative liveness results.
 
 ---
 
@@ -133,8 +133,10 @@ This is why `spectre verify --backend tlc` gives you authoritative liveness resu
 | | TLC | Apalache |
 |---|-----|----------|
 | **Approach** | Explicit-state enumeration | Symbolic (SMT-based) |
-| **Best for** | Small–medium state spaces, liveness | Large state spaces, safety |
-| **Fairness** | Yes — exact SCC-based | Limited |
+| **Best for** | Liveness, fairness, small-medium spaces | Large state spaces, safety |
+| **Fairness (WF/SF)** | Validated (exact SCC-based) | Limited |
+| **Temporal / liveness** | Validated | Limited |
+| **Safety invariants** | Exhaustive | Exhaustive (symbolic) |
 | **State space limit** | ~10M states practical | Effectively unbounded |
 | **Speed on small specs** | Fast | Slower (SMT overhead) |
 | **Speed on large specs** | Slow (memory) | Fast (symbolic) |
@@ -142,8 +144,8 @@ This is why `spectre verify --backend tlc` gives you authoritative liveness resu
 | **Requires Java** | Yes | Yes |
 
 Rule of thumb:
-- Use **TLC** when you have `temporal` or `WF`/`SF` properties
-- Use **Apalache** when BFS times out on safety properties
+- Use **TLC** when you have `temporal` or `WF`/`SF` properties — it is the only backend that validates fairness correctly
+- Use **Apalache** when BFS times out on safety properties — it handles large spaces symbolically, but fairness support is limited
 
 ---
 
@@ -168,14 +170,14 @@ THREADS = 4
 When TLC finds a violation, Spectre parses the trace and prints it in the same format as BFS:
 
 ```
-mutex.spec: ✗ violation found
+mutex.spec: violation found
   Violation 1: invariant "mutual_exclusion" triggered by action "enter_cs"
     Step 0: [pc_a = idle,    pc_b = idle,    flag_a = false, flag_b = false]
     Step 1: [pc_a = wanting, pc_b = idle,    flag_a = true,  flag_b = false]
     Step 2: [pc_a = wanting, pc_b = wanting, flag_a = true,  flag_b = true ]
     Step 3: [pc_a = critical,pc_b = wanting, flag_a = true,  flag_b = true ]
     Step 4: [pc_a = critical,pc_b = critical,flag_a = true,  flag_b = true ]
-                                              ↑ both in critical section — violated
+                                              ^ both in critical section -- violated
 ```
 
 ---

@@ -1,6 +1,24 @@
-# Chapter 9: Choosing a verification backend
+# Choosing a verification backend
 
-`spectre verify` supports four backends. The default (BFS) works for most specs. The others trade setup complexity for more power.
+`spectre verify` supports four backends. BFS is the learning backend — zero setup, instant traces, great while you are writing and exploring a spec. The others are production backends for when you need exhaustive or validated results.
+
+---
+
+## Two tracks: learning vs. production
+
+```
+Learning track
+  └─ --backend bfs  (default)
+       No setup. Instant traces. Great for writing specs and debugging.
+       Liveness results are exploratory — use TLC to validate them.
+
+Production track
+  ├─ --backend tlc        Validated liveness + fairness (WF/SF)
+  ├─ --backend apalache   Exhaustive safety on large state spaces
+  └─ --backend z3         Fast shallow bug hunting in CI
+```
+
+Pick BFS while you are learning or iterating. Graduate to a production backend before sign-off.
 
 ---
 
@@ -8,23 +26,23 @@
 
 ```
 spectre verify myspec.spec
-          │
-          │  --backend bfs        (default)
-          │  --backend tlc
-          │  --backend apalache
-          │  --backend z3  --bmc-depth N
-          │
-          ▼
-    ┌───────────┬──────────────┬──────────────┬───────────────┐
-    │   BFS     │    TLC       │  Apalache    │     Z3        │
-    ├───────────┼──────────────┼──────────────┼───────────────┤
-    │ Exhaustive│ Exhaustive   │ Exhaustive   │ Bounded       │
-    │ for small │ + validated  │ symbolic     │ up to depth N │
-    │ specs     │ fairness     │ large spaces │               │
-    ├───────────┼──────────────┼──────────────┼───────────────┤
-    │ No deps   │ TLA+ tools   │ Apalache bin │ z3 binary     │
-    │           │ (jar or bin) │              │               │
-    └───────────┴──────────────┴──────────────┴───────────────┘
+          |
+          |  --backend bfs        (default, learning)
+          |  --backend tlc
+          |  --backend apalache
+          |  --backend z3  --bmc-depth N
+          |
+          v
+    +-----------+--------------+--------------+---------------+
+    |   BFS     |    TLC       |  Apalache    |     Z3        |
+    +-----------+--------------+--------------+---------------+
+    | Learning  | Exhaustive   | Exhaustive   | Bounded       |
+    | & explore | + validated  | symbolic     | up to depth N |
+    |           | fairness     | large spaces |               |
+    +-----------+--------------+--------------+---------------+
+    | No deps   | TLA+ tools   | Apalache bin | z3 binary     |
+    |           | (jar or bin) |              |               |
+    +-----------+--------------+--------------+---------------+
 ```
 
 ---
@@ -32,43 +50,43 @@ spectre verify myspec.spec
 ## Quick decision guide
 
 ```
-Is your spec small (< 10k states)?
-  └─ yes ──► --backend bfs  (default, zero setup)
+Writing a new spec or debugging?
+  +-- yes --> --backend bfs  (default, zero setup, instant traces)
 
-Does it use WF/SF fairness and you need validated results?
-  └─ yes ──► --backend tlc  or  --backend apalache
+Need validated liveness or WF/SF fairness?
+  +-- yes --> --backend tlc  (exact SCC-based cycle detection)
 
-Is the state space too large for BFS?
-  └─ yes ──► --backend apalache  (symbolic — handles millions of states)
+State space too large for BFS (> 100k states)?
+  +-- yes --> --backend apalache  (symbolic, handles millions of states)
 
 Just hunting for shallow bugs fast?
-  └─ yes ──► --backend z3 --bmc-depth 20  (finds bugs in seconds)
+  +-- yes --> --backend z3 --bmc-depth 20  (finds bugs in seconds)
 
-In CI and want a quick regression check?
-  └─ yes ──► --backend z3 --bmc-depth 30  (fast, catches most regressions)
+CI regression check?
+  +-- yes --> --backend z3 --bmc-depth 30  (fast, catches most regressions)
 ```
 
 ---
 
-## BFS backend (default)
+## BFS backend (default — learning mode)
 
-The built-in breadth-first search over your spec's reachable states. No external tools needed.
+The built-in breadth-first search over your spec's reachable states. No external tools needed. This is where you start.
 
 ```bash
 spectre verify counter.spec
-# ✓ safe — 11 states explored (exhaustive)
+# safe -- 11 states explored (exhaustive)
 
 spectre verify counter.spec --max-states 50000
-# ✓ safe — 11 states explored (exhaustive)
+# safe -- 11 states explored (exhaustive)
 ```
 
 **Best for:**
+- Writing and iterating on specs — zero setup, immediate feedback
 - Specs with up to ~50k reachable states
-- Fast iteration during development
-- No setup overhead
+- Learning how your spec behaves
 
-**Limitations:**
-- WF/SF fairness is heuristic — not formally validated
+**Keep in mind:**
+- BFS explores traces; liveness results are exploratory. For validated liveness, use `--backend tlc`.
 - Memory-bound on large specs (> 100k states gets slow)
 
 ---
@@ -89,14 +107,14 @@ spectre verify mutex.spec --backend tlc --tlc-jar ~/tools/tla2tools.jar
 
 ```
 Verifying mutex.spec with backend tlc...
-mutex.spec: ✓ safe (exhaustive)
+mutex.spec: safe (exhaustive)
   Note: TLC checked all reachable states
 ```
 
 **Best for:**
-- Specs with `WF(action)` or `SF(action)` — TLC validates fairness correctly
+- Specs with `WF(action)` or `SF(action)` — TLC validates fairness correctly using SCC-based cycle detection
+- Final sign-off on liveness properties
 - Cross-checking a spec against the TLA+ ecosystem
-- Teams already familiar with TLA+ tooling
 
 **Limitations:**
 - Slower than BFS for small specs
@@ -112,13 +130,15 @@ EXTENDS Integers, TLC
 
 VARIABLES balance, status
 
+vars == <<balance, status>>
+
 Init == /\ balance = 0
         /\ status  = "Active"
 
 Deposit == /\ status = "Active"
            /\ balance < 1000
            /\ balance' = balance + 100
-           /\ UNCHANGED status
+           /\ UNCHANGED <<status>>
 
 Next == Deposit \/ Withdraw \/ Freeze \/ Unfreeze
 
@@ -152,9 +172,10 @@ spectre verify large-spec.spec --backend apalache \
 **Best for:**
 - Large state spaces that exhaust BFS memory
 - Specs with many integer variables (Apalache reasons symbolically over integers)
-- Production-grade verification with validated fairness
+- Production-grade safety verification
 
 **Limitations:**
+- Fairness (WF/SF): limited — Apalache has partial temporal support but does not perform full SCC-based liveness checking. Use TLC for validated fairness.
 - Slowest to start (JVM startup + type checking)
 - Requires Apalache installed (Java 17+)
 
@@ -162,10 +183,10 @@ spectre verify large-spec.spec --backend apalache \
 
 ```
 spectre verify raft.spec --max-states 100000
-# bounded — hit state limit (100000 states)
+# bounded -- hit state limit (100000 states)
 
 spectre verify raft.spec --backend apalache
-# ✓ safe (exhaustive)
+# safe (exhaustive)
 # Note: Apalache checked all reachable states symbolically
 ```
 
@@ -189,7 +210,7 @@ spectre verify bank.spec --backend z3 --bmc-depth 50
 When a violation exists within the depth:
 ```
 Verifying bank.spec with backend z3...
-bank.spec: ✗ violation found
+bank.spec: violation found
   Note: bounded model checking to depth 20
   Violation 1: invariant "solvent"
     step 3: balance = -100
@@ -197,11 +218,11 @@ bank.spec: ✗ violation found
 
 When no violation is found within the depth:
 ```
-bank-fixed.spec: ✓ safe
-  Note: bounded model checking to depth 20 — not exhaustive
+bank-fixed.spec: safe
+  Note: bounded model checking to depth 20 -- not exhaustive
 ```
 
-> `✓ safe` from Z3 means **no violation up to depth 20** — not a proof of full safety. Use `--backend bfs` or `--backend apalache` for an exhaustive result.
+> `safe` from Z3 means **no violation up to depth 20** — not a proof of full safety. Use `--backend bfs` or `--backend apalache` for an exhaustive result.
 
 **Best for:**
 - Finding shallow bugs quickly (< 1 second for depth 20)
@@ -218,10 +239,11 @@ bank-fixed.spec: ✓ safe
 
 | | BFS | TLC | Apalache | Z3 |
 |-|-----|-----|----------|----|
-| Exhaustive | ✓ small specs | ✓ | ✓ symbolic | ✗ |
-| Fairness (WF/SF) | heuristic | validated | validated | ✗ |
-| Safety invariants | ✓ | ✓ | ✓ | ✓ bounded |
-| Temporal properties | ✓ | ✓ | ✓ | ✗ |
+| Role | learning / explore | production | production | production |
+| Exhaustive | small specs | yes | yes (symbolic) | no (bounded) |
+| Fairness (WF/SF) | exploratory | validated (SCC) | limited | none |
+| Temporal / liveness | exploratory | validated | limited | none |
+| Safety invariants | exhaustive (small) | exhaustive | exhaustive (symbolic) | bounded |
 | Dependencies | none | TLA+ tools | Apalache | z3 |
 | Speed | fast | moderate | fast (large) | very fast |
 | Setup time | 0 | 5 min | 10 min | 2 min |
@@ -230,24 +252,27 @@ bank-fixed.spec: ✓ safe
 
 ## Progressive verification workflow
 
-A practical strategy — escalate backend strength only when needed:
+Start with BFS while writing. Graduate to production backends for sign-off.
 
 ```
 Write spec
-    │
-    ▼
---backend bfs         ← fast feedback, no deps
-    │
+    |
+    v
+--backend bfs         <- instant feedback, no deps, great for learning
+    |
   passes?
-    │
-    ├─ no ──► fix spec, repeat
-    │
-    └─ yes
-         │
-         ▼
-    Has WF/SF fairness?
-         ├─ yes ──► --backend tlc  or  --backend apalache
-         └─ no  ──► done ✓  (BFS is exhaustive for small specs)
+    |
+    +- no --> fix spec, repeat
+    |
+    +- yes
+         |
+         v
+    Has WF/SF fairness or liveness?
+         +- yes --> --backend tlc   (validated SCC-based checking)
+         |
+         +- no, state space large?
+              +- yes --> --backend apalache  (symbolic exhaustive)
+              +- no  --> done  (BFS exhaustive for small specs)
 ```
 
 In CI, combine:
@@ -257,7 +282,7 @@ In CI, combine:
 spectre verify myspec.spec --backend z3 --bmc-depth 30
 
 # Full verification (minutes, on merge to main)
-spectre verify myspec.spec --backend apalache
+spectre verify myspec.spec --backend tlc
 ```
 
 ---

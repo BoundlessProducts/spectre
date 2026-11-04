@@ -1,4 +1,6 @@
-# Chapter 10: Mining specs from Rust
+# Mining specs from Rust
+
+> **Important limitations before you start:** The miner cannot extract enum payload data (`InsufficientFunds(u64)` becomes `InsufficientFunds` with no data), error propagation paths (`Result<T,E>` error branches are dropped), and arithmetic safety operations (`checked_add`, `saturating_sub` are approximated as unbounded arithmetic). These are precisely the locations where real Rust bugs occur. After mining, run `--show-omissions` and add invariants or guards for every dropped case that matters for safety.
 
 ### What mining does
 

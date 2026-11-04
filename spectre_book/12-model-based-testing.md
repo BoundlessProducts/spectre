@@ -1,4 +1,4 @@
-# Chapter 12: Model-based testing
+# Model-based testing
 
 ### The idea
 

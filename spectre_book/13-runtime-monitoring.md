@@ -1,6 +1,6 @@
-# Chapter 13: Runtime monitoring
+# Runtime monitoring
 
-Formal verification proves your spec is safe. Runtime monitoring proves your *running application* stays inside that spec — continuously, in production.
+Formal verification proves your spec is safe. A runtime monitor checks your *running application* against those same spec invariants — catching violations that formal verification cannot see (third-party library updates, misconfigured deployments, out-of-spec inputs).
 
 ---
 
@@ -8,17 +8,25 @@ Formal verification proves your spec is safe. Runtime monitoring proves your *ru
 
 ```
 spectre verify account.spec
-        │
-   ✓ safe — all reachable states satisfy invariants
-        │
+        |
+   safe -- all reachable states satisfy invariants
+        |
    ship to production
-        │
-   third-party library update changes behaviour ← not in your spec
-        │
-   invariant violated at runtime — never detected
+        |
+   third-party library update changes behaviour  <- not in your spec
+        |
+   invariant violated at runtime -- never detected
 ```
 
-A runtime monitor closes this gap. It checks your spec's invariants on every real state transition — with no heap allocation in the common path.
+A runtime monitor closes this gap by re-checking the spec's invariants on every real state transition.
+
+---
+
+## What the generated monitor actually is
+
+`spectre generate-monitor` produces a Rust struct with one inline boolean assertion per spec invariant. It is a **generated assertion library** — not a formal runtime verifier. Its value is that the assertions are derived from the exact same predicates your model checker verified, so they are guaranteed to be consistent with the spec.
+
+The `SpecState` mapping between your application and the monitor is **entirely on you**. If you map the wrong fields, the monitor checks the wrong things.
 
 ---
 
@@ -31,14 +39,14 @@ spectre generate-monitor --lang rust account.spec -o src/monitor.rs
 The generated `monitor.rs` gives you:
 
 ```rust
-/// Mirrors the spec variables.
+/// Mirrors the spec variables. You fill this in from your application state.
 #[derive(Debug, Clone)]
 pub struct SpecState {
     pub balance: i64,
     pub frozen:  bool,
 }
 
-/// A spec violation detected at runtime.
+/// A spec invariant violation detected at runtime.
 #[derive(Debug)]
 pub struct Violation {
     pub step:      u64,
@@ -51,13 +59,16 @@ pub struct Monitor { /* private */ }
 impl Monitor {
     pub fn new() -> Self { Monitor::default() }
 
-    /// Call after every state transition in your application.
+    /// Call after every state transition. Checks all spec invariants.
+    /// Returns Some(Violation) if any invariant fails.
     pub fn step(&mut self, state: &SpecState) -> Option<Violation> { ... }
 
-    /// Check liveness properties periodically (e.g. every 1000 steps).
+    /// Sample liveness properties periodically (e.g. every 1000 steps).
     pub fn check_liveness(&self) -> Vec<&'static str> { ... }
 }
 ```
+
+Each `step()` call is O(k) where k is the number of invariants — typically two to five integer comparisons, with no heap allocation.
 
 ---
 
@@ -75,6 +86,7 @@ impl App {
     fn deposit(&mut self, amount: i64) {
         self.account.deposit(amount);
 
+        // You are responsible for this mapping being correct.
         let state = SpecState {
             balance: self.account.balance,
             frozen:  self.account.frozen,
@@ -85,16 +97,11 @@ impl App {
                 "spec violation: {} at step {}",
                 v.invariant, v.step
             );
-            // handle: log, alert, rollback, or panic — your choice
+            // handle: log, alert, rollback, or panic -- your choice
         }
     }
 }
 ```
-
-The monitor is:
-- **Zero dependencies** — no external crate, no allocations in the happy path
-- **O(k) per transition** where k = number of invariants
-- **Consistent** — generated from the exact same `.spec` used for model checking
 
 ---
 
@@ -116,22 +123,13 @@ spectre validate-monitor account.spec
 
 ```
 Validated 2 violation trace(s):
-  [1] action 'withdraw' → invariant 'solvent': consistent (4 steps, final violated)
-  [2] action 'deposit'  → invariant 'within_cap': consistent (3 steps, final violated)
+  [1] action 'withdraw' -> invariant 'solvent': consistent (4 steps, final violated)
+  [2] action 'deposit'  -> invariant 'within_cap': consistent (3 steps, final violated)
 
 2/2 consistent.
 ```
 
-A **consistent** trace means the BFS path genuinely leads to (or one step before) a state that fails the target invariant. If a trace is inconsistent, the violation recording has a bug — not your application.
-
-Run `validate-monitor` after every spec change before regenerating the monitor.
-
-Flags:
-
-| Flag | Default | Effect |
-|------|---------|--------|
-| `--max-states` | 10000 | BFS exploration limit |
-| `--max-depth` | 100 | BFS depth limit |
+A **consistent** trace means the BFS path genuinely leads to a state that fails the target invariant. Run `validate-monitor` after every spec change before regenerating the monitor.
 
 ---
 
@@ -141,10 +139,10 @@ Flags:
 - Every `invariant` from the spec, after every `step()` call
 - Liveness properties when you call `check_liveness()`
 
-**Doesn't check:**
-- Whether your `SpecState` mapping is correct — that's on you
+**Does not check:**
+- Whether your `SpecState` mapping is correct — that is entirely on you
 - Temporal properties in real-time (sampled only on `check_liveness`)
-- Invariants over variables you didn't include in `SpecState`
+- Invariants over variables you did not include in `SpecState`
 
 ---
 
@@ -152,47 +150,37 @@ Flags:
 
 ```
 account.spec
-     │
-     ▼
+     |
+     v
 spectre verify account.spec
-     │  ✓ safe — design-time proof
-     ▼
+     |  safe -- design-time exhaustive check
+     v
 spectre validate-monitor account.spec
-     │  ✓ all violation traces consistent
-     ▼
+     |  all violation traces consistent
+     v
 spectre generate-monitor --lang rust account.spec -o src/monitor.rs
-     │
-     ▼
+     |
+     v
 implement SpecState mapping in application
-     │
-     ▼
+     |
+     v
 call monitor.step(&state) after every transition
-     │
-     ▼
+     |
+     v
 deploy
-     │
-     ├── violation fires ──► log / alert / panic per policy
-     └── no violation    ──► ✓ spec holds in production
+     |
+     +-- violation fires --> log / alert / panic per policy
+     +-- no violation    --> spec holds in every observed execution
 ```
 
 ---
 
 ## Performance overhead
 
-For `account.spec` with two invariants, each `step()` call is two integer comparisons. On modern hardware:
+For `account.spec` with two invariants, each `step()` call is two integer comparisons:
 
 ```
 ~2 ns per step (two invariants, no allocation)
 ```
 
-At 100,000 transitions per second that's **0.02% CPU overhead** — negligible in any real workload.
-
----
-
-## The consistency guarantee
-
-Because the monitor is generated from the same `.spec` file:
-- If your spec passes `spectre verify` ✓
-- And the monitor never fires in production
-
-...you have end-to-end assurance: your implementation matches the design across every observed execution.
+At 100,000 transitions per second that is 0.02% CPU overhead — negligible in any real workload.
