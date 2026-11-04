@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spectre — Formal Specification for Real Software</title>
+  <meta name="description" content="A formal specification language and verification toolchain for modelling systems as state machines and proving correctness properties." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --bg2: #161b22;
+      --bg3: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text2: #8b949e;
+      --accent: #58a6ff;
+      --accent2: #bc8cff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --radius: 8px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      font-size: 16px;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13, 17, 23, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+    .nav-brand {
+      font-size: 1.1rem; font-weight: 700;
+      color: var(--text); letter-spacing: -0.5px;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .nav-brand span { color: var(--accent2); }
+    .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+    .nav-links a { color: var(--text2); font-size: 0.9rem; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .nav-cta {
+      background: var(--accent); color: #0d1117 !important;
+      padding: 0.35rem 0.9rem; border-radius: var(--radius);
+      font-weight: 600; font-size: 0.85rem !important;
+    }
+    .nav-cta:hover { background: #79b8ff; text-decoration: none !important; }
+
+    /* ── Hero ── */
+    .hero {
+      max-width: 1100px; margin: 0 auto;
+      padding: 5rem 2rem 4rem;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 4rem;
+      align-items: center;
+    }
+    @media (max-width: 768px) {
+      .hero { grid-template-columns: 1fr; padding: 3rem 1.5rem 2rem; gap: 2.5rem; }
+    }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      background: rgba(88, 166, 255, 0.1);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      color: var(--accent); font-size: 0.8rem; font-weight: 600;
+      padding: 0.25rem 0.75rem; border-radius: 100px;
+      margin-bottom: 1.25rem; letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800; line-height: 1.15;
+      letter-spacing: -1px; margin-bottom: 1.25rem;
+    }
+    .hero h1 em { font-style: normal; color: var(--accent2); }
+    .hero p {
+      color: var(--text2); font-size: 1.05rem; line-height: 1.7;
+      margin-bottom: 2rem; max-width: 480px;
+    }
+    .hero-buttons { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.6rem 1.25rem; border-radius: var(--radius);
+      font-size: 0.9rem; font-weight: 600; transition: opacity .15s;
+    }
+    .btn:hover { opacity: 0.85; text-decoration: none; }
+    .btn-primary { background: var(--accent); color: #0d1117; }
+    .btn-secondary {
+      background: var(--bg3); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost { color: var(--text2); border: 1px solid var(--border); }
+
+    /* ── Code block ── */
+    .code-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden;
+    }
+    .code-card-header {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1rem; border-bottom: 1px solid var(--border);
+      background: var(--bg3);
+    }
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+    .code-filename { font-size: 0.8rem; color: var(--text2); margin-left: 0.5rem; font-family: monospace; }
+    .code-card pre {
+      padding: 1.25rem 1.5rem;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.82rem; line-height: 1.7; overflow-x: auto;
+    }
+    /* Spectre syntax colours */
+    .kw  { color: #ff7b72; }   /* keywords: var, action, invariant, … */
+    .ty  { color: #79c0ff; }   /* types: int, bool */
+    .fn  { color: #d2a8ff; }   /* action names */
+    .cm  { color: #8b949e; font-style: italic; }   /* comments */
+    .st  { color: #a5d6ff; }   /* strings / prop names */
+    .nu  { color: #f0883e; }   /* numbers */
+    .op  { color: #ff7b72; }   /* operators */
+
+    /* ── Features ── */
+    .section { max-width: 1100px; margin: 0 auto; padding: 4rem 2rem; }
+    .section-label {
+      font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 0.75rem;
+    }
+    .section h2 {
+      font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 800;
+      letter-spacing: -0.5px; margin-bottom: 0.75rem;
+    }
+    .section-sub { color: var(--text2); font-size: 1rem; max-width: 600px; margin-bottom: 3rem; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+    .feature-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.5rem;
+      transition: border-color .2s;
+    }
+    .feature-card:hover { border-color: var(--accent); }
+    .feature-icon { font-size: 1.5rem; margin-bottom: 0.75rem; }
+    .feature-card h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .feature-card p { font-size: 0.85rem; color: var(--text2); line-height: 1.6; }
+
+    .divider { border: none; border-top: 1px solid var(--border); }
+
+    /* ── Install ── */
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+    .tab {
+      padding: 0.6rem 1.25rem; cursor: pointer; font-size: 0.875rem; font-weight: 600;
+      color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -1px;
+      background: none; border-top: none; border-left: none; border-right: none;
+      transition: color .15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .install-steps { display: flex; flex-direction: column; gap: 1.25rem; }
+    .step {
+      display: grid; grid-template-columns: auto 1fr; gap: 1rem;
+      align-items: start;
+    }
+    .step-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(88, 166, 255, 0.15); color: var(--accent);
+      font-size: 0.8rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 2px;
+    }
+    .step-body h4 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .step-body p { font-size: 0.85rem; color: var(--text2); margin-bottom: 0.5rem; }
+    pre.shell {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 0.75rem 1rem;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.82rem; line-height: 1.6; overflow-x: auto;
+      color: var(--green);
+    }
+    pre.shell .cmd { color: var(--text); }
+    pre.shell .comment { color: var(--text2); font-style: italic; }
+
+    /* ── Backends ── */
+    .backend-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+    .backend-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.25rem;
+    }
+    .backend-card h3 { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .backend-card p { font-size: 0.82rem; color: var(--text2); }
+    .badge {
+      display: inline-block; font-size: 0.7rem; font-weight: 700;
+      padding: 0.15rem 0.5rem; border-radius: 100px; margin-bottom: 0.5rem;
+    }
+    .badge-green { background: rgba(63,185,80,.15); color: var(--green); }
+    .badge-blue  { background: rgba(88,166,255,.15); color: var(--accent); }
+    .badge-purple{ background: rgba(188,140,255,.15); color: var(--accent2); }
+
+    /* ── CTA band ── */
+    .cta-band {
+      background: linear-gradient(135deg, rgba(88,166,255,0.08), rgba(188,140,255,0.08));
+      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      text-align: center; padding: 4rem 2rem;
+    }
+    .cta-band h2 { font-size: 1.8rem; font-weight: 800; margin-bottom: 0.75rem; }
+    .cta-band p  { color: var(--text2); font-size: 1rem; margin-bottom: 2rem; }
+    .cta-buttons { display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: 1rem; font-size: 0.85rem; color: var(--text2);
+      max-width: 1100px; margin: 0 auto;
+    }
+    .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .footer-links a { color: var(--text2); }
+    .footer-links a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ───────────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-brand">
+    <span>◈</span> Spectre
+  </div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#install">Install</a>
+    <a href="spec.md">Spec</a>
+    <a href="spectre-book.pdf">Book</a>
+    <a href="https://github.com/BoundlessProducts/spectre" class="nav-cta">GitHub →</a>
+  </div>
+</nav>
+
+<!-- ── Hero ──────────────────────────────────────────────────── -->
+<div class="hero">
+  <div class="hero-text">
+    <div class="hero-eyebrow">research preview</div>
+    <h1>Formal specification for <em>real software</em></h1>
+    <p>
+      Model your system as a state machine, write invariants, and let Spectre
+      exhaustively explore every reachable state. Catch protocol bugs before they
+      reach production — then keep your spec in sync as the code evolves.
+    </p>
+    <div class="hero-buttons">
+      <a href="#install" class="btn btn-primary">Get started</a>
+      <a href="spectre-book.pdf" class="btn btn-secondary">Read the book</a>
+      <a href="https://github.com/BoundlessProducts/spectre" class="btn btn-ghost">GitHub</a>
+    </div>
+  </div>
+
+  <div class="code-card">
+    <div class="code-card-header">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <span class="code-filename">bank-account.spec</span>
+    </div>
+    <pre><code><span class="kw">var</span> balance: <span class="ty">int</span>
+<span class="kw">var</span> frozen:  <span class="ty">bool</span>
+
+<span class="kw">init</span> { balance = <span class="nu">0</span>  frozen = <span class="kw">false</span> }
+
+<span class="kw">action</span> <span class="fn">deposit</span>(amount: <span class="ty">int</span>) {
+  <span class="kw">require</span> amount &gt; <span class="nu">0</span>
+  balance&#39; = balance + amount
+}
+<span class="kw">action</span> <span class="fn">withdraw</span>(amount: <span class="ty">int</span>) {
+  <span class="kw">require</span> amount &gt; <span class="nu">0</span>
+  <span class="kw">require</span> balance &gt;= amount
+  <span class="kw">require</span> frozen == <span class="kw">false</span>
+  balance&#39; = balance - amount
+}
+<span class="kw">action</span> <span class="fn">freeze</span>   { frozen&#39; = <span class="kw">true</span>  }
+<span class="kw">action</span> <span class="fn">unfreeze</span> { frozen&#39; = <span class="kw">false</span> }
+
+<span class="kw">invariant</span> <span class="st">solvency</span> { balance &gt;= <span class="nu">0</span> }
+<span class="kw">temporal</span> <span class="st">liveness</span> {
+  <span class="kw">always</span> (frozen == <span class="kw">true</span> -&gt; <span class="kw">eventually</span> frozen == <span class="kw">false</span>)
+}</code></pre>
+  </div>
+</div>
+
+<!-- ── Features ──────────────────────────────────────────────── -->
+<hr class="divider" />
+<section class="section" id="features">
+  <div class="section-label">What Spectre does</div>
+  <h2>Everything from spec to production</h2>
+  <p class="section-sub">One language, one toolchain — from modelling your first state machine to monitoring invariants in a live Rust service.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>Exhaustive state exploration</h3>
+      <p>BFS explores every reachable state. Spectre reports the exact action sequence that triggers a bug — not just that one exists.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Bounded model checking (Z3)</h3>
+      <p>Encode your spec as SMT-LIB2 and find shallow bugs instantly with Z3 — no full state graph needed. Scales to huge specs.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔄</div>
+      <h3>SMT-backed drift detection</h3>
+      <p><code>spectre sync</code> classifies each changed action as structurally unchanged, SMT-proved equivalent, or semantically changed — with a counterexample witness.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧬</div>
+      <h3>Spec mining</h3>
+      <p>Extract a Spectre skeleton from existing Rust source automatically — fields become variables, methods become actions, guards are inferred.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧪</div>
+      <h3>Model-based testing</h3>
+      <p>Generate ITF traces, Rust test drivers, and replay harnesses. Five coverage modes including property-directed steering.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🛡️</div>
+      <h3>Runtime monitoring</h3>
+      <p>Generate a self-contained <code>monitor.rs</code> that checks all spec invariants in production — O(k) per step, zero external dependencies.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚙️</div>
+      <h3>Incremental re-verification</h3>
+      <p>When one action changes, re-verify only that action without rerunning full BFS. 4–5× faster on Raft (22k states).</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🗜️</div>
+      <h3>Partial-order reduction</h3>
+      <p><code>--por</code> skips redundant interleavings using the ample-set heuristic. 3-node Raft: 22,432 → 6,818 states (7.6× reduction).</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎯</div>
+      <h3>Property-directed exploration</h3>
+      <p>Best-first BFS steers toward invariant boundaries — finds all 29 violations in a queue spec in 204 states vs. 150k random steps.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Backends ───────────────────────────────────────────────── -->
+<hr class="divider" />
+<section class="section">
+  <div class="section-label">Verification backends</div>
+  <h2>Choose your backend</h2>
+  <p class="section-sub">Switch backends with a single flag — same spec, different trade-offs.</p>
+  <div class="backend-grid">
+    <div class="backend-card">
+      <span class="badge badge-green">Built-in</span>
+      <h3>BFS</h3>
+      <p>Default. Exhaustive exploration. Zero dependencies. Best for learning and small-to-medium specs.</p>
+    </div>
+    <div class="backend-card">
+      <span class="badge badge-blue">--backend z3</span>
+      <h3>Z3 BMC</h3>
+      <p>Bounded model checking via SMT. Finds shallow bugs fast in large state spaces. Requires <code>z3</code> binary.</p>
+    </div>
+    <div class="backend-card">
+      <span class="badge badge-purple">--backend tlc</span>
+      <h3>TLC</h3>
+      <p>Exhaustive TLA+ model checker. Required for liveness and fairness properties. Requires Java + TLC jar.</p>
+    </div>
+    <div class="backend-card">
+      <span class="badge badge-purple">--backend apalache</span>
+      <h3>Apalache</h3>
+      <p>Symbolic model checker via Z3. Handles large state spaces exhaustively. Requires Java + Apalache.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Install ───────────────────────────────────────────────── -->
+<hr class="divider" />
+<section class="section" id="install">
+  <div class="section-label">Getting started</div>
+  <h2>Install Spectre</h2>
+  <p class="section-sub">Download a pre-built binary or build from source in under a minute.</p>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('mac')">macOS</button>
+    <button class="tab" onclick="showTab('linux')">Linux</button>
+    <button class="tab" onclick="showTab('windows')">Windows</button>
+    <button class="tab" onclick="showTab('source')">From source</button>
+  </div>
+
+  <div id="tab-mac" class="tab-content active">
+    <div class="install-steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Download the binary</h4>
+          <p>Get the latest release for your chip from the <a href="https://github.com/BoundlessProducts/spectre/releases/latest">Releases page</a>.</p>
+          <pre class="shell"><span class="comment"># Apple Silicon (M1/M2/M3)</span>
+<span class="cmd">curl -LO https://github.com/BoundlessProducts/spectre/releases/latest/download/spectre_darwin_arm64.tar.gz
+tar xf spectre_darwin_arm64.tar.gz</span>
+
+<span class="comment"># Intel Mac</span>
+<span class="cmd">curl -LO https://github.com/BoundlessProducts/spectre/releases/latest/download/spectre_darwin_amd64.tar.gz
+tar xf spectre_darwin_amd64.tar.gz</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Install globally</h4>
+          <pre class="shell"><span class="cmd">sudo mv spectre /usr/local/bin/
+spectre --help</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Optional: install Z3 for drift detection</h4>
+          <pre class="shell"><span class="cmd">brew install z3</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Verify your first spec</h4>
+          <pre class="shell"><span class="cmd">spectre verify examples/bank-account-violation.spec</span>
+<span class="comment"># Finds invariant violation in one step</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-linux" class="tab-content">
+    <div class="install-steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Download the binary</h4>
+          <pre class="shell"><span class="cmd">curl -LO https://github.com/BoundlessProducts/spectre/releases/latest/download/spectre_linux_amd64.tar.gz
+tar xf spectre_linux_amd64.tar.gz</span>
+<span class="comment"># ARM64 (Graviton, Pi): use spectre_linux_arm64.tar.gz</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Install globally</h4>
+          <pre class="shell"><span class="cmd">sudo mv spectre /usr/local/bin/
+spectre --help</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Optional: install Z3</h4>
+          <pre class="shell"><span class="cmd">sudo apt install z3        </span><span class="comment"># Debian / Ubuntu</span>
+<span class="cmd">sudo dnf install z3        </span><span class="comment"># Fedora / RHEL</span>
+<span class="cmd">sudo pacman -S z3          </span><span class="comment"># Arch</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-windows" class="tab-content">
+    <div class="install-steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Download the binary</h4>
+          <p>Download <code>spectre_windows_amd64.zip</code> from the <a href="https://github.com/BoundlessProducts/spectre/releases/latest">Releases page</a>, extract it, and add the folder to your <code>PATH</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Verify installation</h4>
+          <pre class="shell"><span class="cmd">spectre.exe --help</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Optional: install Z3</h4>
+          <p>Download the Z3 Windows binary from <a href="https://github.com/Z3Prover/z3/releases">github.com/Z3Prover/z3/releases</a> and add <code>bin/</code> to your PATH.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-source" class="tab-content">
+    <div class="install-steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Prerequisites</h4>
+          <p>Go ≥ 1.24 — install from <a href="https://go.dev/dl/">go.dev/dl</a> or <code>brew install go</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Clone and build</h4>
+          <pre class="shell"><span class="cmd">git clone https://github.com/BoundlessProducts/spectre.git
+cd spectre
+go build -o spectre ./cmd/spectre
+./spectre --help</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Install globally (optional)</h4>
+          <pre class="shell"><span class="cmd">go install ./cmd/spectre</span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ───────────────────────────────────────────────────── -->
+<div class="cta-band">
+  <h2>Ready to specify?</h2>
+  <p>Read the book to go from zero to verifying a distributed protocol in under an hour.</p>
+  <div class="cta-buttons">
+    <a href="spectre-book.pdf" class="btn btn-primary">Read the Spectre Book (PDF)</a>
+    <a href="https://github.com/BoundlessProducts/spectre" class="btn btn-secondary">View on GitHub</a>
+  </div>
+</div>
+
+<!-- ── Footer ────────────────────────────────────────────────── -->
+<footer>
+  <span>Spectre — a research project. Not intended for commercial use.</span>
+  <div class="footer-links">
+    <a href="https://github.com/BoundlessProducts/spectre">GitHub</a>
+    <a href="spectre-book.pdf">Book (PDF)</a>
+    <a href="spec.md">Language Spec</a>
+    <a href="language_definition.md">Grammar (EBNF)</a>
+  </div>
+</footer>
+
+<script>
+  function showTab(id) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    event.target.classList.add('active');
+  }
+</script>
+
+</body>
+</html>
