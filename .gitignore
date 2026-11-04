@@ -45,6 +45,9 @@ spectre_new
 /spectre-mine-rs
 spectre-vmcai-2027.zip
 
+# Secrets
+.env
+
 # Runtime state
 temp.txt
 texput.log

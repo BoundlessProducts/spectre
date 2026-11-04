@@ -8,11 +8,8 @@ on:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Test (Linux)
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +28,9 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      # macOS is not in the cloud matrix — run `make ci` locally on your Mac
+      # before pushing to catch platform-specific issues early.
 
   benchmarks:
     name: Benchmark smoke-test
