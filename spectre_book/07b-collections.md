@@ -44,8 +44,13 @@ The full method set:
 | `S.contains(x)` | `bool` | True if x is in S |
 | `x in S` | `bool` | Same — infix form, reads naturally in guards |
 | `S.size()` | `int` | Number of elements |
-| `S.filter(fn)` | `Set<T>` | Elements matching predicate |
-| `S.toList()` | `List<T>` | Convert to list (order unspecified) |
+| `S.filter(fn)` | `Set<T>` | Elements matching predicate *(BFS only)* |
+| `S.forall(fn)` | `bool` | True if all elements satisfy predicate *(BFS only)* |
+| `S.exists(fn)` | `bool` | True if any element satisfies predicate *(BFS only)* |
+| `S.map(fn)` | `Set<U>` | Apply fn to each element *(BFS only)* |
+| `S.toList()` | `List<T>` | Convert to list, order unspecified *(BFS only)* |
+
+> **Backend note:** Methods marked *(BFS only)* are supported by the built-in BFS evaluator but are not translated by the Z3 or TLC backends. Using them with `--backend z3` or `--backend tlc` will produce an error or silently incorrect output. Stick to `union`, `intersection`, `difference`, `contains`, `size`, and the `in` operator when targeting those backends.
 
 The `in` operator is the most natural way to write membership guards:
 
@@ -92,8 +97,12 @@ action enqueue { queue' = queue.append(42) }
 | `L.head()` | `T` | First element (error if empty) |
 | `L.tail()` | `List<T>` | List without first element |
 | `L.size()` | `int` | Number of elements |
-| `L.filter(fn)` | `List<T>` | Elements matching predicate |
-| `L.toSet()` | `Set<T>` | Convert to set (drops order/duplicates) |
+| `L.filter(fn)` | `List<T>` | Elements matching predicate *(BFS only)* |
+| `L.map(fn)` | `List<U>` | Apply fn to each element *(BFS only)* |
+| `L.forall(fn)` | `bool` | True if all elements satisfy predicate *(BFS only)* |
+| `L.exists(fn)` | `bool` | True if any element satisfies predicate *(BFS only)* |
+| `L.reduce(init, fn)` | `U` | Fold over list *(BFS only)* |
+| `L.toSet()` | `Set<T>` | Convert to set, drops duplicates *(BFS only)* |
 
 ---
 

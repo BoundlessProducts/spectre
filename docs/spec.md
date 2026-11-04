@@ -1569,7 +1569,7 @@ temporal eventuallyTransaction {
 - `S.contains(x)` — membership test, returns `bool`
 - `S.size()` — number of elements, returns `int`
 
-**Not currently implemented:** `forall`, `exists`, `filter`, `map`, `toList`, `Set.empty()`, `Set.of()`.
+**BFS backend only** (not supported by `--backend z3` or `--backend tlc`): `S.forall(fn)`, `S.exists(fn)`, `S.filter(fn)`, `S.map(fn)`, `S.toList()`, `Set.empty()`, `Set.of()`.
 
 **Backend note:** `S.size()` comparisons are unreliable under the Z3 backend. Use `--backend tlc` for specs that compare set sizes.
 
@@ -1598,7 +1598,7 @@ invariant hasThree { 3 in members }
 - `L.tail()` — list without first element; **disables action if list is empty**
 - `L.size()` — number of elements, returns `int`
 
-**Not currently implemented:** `forall`, `exists`, `filter`, `map`, `reduce`, `toSet`, `List.empty()`, `List.of()`.
+**BFS backend only** (not supported by `--backend z3` or `--backend tlc`): `L.forall(fn)`, `L.exists(fn)`, `L.filter(fn)`, `L.map(fn)`, `L.reduce(init, fn)`, `L.toSet()`, `List.empty()`, `List.of()`.
 
 ```spectre
 var queue: List<int>
@@ -1621,8 +1621,9 @@ There is no map literal syntax. Use `{}` for the empty map (requires type contex
 **Methods (implemented):**
 - `M.put(k, v)` — insert or update key `k` with value `v`, returns new `Map<K,V>`
 - `M.get(k)` — look up key `k`, returns `V`; **disables action if key is absent**
+- `M.contains(k)` or `k in M` — `true` if key `k` is present
 
-**Not currently implemented:** `M.contains(k)`, `M.keys()`, `M.values()`, `Map.empty()`.
+**Not implemented:** `M.keys()`, `M.values()`, `Map.empty()`.
 
 ```spectre
 var scores: Map<int, int>
@@ -1656,7 +1657,7 @@ The Spectre verifier checks:
 
 - **Bounded Model Checking**: Check properties up to a certain depth
 - **Unbounded Model Checking**: Check properties for all possible executions
-- **Liveness Checking**: Verify temporal properties (eventually, always, etc.)
+- **Liveness Checking**: Requires `--backend tlc`. The BFS backend explores reachability only and does not soundly validate `eventually`, `WF`, or `SF` properties.
 - **Initial State Exploration**: When `oneOf` is used, verify properties starting from each initial state
 
 ### Stuttering Detection

@@ -187,11 +187,21 @@ nodes' = nodes.union({new_node})
 
 ### Collection method quick reference
 
+**All backends** (`--backend bfs`, `--backend z3`, `--backend tlc`):
+
 | Collection | Methods |
 |------------|---------|
-| `Set<T>` | `.union(S)`, `.intersection(S)`, `.difference(S)`, `.contains(x)`, `.filter(f)`, `.size()`, `.toList()` |
-| `Map<K,V>` | `.put(k,v)`, `.get(k)`, `.contains(k)`, `.size()` |
-| `List<T>` | `.append(x)`, `.head()`, `.tail()`, `.filter(f)`, `.map(f)`, `.size()`, `.toSet()` |
+| `Set<T>` | `.union(S)`, `.intersection(S)`, `.difference(S)`, `.contains(x)`, `.size()` and `x in S` |
+| `Map<K,V>` | `.put(k,v)`, `.get(k)`, `.contains(k)` and `k in M` |
+| `List<T>` | `.append(x)`, `.head()`, `.tail()`, `.size()` |
+
+**BFS backend only** (not supported by `--backend z3` or `--backend tlc`):
+
+| Collection | Methods |
+|------------|---------|
+| `Set<T>` | `.filter(f)`, `.forall(f)`, `.exists(f)`, `.map(f)`, `.toList()`, `Set.empty()`, `Set.of(x)` |
+| `Map<K,V>` | `.keys()`, `.values()`, `Map.empty()` |
+| `List<T>` | `.filter(f)`, `.map(f)`, `.forall(f)`, `.exists(f)`, `.reduce(init, f)`, `.toSet()`, `List.empty()`, `List.of(x)` |
 
 ### Collection error semantics
 
