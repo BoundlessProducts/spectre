@@ -1,4 +1,4 @@
-# GitHub Pages config — serves docs/ as plain HTML (no Jekyll processing)
+# GitHub Pages config
+# Exclude markdown source files from the built site (they are linked as raw files or not at all)
 exclude:
   - "*.md"
-  - "*.pdf"
