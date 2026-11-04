@@ -5,6 +5,8 @@
 #   goreleaser release --snapshot --clean   # local test, no publish
 #   GITHUB_TOKEN=<token> goreleaser release --clean   # real publish (needs a tag)
 
+version: 2
+
 project_name: spectre
 
 before:
@@ -32,13 +34,15 @@ builds:
 
 archives:
   - id: default
-    builds:
+    ids:
       - spectre
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - README.md
       - LICENSE
