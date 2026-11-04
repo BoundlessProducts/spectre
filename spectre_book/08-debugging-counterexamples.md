@@ -1,4 +1,4 @@
-# Chapter 8: Reading counterexamples and debugging
+# Reading counterexamples and debugging
 
 When verification fails, Spectre gives you the shortest possible path to the violation. Here's how to read it and fix the spec.
 
@@ -7,30 +7,29 @@ When verification fails, Spectre gives you the shortest possible path to the vio
 ## Anatomy of a violation trace
 
 ```
-✗ violation — invariant 'solvent' after action 'withdraw'
+Violations:
 
-Counterexample (4 steps):
-  step 0  init:      balance = 0,    status = Active
-  step 1  deposit:   balance = 100,  status = Active
-  step 2  deposit:   balance = 200,  status = Active
-  step 3  withdraw:  balance = 200,  status = Active
-  step 4  withdraw:  balance = -100, status = Active  ← VIOLATION
-                     ↑ changed: balance 200 → -100
-
-Failed invariant: solvent  (balance >= 0)
-  balance = -100  violates  balance >= 0
+1.   Invariant violated: solvent              <- which invariant failed
+  Counterexample trace (4 step(s)):           <- BFS shortest path
+    [init]                                    <- starting state
+    [step 1] deposit:  balance: 0 -> 100       <- action + what changed
+    [step 2] deposit:  balance: 100 -> 200
+    [step 3] withdraw: balance: 200 -> 200     <- no change (wrong action)
+    [step 4] withdraw: balance: 200 -> -100
+    [VIOLATION] invariant "solvent" fails in this state
+      balance = -100                          <- concrete value that broke it
+      status = Active
 ```
 
 Every part of the output tells you something:
 
 | Part | What it tells you |
 |------|------------------|
-| **Violation line** | Which invariant failed, which action triggered it |
-| **Counterexample (N steps)** | BFS found the *shortest* path — no shorter path exists |
-| **Each step** | Which action ran + the full state after it |
-| **← VIOLATION** | The exact state where the invariant first fails |
-| **Changed field** | What changed from the previous step |
-| **Failed invariant** | The expression and the concrete values that broke it |
+| **Invariant violated** | Which invariant failed |
+| **Counterexample (N step(s))** | BFS found the *shortest* path — no shorter path exists |
+| **Each step** | Which action ran + which variable changed and how |
+| **[VIOLATION]** | The exact state where the invariant first fails |
+| **Variable list** | The full state that broke the invariant |
 
 ---
 
@@ -39,19 +38,19 @@ Every part of the output tells you something:
 ```
 1. Read the violated invariant
          │  "solvent: balance >= 0"
-         ▼
+         v
 2. Look at the violation step
          │  "withdraw: balance = -100"
-         ▼
+         v
 3. Read backwards — what enabled this action?
          │  Previous state: balance = 200, no require check
-         ▼
+         v
 4. Find the missing guard
          │  withdraw has no "require balance >= amount"
-         ▼
+         v
 5. Add require, re-verify
-         │  spectre verify bank.spec  →  ✓ safe
-         ▼
+         │  spectre verify bank.spec  ->  (ok) safe
+         v
        done
 ```
 
@@ -74,7 +73,7 @@ action transfer {
 
 invariant alice_solvent { alice >= 0       }
 invariant bob_solvent   { bob   >= 0       }
-invariant total_fixed   { alice + bob = 300 }
+invariant total_fixed   { alice + bob == 300 }
 ```
 
 ```bash
@@ -82,20 +81,20 @@ spectre verify transfer-broken.spec
 ```
 
 ```
-✗ violation — invariant 'alice_solvent' after action 'transfer'
+Violations:
 
-Counterexample (3 steps):
-  step 0  init:     alice = 200, bob = 100
-  step 1  transfer: alice = 100, bob = 200
-  step 2  transfer: alice = 0,   bob = 300
-  step 3  transfer: alice = -100, bob = 400  ← VIOLATION
-                    ↑ changed: alice 0 → -100
-
-Failed invariant: alice_solvent  (alice >= 0)
-  alice = -100  violates  alice >= 0
+1.   Invariant violated: alice_solvent
+  Action 'transfer' would violate invariants: [invariant alice_solvent violated]
+  Counterexample trace (2 step(s)):
+    [init]
+    [step 1] transfer: alice: 200 -> 100, bob: 100 -> 200
+    [step 2] transfer: alice: 100 -> 0,   bob: 200 -> 300
+    [VIOLATION] invariant "alice_solvent" fails in this state
+      alice = 0
+      bob = 300
 ```
 
-The fix — add a require:
+Spectre reports the state where the *next* `transfer` would violate `alice_solvent` (alice=0 -> -100). The fix — add a require:
 
 ```spectre
 action transfer {
@@ -107,7 +106,8 @@ action transfer {
 
 ```bash
 spectre verify transfer-fixed.spec
-# ✓ safe — 7 states explored (exhaustive)
+# Exhaustive verification: traversed 3 states (full reachable space)
+# Found no violations.
 ```
 
 Notice `total_fixed` — it catches bugs where money is created or destroyed. You get that protection for free just by writing the accounting identity as an invariant.
@@ -158,11 +158,11 @@ Spectre checks all invariants and reports the first violation it finds (shortest
 
 ```bash
 spectre verify buggy.spec
-# ✗ violation — invariant 'alice_solvent' ...
+# (x) violation -- invariant 'alice_solvent' ...
 
 # Fix alice_solvent, then:
 spectre verify partially-fixed.spec
-# ✗ violation — invariant 'total_fixed' ...
+# (x) violation -- invariant 'total_fixed' ...
 ```
 
 ---
@@ -170,7 +170,7 @@ spectre verify partially-fixed.spec
 ## Dealing with bounded results
 
 ```
-bounded — hit state limit (5000 states)
+bounded -- hit state limit (5000 states)
 ```
 
 This means BFS stopped before exploring everything. Your spec might be safe — or the violation might be deeper than the limit. Your options:
@@ -196,7 +196,7 @@ Always check whether the output says `exhaustive` or `bounded` — it matters fo
 |---------|-------------|-----|
 | Negative integer variable | Missing lower-bound require | `require x >= 0` before decrement |
 | Variable exceeds param | Missing upper-bound require | `require x < MAX` before increment |
-| Enum in wrong state | Action enabled in wrong phase | `require phase = Expected` |
+| Enum in wrong state | Action enabled in wrong phase | `require phase == Phase.Expected` |
 | Two actors in critical section | No mutual exclusion | Add lock variable + requires |
 | Accounting identity broken | Value leaked or doubled | Check all actions modify both sides |
 
@@ -204,7 +204,7 @@ Always check whether the output says `exhaustive` or `bounded` — it matters fo
 
 ## Tips for writing debuggable specs
 
-- **Write accounting identities** — `alice + bob = TOTAL` catches money bugs for free
+- **Write accounting identities** — `alice + bob == TOTAL` catches money bugs for free
 - **Name invariants clearly** — the name is the first thing you see in a violation
 - **One concept per action** — large multi-step actions are hard to trace
 - **Start with small params** — `--param N=3` first, then scale up

@@ -1,4 +1,4 @@
-# Chapter 1: Getting started
+# Getting started
 
 ---
 
@@ -12,7 +12,7 @@ go build -o spectre ./cmd/spectre
 sudo mv spectre /usr/local/bin/
 
 spectre --version
-# spectre version 0.3.2
+# spectre version dev
 ```
 
 No runtime dependencies, no Docker, no JVM needed for the default BFS backend.
@@ -25,7 +25,7 @@ Save this as `counter.spec`:
 
 ```spectre
 var value: int
-param MAX: int = 5
+const MAX: int = 5
 
 init { value = 0 }
 
@@ -49,8 +49,8 @@ spectre verify counter.spec
 ```
 
 ```
-✓ safe — 6 states explored (exhaustive)
-  Invariants checked: non_negative, within_bounds
+Exhaustive verification: traversed 6 states (full reachable space)
+Found no violations.
 ```
 
 ---
@@ -60,13 +60,13 @@ spectre verify counter.spec
 ```
 counter.spec
   ├── var value: int              ← one piece of state
-  ├── param MAX: int = 5          ← a named constant
+  ├── const MAX: int = 5          ← a named constant
   ├── init { value = 0 }          ← where to start
-  ├── action increment { … }      ← one possible transition
-  ├── action reset { … }          ← another transition
-  └── invariant within_bounds … ← the property to check
+  ├── action increment { ... }    ← one possible transition
+  ├── action reset { ... }        ← another transition
+  └── invariant within_bounds ... ← the property to check
           │
-          ▼
+          v
     spectre verify
           │
     BFS explores all 6 reachable states
@@ -74,11 +74,13 @@ counter.spec
           │
     checks both invariants in every state
           │
-          ▼
-        ✓ safe
+          v
+        (ok) safe
 ```
 
-Spectre uses **breadth-first search** — it finds every state reachable from `init` and checks your invariants in all of them. Six states here because `value` can be `0`–`5` and `reset` can always bring it back.
+Spectre uses **breadth-first search (BFS)** as its default learning and exploration backend — zero setup, instant feedback, great for writing and debugging specs. It finds every state reachable from `init` and checks your invariants in all of them. Six states here because `value` can be `0`–`5` and `reset` can always bring it back.
+
+BFS is perfect for learning Spectre and iterating quickly. For production liveness verification or large state spaces, use `--backend tlc` or `--backend apalache` (see the Backend Selection chapter).
 
 ---
 
@@ -98,18 +100,27 @@ spectre verify counter.spec
 ```
 
 ```
-✗ violation — invariant 'within_bounds' after action 'increment'
+Violations:
 
-Counterexample (6 steps):
-  step 0  init:       value = 0
-  step 1  increment:  value = 1
-  step 2  increment:  value = 2
-  step 3  increment:  value = 3
-  step 4  increment:  value = 4
-  step 5  increment:  value = 5
-  step 6  increment:  value = 6  ← VIOLATION
-                      within_bounds: value <= MAX → 6 <= 5  FAILS
+1.   Invariant violated: within_bounds
+  Action 'increment' would violate invariants: [invariant within_bounds violated]
+  Counterexample trace (5 step(s)):
+    [init]
+    [step 1] increment
+      value: 0 -> 1
+    [step 2] increment
+      value: 1 -> 2
+    [step 3] increment
+      value: 2 -> 3
+    [step 4] increment
+      value: 3 -> 4
+    [step 5] increment
+      value: 4 -> 5
+    [VIOLATION] invariant "within_bounds" fails in this state
+      value = 5
 ```
+
+Spectre shows the state where the *next* `increment` would violate `within_bounds` (value 5 + 1 = 6 > MAX). Add back `require value < MAX` to fix it.
 
 Spectre found the shortest path to a bad state: six increments from zero.
 
@@ -125,7 +136,7 @@ Restore `require value < MAX`. This tells Spectre: "increment can only fire when
 
 | Command | What it does |
 |---------|-------------|
-| `spectre verify <file>` | BFS — exhaustively checks all reachable states |
+| `spectre verify <file>` | BFS — exhaustively checks all reachable states (learning/exploration mode) |
 | `spectre verify <file> --backend z3` | Bounded check — fast, finds shallow bugs |
 | `spectre verify <file> --backend tlc` | Delegates to TLA+ Tools (validated fairness) |
 | `spectre verify <file> --backend apalache` | Delegates to Apalache (symbolic, large specs) |
@@ -140,23 +151,26 @@ Restore `require value < MAX`. This tells Spectre: "increment can only fire when
 ```
       Your goal
           │
-          ▼
-  ┌───────────────────────────────────────────────────────┐
-  │ Find shallow bugs quickly (≤20 steps)?                │
-  │   → --backend z3 --bmc-depth 20                       │
-  ├───────────────────────────────────────────────────────┤
-  │ Exhaustive proof on a small–medium spec?              │
-  │   → spectre verify  (default BFS)                     │
-  ├───────────────────────────────────────────────────────┤
-  │ Liveness / fairness properties you can trust?         │
-  │   → --backend tlc  or  --backend apalache             │
-  ├───────────────────────────────────────────────────────┤
-  │ Spec too large for BFS (millions of states)?          │
-  │   → --backend apalache  (symbolic, handles large)     │
-  └───────────────────────────────────────────────────────┘
+          v
+  +-------------------------------------------------------+
+  | Learning / exploring a new spec?                      |
+  |   -> spectre verify  (default BFS, zero setup)        |
+  +-------------------------------------------------------+
+  | Find shallow bugs quickly (<=20 steps)?               |
+  |   -> --backend z3 --bmc-depth 20                      |
+  +-------------------------------------------------------+
+  | Exhaustive proof on a small-medium spec?              |
+  |   -> spectre verify  (default BFS)                    |
+  +-------------------------------------------------------+
+  | Liveness / fairness properties you can trust?         |
+  |   -> --backend tlc  or  --backend apalache            |
+  +-------------------------------------------------------+
+  | Spec too large for BFS (millions of states)?          |
+  |   -> --backend apalache  (symbolic, handles large)    |
+  +-------------------------------------------------------+
 ```
 
-Chapter 9 covers the full decision guide.
+The Backend Selection chapter covers the full decision guide.
 
 ---
 
@@ -165,24 +179,24 @@ Chapter 9 covers the full decision guide.
 ```
 Rust source
     │
-    ▼
+    v
 spectre mine --lang rust src/account.rs
     │
-    ▼
-account.spec  ← skeleton; add invariants by hand
+    v
+account.spec  <- skeleton; add invariants by hand
     │
-    ▼
+    v
 spectre verify account.spec
     │
-    ├── ✓ safe ────────────────► commit .spec alongside source
+    +-- (ok) safe -----------------> commit .spec alongside source
     │
-    └── ✗ violation
+    +-- (x) violation
               │
-              ▼
+              v
          spectre verify account.spec --suggest-repairs
               │
-              ▼
-         CANDIDATE patches  ← review, apply, re-verify
+              v
+         CANDIDATE patches  <- review, apply, re-verify
 ```
 
 Once safe, one spec drives three downstream workflows:
@@ -190,15 +204,15 @@ Once safe, one spec drives three downstream workflows:
 ```
 account.spec
     │
-    ├──► spectre generate-driver  →  Rust conformance test harness  (Ch 12)
-    ├──► spectre generate-monitor →  embedded runtime monitor       (Ch 13)
-    └──► spectre sync account.rs  →  drift detection as code evolves (Ch 11)
+    +---> spectre generate-driver  ->  Rust conformance test harness  (Model-Based Testing chapter)
+    +---> spectre generate-monitor ->  embedded runtime monitor       (Runtime Monitoring chapter)
+    +---> spectre sync account.rs  ->  drift detection as code evolves (Drift and Sync chapter)
 ```
 
 ---
 
 ## What's next
 
-- **Chapter 2** — every language construct with examples
-- **Chapter 3** — safety invariants in depth, reading violations, repair suggestions
-- **Chapter 9** — picking the right backend for your problem
+- **The Spectre Language chapter** — every language construct with examples
+- **Safety Properties chapter** — safety invariants in depth, reading violations, repair suggestions
+- **Backend Selection chapter** — picking the right backend for your problem

@@ -1,4 +1,4 @@
-# Chapter 3: Safety properties and invariants
+# Safety properties and invariants
 
 ---
 
@@ -18,7 +18,7 @@
 
 ```spectre
 var items:  int
-param CAPACITY: int = 10
+const CAPACITY: int = 10
 
 invariant not_full    { items <= CAPACITY }
 invariant not_empty   { items >= 0 }
@@ -33,10 +33,10 @@ enum Phase { Idle, Running, Done }
 var phase:   Phase
 var started: bool
 
-invariant consistent { phase = Running → started }
+invariant consistent { phase != Phase.Running || started }
 ```
 
-"If the machine is running, it must have been started." Use `→` (or write `not P or Q`) for implication.
+"If the machine is running, it must have been started." Use `P != Q || R` or `!P || Q` for implication in invariants.
 
 ### 3. Mutual exclusion
 
@@ -44,7 +44,7 @@ invariant consistent { phase = Running → started }
 var lock_a: bool
 var lock_b: bool
 
-invariant mutual_exclusion { not (lock_a and lock_b) }
+invariant mutual_exclusion { !(lock_a && lock_b) }
 ```
 
 Use this for: locks, tokens, single-owner resources.
@@ -57,12 +57,12 @@ Use this for: locks, tokens, single-owner resources.
 // bank-buggy.spec
 
 var balance: int
-param LIMIT: int = 1000
+const LIMIT: int = 1000
 
 init { balance = 0 }
 
 action deposit  { balance' = balance + 100 }
-action withdraw { balance' = balance - 100 }   // ← no require!
+action withdraw { balance' = balance - 100 }   // <- no require!
 
 invariant solvent    { balance >= 0 }
 invariant within_cap { balance <= LIMIT }
@@ -73,12 +73,14 @@ spectre verify bank-buggy.spec
 ```
 
 ```
-✗ violation — invariant 'solvent' after action 'withdraw'
+Violations:
 
-Counterexample (2 steps):
-  step 0  init:     balance = 0
-  step 1  withdraw: balance = -100  ← VIOLATION
-                    solvent: balance >= 0  →  -100 >= 0  FAILS
+1.   Invariant violated: solvent
+  Counterexample trace (1 step(s)):
+    [init]
+    [step 1] withdraw: balance: 0 -> -100
+    [VIOLATION] invariant "solvent" fails in this state
+      balance = -100
 ```
 
 ---
@@ -86,22 +88,21 @@ Counterexample (2 steps):
 ## Reading a violation trace
 
 ```
-✗ violation — invariant 'solvent' after action 'withdraw'
-  ↑ which invariant failed    ↑ which action triggered it
+Violations:
 
-Counterexample (2 steps):              ← shortest path to the bad state
-  step 0  init:     balance = 0        ← initial state
-  step 1  withdraw: balance = -100     ← state after the action
-
-                    solvent: balance >= 0  →  -100 >= 0  FAILS
-                    ↑ invariant name      ↑ expression   ↑ why it fails
+1.   Invariant violated: solvent     <- which invariant failed
+  Counterexample trace (1 step(s)):
+    [init]                            <- initial state
+    [step 1] withdraw: balance: 0 -> -100   <- which action fired + what changed
+    [VIOLATION] invariant "solvent" fails in this state
+      balance = -100                  <- concrete value that broke the invariant
 ```
 
 Every line in the trace shows:
 - The **step number**
 - The **action** that fired (or `init`)
-- The **full state** after the action (all variables)
-- On the violation line: the invariant expression and what value made it fail
+- The **changed variable** and its before/after values
+- The **violated invariant** name and the concrete state that broke it
 
 ---
 
@@ -115,24 +116,24 @@ Here's a more interesting bug — withdraw only fails after a freeze/unfreeze cy
 enum Status { Active, Frozen }
 var balance: int
 var status:  Status
-param LIMIT: int = 1000
+const LIMIT: int = 1000
 
-init { balance = 0  status = Active }
+init { balance = 0  status = Status.Active }
 
 action deposit  {
-  require status = Active
+  require status == Status.Active
   require balance + 100 <= LIMIT
   balance' = balance + 100
 }
 
 action withdraw {
-  require status = Active
+  require status == Status.Active
   // missing: require balance >= 100
   balance' = balance - 100
 }
 
-action freeze   { status' = Frozen  }
-action unfreeze { status' = Active  }
+action freeze   { status' = Status.Frozen  }
+action unfreeze { status' = Status.Active  }
 
 invariant solvent { balance >= 0 }
 ```
@@ -142,11 +143,14 @@ spectre verify bank-freeze-bug.spec
 ```
 
 ```
-✗ violation — invariant 'solvent' after action 'withdraw'
+Violations:
 
-Counterexample (2 steps):
-  step 0  init:     balance = 0, status = Active
-  step 1  withdraw: balance = -100, status = Active  ← VIOLATION
+1.   Invariant violated: solvent
+  Counterexample trace (1 step(s)):
+    [init]
+    [step 1] withdraw: balance: 0 -> -100
+    [VIOLATION] invariant "solvent" fails in this state
+      balance = -100, status = Active
 ```
 
 Spectre still finds the shortest path (2 steps), ignoring the freeze/unfreeze actions since they're not needed to trigger the bug.
@@ -178,7 +182,7 @@ Applying repair [1]: add `require balance >= 100` to `withdraw`. Re-verify:
 
 ```bash
 spectre verify bank.spec
-# ✓ safe — 12 states explored (exhaustive)
+# Exhaustive verification: traversed 22 states (full reachable space)
 ```
 
 ---
@@ -188,7 +192,7 @@ spectre verify bank.spec
 ```spectre
 invariant solvent     { balance >= 0 }
 invariant within_cap  { balance <= LIMIT }
-invariant frozen_safe { status = Frozen → balance = 0 }
+invariant frozen_safe { status != Status.Frozen || balance == 0 }
 ```
 
 Spectre checks all invariants independently. If multiple are violated, each is reported with its own trace.
@@ -199,35 +203,27 @@ Spectre checks all invariants independently. If multiple are violated, each is r
 
 ```spectre
 // producer-consumer.spec
-param BUFFER_SIZE: int = 5
+const BUFFER_SIZE: int = 5
 
-var produced: int
-var consumed: int
+var items: int
 
-init { produced = 0  consumed = 0 }
+init { items = 0 }
 
-action produce {
-  require produced - consumed < BUFFER_SIZE
-  produced' = produced + 1
-}
+action produce { require items < BUFFER_SIZE  items' = items + 1 }
+action consume { require items > 0            items' = items - 1 }
 
-action consume {
-  require consumed < produced
-  consumed' = consumed + 1
-}
-
-invariant buffer_bounded { produced - consumed <= BUFFER_SIZE }
-invariant no_underflow   { consumed <= produced }
+invariant buffer_bounded { items <= BUFFER_SIZE }
+invariant no_underflow   { items >= 0 }
 ```
 
-Verify at different sizes:
+Verify at different sizes by overriding the constant at the command line:
 
 ```bash
 spectre verify producer.spec --param BUFFER_SIZE=3
-# ✓ safe — 10 states explored (exhaustive)
+# Exhaustive verification: traversed 4 states (full reachable space)
 
 spectre verify producer.spec --param BUFFER_SIZE=10
-# ✓ safe — 66 states explored (exhaustive)
+# Exhaustive verification: traversed 11 states (full reachable space)
 ```
 
 Sweep the whole range:
@@ -242,8 +238,8 @@ spectre verify producer.spec --param-range BUFFER_SIZE=1..20
 
 | Output line | What it means |
 |------------|---------------|
-| `6 states explored (exhaustive)` | Full proof — every reachable state checked |
-| `5000 states explored (bounded — hit state limit)` | Incomplete — violation may still exist beyond the limit |
+| `traversed 6 states (full reachable space)` | Full proof — every reachable state checked |
+| `traversed 5000 states (state or depth limit reached)` | Incomplete — violation may still exist beyond the limit |
 
 Use `--max-states` to control the limit:
 
@@ -261,9 +257,9 @@ Always check whether your result was **exhaustive**. A bounded result is not a p
 For each resource or constraint in your system, ask:
 
 - **Bounds**: is there a min or max? → `x >= 0`, `x <= LIMIT`
-- **Ordering**: must A happen before B? → `phase = B → started_A`
-- **Exclusion**: can only one hold at a time? → `not (P and Q)`
-- **Consistency**: do related variables agree? → `frozen → balance = 0`
+- **Ordering**: must A happen before B? → `phase != Phase.B || startedA`
+- **Exclusion**: can only one hold at a time? → `!(P && Q)`
+- **Consistency**: do related variables agree? → `status != Status.Frozen || balance == 0`
 - **Monotonicity**: can this only go up/down? → `count >= prev_count`
 
 ---
@@ -273,18 +269,18 @@ For each resource or constraint in your system, ask:
 ```
 write invariants
       │
-      ▼
+      v
 spectre verify
       │
    violation?
-   ┌──┴──┐
+   +--+--+
   yes    no
-   │      └──► ✓ invariant holds in all reachable states  ← exhaustive result
-   ▼
+   │      +--> (ok) invariant holds in all reachable states  <- exhaustive result
+   v
 --suggest-repairs
    │
-   ▼
-SAFE candidates  ──► apply · re-verify
+   v
+SAFE candidates  --> apply · re-verify
    │
-review-required  ──► inspect manually first
+review-required  --> inspect manually first
 ```

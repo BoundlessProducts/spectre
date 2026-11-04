@@ -1,4 +1,4 @@
-# Chapter 2: The Spectre language
+# The Spectre language
 
 ---
 
@@ -24,6 +24,33 @@ Variables live for the entire run — there are no local variables, only state.
 
 ---
 
+## Collections
+
+Spectre supports first-class collection types for modelling sets of nodes, queues, and mappings:
+
+| Type | Declaration | Example |
+|------|-------------|---------|
+| `Set<T>` | `var nodes: Set<int>` | `{1, 2, 3}` |
+| `Map<K,V>` | `var votes: Map<int, bool>` | `{}` |
+| `List<T>` | `var queue: List<int>` | `{}` |
+
+Common collection methods:
+
+| Method | Works on | Returns |
+|--------|----------|---------|
+| `.union(other)` | Set | Set — combined elements |
+| `.intersection(other)` | Set | Set — common elements |
+| `.contains(x)` | Set, Map | bool |
+| `.size()` | Set, Map, List | int |
+| `.put(k, v)` | Map | Map — with key set |
+| `.get(k)` | Map | value |
+| `.append(x)` | List | List — with element added |
+| `.filter(fn)` | Set, List | filtered collection |
+| `.forall(fn)` | Set, List | bool — all match |
+| `.exists(fn)` | Set, List | bool — any match |
+
+---
+
 ## Enumerations
 
 Define a named set of values with `enum`:
@@ -40,31 +67,32 @@ enum TrafficLight { Red, Yellow, Green }
 
 var signal: TrafficLight
 
-init { signal = Red }
+init { signal = TrafficLight.Red }
 
-action go     { require signal = Red     signal' = Green  }
-action caution { require signal = Green  signal' = Yellow }
-action stop   { require signal = Yellow  signal' = Red    }
+action go     { require signal == TrafficLight.Red     signal' = TrafficLight.Green  }
+action caution { require signal == TrafficLight.Green  signal' = TrafficLight.Yellow }
+action stop   { require signal == TrafficLight.Yellow  signal' = TrafficLight.Red    }
 
 invariant only_valid_transitions {
-  signal = Red or signal = Yellow or signal = Green
+  signal == TrafficLight.Red || signal == TrafficLight.Yellow || signal == TrafficLight.Green
 }
 ```
 
 ```bash
 spectre verify traffic.spec
-# ✓ safe — 3 states explored (exhaustive)
+# Exhaustive verification: traversed 3 states (full reachable space)
+# Found no violations.
 ```
 
 ---
 
 ## Parameters
 
-Parameters are named constants. They don't change during a run:
+Constants are named values that don't change during a run:
 
 ```spectre
-param CAPACITY:  int = 10
-param THRESHOLD: int = 7
+const CAPACITY:  int = 10
+const THRESHOLD: int = 7
 ```
 
 - Override on the command line: `spectre verify queue.spec --param CAPACITY=20`
@@ -79,7 +107,7 @@ param THRESHOLD: int = 7
 init {
   balance = 0
   active  = true
-  phase   = Idle
+  phase   = Phase.Idle
 }
 ```
 
@@ -94,11 +122,11 @@ init {
 An action describes one atomic transition of the system:
 
 ```
-action deposit {           ← name
-  require status = Active  ← precondition — action disabled if false
-  require amount > 0       ← multiple requires are AND'd together
-  balance' = balance + amount  ← next-state value (prime notation)
-  count'   = count + 1         ← all assignments apply simultaneously
+action deposit {           <- name
+  require status == Status.Active  <- precondition (action disabled if false)
+  require amount > 0               <- multiple requires are AND'd together
+  balance' = balance + amount      <- next-state value (prime notation)
+  count'   = count + 1             <- all assignments apply simultaneously
 }
 ```
 
@@ -113,7 +141,7 @@ Key rules:
 
 ```spectre
 var value: int
-param MAX: int = 10
+const MAX: int = 10
 
 action increment {
   require value < MAX
@@ -130,7 +158,7 @@ action decrement {
 
 ```spectre
 var balance: int
-param LIMIT: int = 1000
+const LIMIT: int = 1000
 
 action deposit {
   require balance < LIMIT
@@ -147,14 +175,14 @@ var phase: Phase
 var started: bool
 
 action start {
-  require phase = Idle
-  phase'   = Running
+  require phase == Phase.Idle
+  phase'   = Phase.Running
   started' = true
 }
 
 action finish {
-  require phase = Running
-  phase' = Done
+  require phase == Phase.Running
+  phase' = Phase.Done
 }
 ```
 
@@ -186,27 +214,27 @@ enum Status { Active, Frozen }
 
 var balance: int
 var status:  Status
-param LIMIT: int = 1000
+const LIMIT: int = 1000
 
 init {
   balance = 0
-  status  = Active
+  status  = Status.Active
 }
 
 action deposit {
-  require status = Active
+  require status == Status.Active
   require balance + 100 <= LIMIT
   balance' = balance + 100
 }
 
 action withdraw {
-  require status = Active
+  require status == Status.Active
   require balance >= 100
   balance' = balance - 100
 }
 
-action freeze   { status' = Frozen }
-action unfreeze { status' = Active }
+action freeze   { status' = Status.Frozen }
+action unfreeze { status' = Status.Active }
 
 invariant solvent     { balance >= 0 }
 invariant within_cap  { balance <= LIMIT }
@@ -217,8 +245,8 @@ spectre verify bank.spec
 ```
 
 ```
-✓ safe — 12 states explored (exhaustive)
-  Invariants checked: solvent, within_cap
+Exhaustive verification: traversed 22 states (full reachable space)
+Found no violations.
 ```
 
 ---
@@ -230,7 +258,7 @@ Temporal properties let you express liveness — things that must *eventually* h
 ```spectre
 temporal always_solvent  { always(balance >= 0) }
 temporal progress        { eventually(balance > 0) }
-temporal freeze_recovers { always(status = Frozen → eventually(status = Active)) }
+temporal freeze_recovers { always(status == Status.Frozen -> eventually(status == Status.Active)) }
 ```
 
 | Keyword | Meaning |
@@ -241,7 +269,7 @@ temporal freeze_recovers { always(status = Frozen → eventually(status = Active
 | `WF(action)` | Weak fairness: if `action` is always enabled, it eventually fires |
 | `SF(action)` | Strong fairness: if `action` is infinitely often enabled, it fires infinitely often |
 
-For **fairness** (WF/SF) to be validated correctly, use `--backend tlc` or `--backend apalache`. The default BFS backend uses a heuristic. Chapter 5 covers this in detail.
+BFS is the learning backend — great for exploring what your spec does. For **fairness** (WF/SF) and liveness properties you need to trust, use `--backend tlc` or `--backend apalache`. The Fairness chapter covers this in detail.
 
 ---
 
@@ -252,7 +280,7 @@ Add a human-readable description to any action:
 ```spectre
 description "Deposits 100 units — requires account active and not at cap"
 action deposit {
-  require status = Active
+  require status == Status.Active
   require balance + 100 <= LIMIT
   balance' = balance + 100
 }
@@ -267,7 +295,7 @@ These appear in violation traces and generated code.
 | Keyword | Purpose |
 |---------|---------|
 | `var` | Declare a state variable |
-| `param` | Declare a named constant |
+| `const` | Declare a named constant (override with `--param`) |
 | `enum` | Declare an enumeration |
 | `init` | Set initial values |
 | `action` | Declare a state transition |
@@ -285,5 +313,5 @@ These appear in violation traces and generated code.
 
 ## What's next
 
-- **Chapter 3** — safety properties in depth: writing good invariants, reading violation traces
-- **Chapter 4** — temporal properties: liveness and fairness with real examples
+- **Safety Properties chapter** — safety properties in depth: writing good invariants, reading violation traces
+- **Temporal Properties chapter** — temporal properties: liveness and fairness with real examples

@@ -1,4 +1,4 @@
-# Chapter 6: Concurrent and distributed systems
+# Concurrent and distributed systems
 
 Spectre models concurrency by letting any action fire at any time. BFS explores every possible interleaving. This makes it easy to find races that are nearly impossible to trigger in testing.
 
@@ -30,17 +30,18 @@ action p1_exit  { p1_in_cs' = false }
 action p2_enter { p2_in_cs' = true  }
 action p2_exit  { p2_in_cs' = false }
 
-invariant mutex { not (p1_in_cs and p2_in_cs) }
+invariant mutex { !(p1_in_cs && p2_in_cs) }
 ```
 
 ```bash
 spectre verify mutex-broken.spec
-# ✗ violation — invariant 'mutex' after action 'p2_enter'
-#
-# Counterexample (2 steps):
-#   step 0  init:     p1_in_cs=false, p2_in_cs=false
-#   step 1  p1_enter: p1_in_cs=true,  p2_in_cs=false
-#   step 2  p2_enter: p1_in_cs=true,  p2_in_cs=true  ← VIOLATION
+# Violations:
+# 1. Invariant violated: mutex
+#    Action 'p1_enter' would violate invariants: [invariant mutex violated]
+#    Counterexample trace (1 step(s)):
+#      [init]
+#      [step 1] p2_enter: p2_in_cs: false -> true
+#      [VIOLATION] invariant "mutex" fails in this state
 ```
 
 Spectre found the race in 2 steps.
@@ -57,40 +58,41 @@ var lock:     bool
 
 init { p1_in_cs = false  p2_in_cs = false  lock = false }
 
-action p1_enter { require not lock  p1_in_cs' = true   lock' = true  }
+action p1_enter { require !lock    p1_in_cs' = true   lock' = true  }
 action p1_exit  { require p1_in_cs  p1_in_cs' = false  lock' = false }
-action p2_enter { require not lock  p2_in_cs' = true   lock' = true  }
+action p2_enter { require !lock    p2_in_cs' = true   lock' = true  }
 action p2_exit  { require p2_in_cs  p2_in_cs' = false  lock' = false }
 
-invariant mutex      { not (p1_in_cs and p2_in_cs) }
-invariant lock_owner { lock → (p1_in_cs or p2_in_cs) }
+invariant mutex      { !(p1_in_cs && p2_in_cs) }
+invariant lock_owner { !lock || p1_in_cs || p2_in_cs }
 temporal  p1_progress { WF(p1_enter) }
 temporal  p2_progress { WF(p2_enter) }
 ```
 
 ```bash
 spectre verify mutex.spec
-# ✓ safe — 9 states explored (exhaustive)
+# Exhaustive verification: traversed 3 states (full reachable space)
+# Found no violations.
 ```
 
 State machine for this model:
 
 ```
            p1_enter                    p1_exit
-  (free) ───────────► (p1 holds lock) ──────────► (free)
-    │                                                 ▲
+  (free) ------------> (p1 holds lock) ----------> (free)
+    │                                                 ^
     │     p2_enter                    p2_exit         │
-    └───────────────► (p2 holds lock) ────────────────┘
+    +---------------- > (p2 holds lock) --------------+
 ```
 
-Only one process can hold the lock — `p2_enter` and `p1_enter` both `require not lock`, so they can never both fire from the same state.
+Only one process can hold the lock — `p2_enter` and `p1_enter` both `require !lock`, so they can never both fire from the same state.
 
 ---
 
 ## Producer-consumer with a bounded buffer
 
 ```spectre
-param CAPACITY: int = 3
+const CAPACITY: int = 3
 var items: int
 
 init { items = 0 }
@@ -100,15 +102,16 @@ action consume { require items > 0         items' = items - 1 }
 
 invariant no_overflow  { items <= CAPACITY }
 invariant no_underflow { items >= 0        }
-temporal  eventually_full { eventually(items = CAPACITY) }
+temporal  eventually_full { eventually(items == CAPACITY) }
 ```
 
 ```bash
-spectre verify buffer.spec --param CAPACITY=3
-# ✓ safe — 4 states explored (exhaustive)
+spectre verify buffer.spec
+# Exhaustive verification: traversed 4 states (full reachable space)
+# Found no violations.
 
 spectre verify buffer.spec --param CAPACITY=10
-# ✓ safe — 11 states explored (exhaustive)
+# Exhaustive verification: traversed 11 states (full reachable space)
 ```
 
 Adding a second producer (`produce2`) immediately doubles the state space — BFS handles it automatically.
@@ -120,7 +123,7 @@ Adding a second producer (`produce2`) immediately doubles the state space — BF
 Three-role system: producers enqueue, consumers dequeue, an accounting invariant keeps them honest.
 
 ```spectre
-param MAX_QUEUE: int = 5
+const MAX_QUEUE: int = 5
 var queue_len: int
 var produced:  int
 var consumed:  int
@@ -129,6 +132,7 @@ init { queue_len = 0  produced = 0  consumed = 0 }
 
 action enqueue {
   require queue_len < MAX_QUEUE
+  require produced < MAX_QUEUE
   queue_len' = queue_len + 1
   produced'  = produced + 1
 }
@@ -141,16 +145,23 @@ action dequeue {
 
 invariant queue_bounded  { queue_len <= MAX_QUEUE }
 invariant queue_positive { queue_len >= 0         }
-invariant accounting     { produced = consumed + queue_len }
-temporal  queue_drains   { always(queue_len > 0 → eventually(queue_len = 0)) }
+invariant accounting     { produced == consumed + queue_len }
 ```
 
 ```bash
 spectre verify queue.spec
-# ✓ safe — 21 states explored (exhaustive)
+# Exhaustive verification: traversed 21 states (full reachable space)
+# Found no violations.
 ```
 
 The `accounting` invariant is the most valuable one here. It catches any race where messages are created or destroyed without both counters updating — a class of bugs that integration tests rarely find.
+
+To add a liveness property (queue must eventually drain), use `--backend tlc` since `always(P -> eventually(Q))` requires SCC-based checking:
+
+```bash
+spectre verify queue.spec --backend tlc
+# -> verifies always(queue_len > 0 -> eventually(queue_len == 0)) with WF(dequeue)
+```
 
 ---
 
@@ -158,11 +169,11 @@ The `accounting` invariant is the most valuable one here. It catches any race wh
 
 | Pattern | Invariant example |
 |---------|------------------|
-| Mutual exclusion | `not (p1_in_cs and p2_in_cs)` |
-| Accounting identity | `produced = consumed + in_flight` |
-| State consistency | `locked → owner_known` |
+| Mutual exclusion | `!(p1_in_cs && p2_in_cs)` |
+| Accounting identity | `produced == consumed + in_flight` |
+| State consistency | `!locked || owner_known` |
 | Bounded resource | `active_connections <= MAX_CONN` |
-| No phantom state | `waiting → (request_sent and not response_received)` |
+| No phantom state | `!waiting || (request_sent && !response_received)` |
 
 Write at least one invariant of each type that applies to your system.
 
@@ -174,7 +185,7 @@ Three-process or three-role specs can hit tens of thousands of states:
 
 ```bash
 spectre verify 3-party.spec --max-states 50000
-# bounded — hit state limit (50000 states)
+# bounded -- hit state limit (50000 states)
 ```
 
 Options when BFS doesn't finish:
@@ -188,7 +199,7 @@ Options when BFS doesn't finish:
 
 ```bash
 spectre verify 3-party.spec --backend apalache
-# uses Apalache's symbolic engine — see Chapter 15
+# uses Apalache's symbolic engine — see the TLA+ and Apalache chapter
 ```
 
 ---
@@ -198,25 +209,25 @@ spectre verify 3-party.spec --backend apalache
 ```
 Identify shared variables
          │
-         ▼
+         v
 Write one action per actor per operation
          │
-         ▼
+         v
 Add require guards for preconditions
          │
-         ▼
+         v
 Write mutex + accounting invariants
          │
-         ▼
-spectre verify
+         v
+spectre verify  (BFS — learning mode)
          │
-    violation? ──yes──► read the counterexample trace
+    violation? --yes--> read the counterexample trace
          │                       │
-         no                      ▼
+         no                      v
          │              strengthen requires or add lock variable
-         ▼
+         v
 Add WF/SF temporal properties
          │
-         ▼
+         v
 spectre verify --backend tlc  (for validated fairness)
 ```
