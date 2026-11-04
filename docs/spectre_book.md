@@ -246,26 +246,74 @@ Variables live for the entire run — there are no local variables, only state.
 
 Spectre supports first-class collection types for modelling sets of nodes, queues, and mappings:
 
-| Type | Declaration | Example |
-|------|-------------|---------|
-| `Set<T>` | `var nodes: Set<int>` | `{1, 2, 3}` |
+| Type | Declaration | Example init |
+|------|-------------|-------------|
+| `Set<T>` | `var nodes: Set<int>` | `{1, 2, 3}` or `{}` |
 | `Map<K,V>` | `var votes: Map<int, bool>` | `{}` |
-| `List<T>` | `var queue: List<int>` | `{}` |
+| `List<T>` | `var queue: List<int>` | `[]` |
 
 Common collection methods:
 
-| Method | Works on | Returns |
-|--------|----------|---------|
+| Method / operator | Works on | Returns |
+|-------------------|----------|---------|
+| `x in S` | Set, Map | bool — membership test (infix) |
+| `.contains(x)` | Set, Map | bool — same, method form |
 | `.union(other)` | Set | Set — combined elements |
 | `.intersection(other)` | Set | Set — common elements |
-| `.contains(x)` | Set, Map | bool |
+| `.difference(other)` | Set | Set — elements in receiver but not argument |
 | `.size()` | Set, Map, List | int |
 | `.put(k, v)` | Map | Map — with key set |
 | `.get(k)` | Map | value |
 | `.append(x)` | List | List — with element added |
+| `.head()` | List | first element |
+| `.tail()` | List | List without first element |
 | `.filter(fn)` | Set, List | filtered collection |
 | `.forall(fn)` | Set, List | bool — all match |
 | `.exists(fn)` | Set, List | bool — any match |
+
+A working example — a simple voting spec with a set of voters:
+
+```spectre
+const QUORUM: int = 2
+
+var voted:    Set<int>   // ids of nodes that have voted
+var approved: bool
+
+init {
+  voted    = {}
+  approved = false
+}
+
+action cast_vote {
+  require voted.size() < 3        // at most 3 voters
+  voted' = voted.union({voted.size() + 1})
+}
+
+action approve {
+  require voted.size() >= QUORUM
+  require !approved
+  approved' = true
+}
+
+invariant no_approval_without_quorum {
+  !approved || voted.size() >= QUORUM
+}
+```
+
+```bash
+spectre verify vote.spec
+# Exhaustive verification: traversed 6 states (full reachable space)
+# Found no violations.
+```
+
+The `in` operator is the most natural way to check membership inside `require` and `invariant` expressions:
+
+```spectre
+require !(node_id in voted)   // has not voted yet
+invariant inv { x in S || x > 0 }
+```
+
+See the **Collections and distributed specifications** chapter for the full Two-Phase Commit example using `Set`, `Map`, and `in` together.
 
 ---
 
@@ -525,6 +573,7 @@ These appear in violation traces and generated code.
 | `until` | Temporal: P holds until Q |
 | `WF` | Weak fairness over an action |
 | `SF` | Strong fairness over an action |
+| `x in S` | Membership test: true if x is in Set or Map S |
 | `description` | Human-readable label for an action |
 
 ---
