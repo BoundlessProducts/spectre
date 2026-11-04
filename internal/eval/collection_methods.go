@@ -355,6 +355,32 @@ func (e *Evaluator) evalIntersection(obj state.Value, args []state.Value) (state
 	return result, nil
 }
 
+// evalDifference evaluates the difference method: set.difference(otherSet)
+// Returns elements in the receiver that are NOT in otherSet.
+func (e *Evaluator) evalDifference(obj state.Value, args []state.Value) (state.Value, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("difference expects 1 argument (other set), got %d", len(args))
+	}
+
+	setVal, ok := obj.(*state.SetValue)
+	if !ok {
+		return nil, fmt.Errorf("difference can only be called on Set, got %s", obj.Type())
+	}
+
+	otherSet, ok := args[0].(*state.SetValue)
+	if !ok {
+		return nil, fmt.Errorf("difference argument must be a Set, got %s", args[0].Type())
+	}
+
+	result := state.NewSetValue()
+	for _, elem := range setVal.Values {
+		if !otherSet.Contains(elem) {
+			result.Add(elem)
+		}
+	}
+	return result, nil
+}
+
 // evalHead evaluates the head method: list.head()
 func (e *Evaluator) evalHead(obj state.Value) (state.Value, error) {
 	if listVal, ok := obj.(*state.ListValue); ok {

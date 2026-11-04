@@ -148,6 +148,18 @@ func (e *Evaluator) evalBinaryOp(op ast.BinaryOp, left, right state.Value) (stat
 		}
 	}
 
+	// Handle 'in' membership operator for Set and Map
+	if op == ast.In {
+		switch rhs := right.(type) {
+		case *state.SetValue:
+			return state.NewBoolValue(rhs.Contains(left)), nil
+		case *state.MapValue:
+			return state.NewBoolValue(rhs.Contains(left)), nil
+		default:
+			return nil, fmt.Errorf("'in' operator requires Set or Map on the right side, got %T", right)
+		}
+	}
+
 	// For arithmetic and other operations, support primitive operations
 	leftPrim, leftOk := left.(*state.PrimitiveValue)
 	rightPrim, rightOk := right.(*state.PrimitiveValue)
@@ -718,6 +730,8 @@ func (e *Evaluator) evalMethodCall(obj state.Value, methodName string, args []st
 		return e.evalUnion(obj, args)
 	case "intersection":
 		return e.evalIntersection(obj, args)
+	case "difference":
+		return e.evalDifference(obj, args)
 	case "head":
 		return e.evalHead(obj)
 	case "tail":

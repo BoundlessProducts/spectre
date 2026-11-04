@@ -89,6 +89,9 @@ const (
 	MAP   TokenType = "MAP"
 	LIST  TokenType = "LIST"
 	OPTION TokenType = "OPTION"
+
+	// Collection operators
+	IN TokenType = "IN"
 )
 
 // Token represents a token with its type, literal value, and position
@@ -145,6 +148,7 @@ func LookupIdent(ident string) TokenType {
 		"Map":         MAP,
 		"List":        LIST,
 		"Option":      OPTION,
+		"in":          IN,
 		"true":        BOOL,
 		"false":       BOOL,
 	}

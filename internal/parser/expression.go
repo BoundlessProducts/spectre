@@ -34,6 +34,7 @@ var precedences = map[lexer.TokenType]int{
 	lexer.SLASH:  PRODUCT,
 	lexer.AND:    LOGICAL, // Logical AND has lower precedence than equality
 	lexer.OR:     LOGICAL, // Logical OR has lower precedence than equality
+	lexer.IN:     LESSGREATER, // membership: x in S, same level as comparisons
 	lexer.LPAREN: CALL,
 	lexer.LBRACKET: INDEX,
 	lexer.DOT:    CALL, // Method calls have same precedence as function calls
@@ -178,7 +179,7 @@ func (p *Parser) parseInfixExpression(left ast.Expr) ast.Expr {
 	switch p.curToken.Type {
 	case lexer.PLUS, lexer.MINUS, lexer.ASTERISK, lexer.SLASH,
 		lexer.EQ, lexer.ASSIGN, lexer.NEQ, lexer.LT, lexer.GT, lexer.LEQ, lexer.GEQ,
-		lexer.AND, lexer.OR:
+		lexer.AND, lexer.OR, lexer.IN:
 		return p.parseBinaryExpression(left)
 	case lexer.LPAREN:
 		return p.parseCallExpression(left)
@@ -294,6 +295,8 @@ func (p *Parser) parseBinaryExpression(left ast.Expr) ast.Expr {
 		binaryOp = ast.And
 	case lexer.OR:
 		binaryOp = ast.Or
+	case lexer.IN:
+		binaryOp = ast.In
 	default:
 		p.addErrorf("unknown binary operator: %s", op)
 		return nil

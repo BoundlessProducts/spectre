@@ -98,13 +98,15 @@ type OneOfInitDecl struct {
 func (o *OneOfInitDecl) Pos() Position { return o.Position }
 func (o *OneOfInitDecl) declNode()     {}
 
-// ParamDecl declares a specification parameter (e.g. `param N: int`).
+// ParamDecl declares a specification parameter (e.g. `param N: int` or `param N: int = 5`).
 // Parameters are bound at verification time via --param Name=Value flags.
+// Default is used when no --param flag is provided.
 // They behave as read-only integer variables during exploration.
 type ParamDecl struct {
 	Position Position
 	Name     string
 	Type     Type
+	Default  *int64 // optional default value, set via `= <integer>`
 }
 
 func (p *ParamDecl) Pos() Position { return p.Position }
@@ -412,6 +414,7 @@ const (
 	Geq
 	And
 	Or
+	In // membership: x in Set/Map
 )
 
 func (b *BinaryExpr) Pos() Position { return b.Position }

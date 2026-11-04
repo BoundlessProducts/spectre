@@ -417,6 +417,28 @@ func (c *Checker) checkBinaryExpr(expr *ast.BinaryExpr) Type {
 		}
 		return &Primitive{Kind: Bool}
 
+	case ast.In:
+		// Membership: elem in Set<T> or key in Map<K,V>
+		switch rhs := rightType.(type) {
+		case *Set:
+			if !IsAssignable(leftType, rhs.Element) && !IsAssignable(rhs.Element, leftType) {
+				c.addError(expr.Pos(), "type mismatch in 'in': element type %s does not match Set element type %s",
+					leftType.String(), rhs.Element.String())
+				return nil
+			}
+			return &Primitive{Kind: Bool}
+		case *Map:
+			if !IsAssignable(leftType, rhs.Key) && !IsAssignable(rhs.Key, leftType) {
+				c.addError(expr.Pos(), "type mismatch in 'in': key type %s does not match Map key type %s",
+					leftType.String(), rhs.Key.String())
+				return nil
+			}
+			return &Primitive{Kind: Bool}
+		default:
+			c.addError(expr.Pos(), "'in' operator requires Set or Map on the right side, got %s", rightType.String())
+			return nil
+		}
+
 	default:
 		c.addError(expr.Pos(), "unknown binary operator: %d", expr.Op)
 		return nil
@@ -1055,7 +1077,7 @@ func (c *Checker) checkMethodCall(receiverType Type, methodName string, argTypes
 			return nil
 		}
 		return &Primitive{Kind: Int}
-	case "union", "intersection":
+	case "union", "intersection", "difference":
 		if len(argTypes) != 1 {
 			c.addError(pos, "%s expects 1 argument, got %d", methodName, len(argTypes))
 			return nil
