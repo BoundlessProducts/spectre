@@ -14,6 +14,10 @@ import (
 	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
 
+// tlaModuleFile is the filename used for all TLA+ temp files.
+// It must match the MODULE name inside the file (SANY requirement).
+const tlaModuleFile = "SpectreSpec.tla"
+
 // ── TLC backend ───────────────────────────────────────────────────────────────
 
 // TLCBackend runs TLC (the TLA+ model checker) as a subprocess.
@@ -35,8 +39,8 @@ func (b *TLCBackend) Verify(file *ast.File, opts backend.Options) (*backend.Resu
 	}
 	defer os.RemoveAll(dir)
 
-	tlaFile := filepath.Join(dir, "spectre_tla.tla")
-	cfgFile := filepath.Join(dir, "spectre_tla.cfg")
+	tlaFile := filepath.Join(dir, tlaModuleFile)
+	cfgFile := filepath.Join(dir, "SpectreSpec.cfg")
 	if err := os.WriteFile(tlaFile, []byte(tlaText), 0644); err != nil {
 		return nil, fmt.Errorf("tlc: write tla: %w", err)
 	}
@@ -83,7 +87,7 @@ func NewApalacheBackend() *ApalacheBackend { return &ApalacheBackend{} }
 func (b *ApalacheBackend) Name() backend.Kind { return backend.KindApalache }
 
 func (b *ApalacheBackend) Verify(file *ast.File, opts backend.Options) (*backend.Result, error) {
-	tlaText, cfgText, err := Translate(file, opts.Params)
+	tlaText, _, err := Translate(file, opts.Params)
 	if err != nil {
 		return nil, fmt.Errorf("apalache: translate: %w", err)
 	}
@@ -94,13 +98,10 @@ func (b *ApalacheBackend) Verify(file *ast.File, opts backend.Options) (*backend
 	}
 	defer os.RemoveAll(dir)
 
-	tlaFile := filepath.Join(dir, "spectre_tla.tla")
-	cfgFile := filepath.Join(dir, "spectre_tla.cfg")
+	// Filename must match MODULE name for SANY.
+	tlaFile := filepath.Join(dir, tlaModuleFile)
 	if err := os.WriteFile(tlaFile, []byte(tlaText), 0644); err != nil {
 		return nil, fmt.Errorf("apalache: write tla: %w", err)
-	}
-	if err := os.WriteFile(cfgFile, []byte(cfgText), 0644); err != nil {
-		return nil, fmt.Errorf("apalache: write cfg: %w", err)
 	}
 
 	bin := opts.ApalacheBin
@@ -111,16 +112,68 @@ func (b *ApalacheBackend) Verify(file *ast.File, opts backend.Options) (*backend
 		return nil, fmt.Errorf("apalache-mc not found — install Apalache or pass --apalache-bin <path>")
 	}
 
+	// Collect invariant names from the AST for --inv= flags.
+	var invNames []string
+	for _, d := range file.Decls {
+		if inv, ok := d.(*ast.InvariantDecl); ok {
+			invNames = append(invNames, inv.Name)
+		}
+	}
+
+	// Apalache v0.62+ requires = syntax; --inv takes a comma-separated list.
+	args := []string{"check", "--init=Init", "--next=Next"}
+	if len(invNames) > 0 {
+		args = append(args, "--inv="+strings.Join(invNames, ","))
+	}
+	args = append(args, tlaFile)
+
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(bin, "check", "--config", cfgFile, tlaFile)
+	cmd := exec.Command(bin, args...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.Dir = dir
+	cmd.Env = apalacheEnv()
 
 	_ = cmd.Run()
 
 	out := stdout.String()
-	return parseApalacheOutput(out, stderr.String()), nil
+	result := parseApalacheOutput(out, stderr.String())
+	if result == nil {
+		return nil, fmt.Errorf("apalache: %s", strings.TrimSpace(stderr.String()))
+	}
+	return result, nil
+}
+
+// apalacheEnv builds an environment that sets JAVA_HOME and JVM_GC_ARGS
+// for Apalache subprocesses, while preserving all other env vars.
+func apalacheEnv() []string {
+	env := os.Environ()
+	hasJavaHome, hasGCArgs := false, false
+	for _, e := range env {
+		if strings.HasPrefix(e, "JAVA_HOME=") {
+			hasJavaHome = true
+		}
+		if strings.HasPrefix(e, "JVM_GC_ARGS=") {
+			hasGCArgs = true
+		}
+	}
+	if !hasJavaHome {
+		for _, candidate := range []string{
+			"/opt/homebrew/opt/openjdk",
+			"/opt/homebrew/opt/openjdk@21",
+			"/usr/local/opt/openjdk",
+			"/usr/local/opt/openjdk@21",
+		} {
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				env = append(env, "JAVA_HOME="+candidate)
+				break
+			}
+		}
+	}
+	if !hasGCArgs {
+		env = append(env, "JVM_GC_ARGS=-XX:+UseG1GC")
+	}
+	return env
 }
 
 // ── Output parsers ────────────────────────────────────────────────────────────
@@ -185,22 +238,41 @@ func parseTLCOutput(out, errOut string) *backend.Result {
 func parseApalacheOutput(out, errOut string) *backend.Result {
 	r := &backend.Result{BackendName: string(backend.KindApalache)}
 
-	if strings.Contains(out, "Checker reports no error") {
+	// Apalache v0.62+ outcome strings.
+	if strings.Contains(out, "The outcome is: NoError") ||
+		strings.Contains(out, "Checker reports no error") {
 		r.Safe = true
-		r.Exhaustive = true
+		// Bounded check — not exhaustive unless the state space is fully covered.
+		r.Exhaustive = false
 		return r
 	}
 
-	if strings.Contains(out, "COUNTEREXAMPLE") || strings.Contains(out, "violation") {
+	if strings.Contains(out, "The outcome is: Error") ||
+		strings.Contains(out, "Checker has found an error") {
 		r.Safe = false
-		// Extract invariant name if present.
-		re := regexp.MustCompile(`(?i)invariant (\w+)`)
-		if m := re.FindStringSubmatch(out); m != nil {
-			r.Violations = append(r.Violations, &explore.Violation{
-				Invariant:   m[1],
-				Description: "Apalache: " + m[1] + " violated",
-			})
-		} else {
+
+		// Map invariant index → name from "Set an invariant to X" lines.
+		reInvSet := regexp.MustCompile(`Set an invariant to (\w+)`)
+		invMatches := reInvSet.FindAllStringSubmatch(out, -1)
+
+		reViolated := regexp.MustCompile(`state invariant (\d+) violated`)
+		seen := map[string]bool{}
+		for _, m := range reViolated.FindAllStringSubmatch(out, -1) {
+			var idx int
+			fmt.Sscanf(m[1], "%d", &idx)
+			name := fmt.Sprintf("invariant_%d", idx)
+			if idx < len(invMatches) {
+				name = invMatches[idx][1]
+			}
+			if !seen[name] {
+				seen[name] = true
+				r.Violations = append(r.Violations, &explore.Violation{
+					Invariant:   name,
+					Description: "Apalache: " + name + " violated",
+				})
+			}
+		}
+		if len(r.Violations) == 0 {
 			r.Violations = append(r.Violations, &explore.Violation{
 				Description: "Apalache: counterexample found",
 			})
@@ -208,11 +280,10 @@ func parseApalacheOutput(out, errOut string) *backend.Result {
 		return r
 	}
 
-	// Unknown output — if stderr has content, surface it.
+	// Unknown output — surface stderr if present.
 	if errOut != "" {
-		return nil // caller will wrap the error
+		return nil
 	}
-	// Assume safe if nothing conclusive found.
 	r.Safe = true
 	r.Note = "Apalache output not conclusive; assumed safe"
 	return r

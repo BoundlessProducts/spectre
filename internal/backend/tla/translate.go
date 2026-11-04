@@ -69,9 +69,24 @@ func (t *translator) run() (string, string, error) {
 		sb.WriteString("CONSTANTS " + strings.Join(names, ", ") + "\n\n")
 	}
 
-	// VARIABLES.
+	// VARIABLES with Apalache @type annotations (ignored by TLC/SANY).
 	if len(t.vars) > 0 {
-		sb.WriteString("VARIABLES " + strings.Join(t.vars, ", ") + "\n\n")
+		sb.WriteString("VARIABLES\n")
+		for i, name := range t.vars {
+			sb.WriteString("  \\* @type: " + apalacheType(t.varTypes[name]) + ";\n")
+			if i < len(t.vars)-1 {
+				sb.WriteString("  " + name + ",\n")
+			} else {
+				sb.WriteString("  " + name + "\n")
+			}
+		}
+		sb.WriteString("\n")
+		// @type annotation disambiguates tuple vs sequence for Apalache's Snowcat.
+		tupleTypes := make([]string, len(t.vars))
+		for i, name := range t.vars {
+			tupleTypes[i] = apalacheType(t.varTypes[name])
+		}
+		sb.WriteString("\\* @type: <<" + strings.Join(tupleTypes, ", ") + ">>;\n")
 		sb.WriteString("vars == <<" + strings.Join(t.vars, ", ") + ">>\n\n")
 	}
 
@@ -450,6 +465,33 @@ func typeSet(typ ast.Type) string {
 		return "[" + typeSet(t.Key) + " -> " + typeSet(t.Value) + "]"
 	case *ast.ListType:
 		return "Seq(" + typeSet(t.Element) + ")"
+	}
+	return "Int"
+}
+
+// apalacheType returns the Apalache/Snowcat type annotation string for a Spectre type.
+func apalacheType(typ ast.Type) string {
+	if typ == nil {
+		return "Int"
+	}
+	switch t := typ.(type) {
+	case *ast.PrimitiveType:
+		switch t.Name {
+		case "int":
+			return "Int"
+		case "bool":
+			return "Bool"
+		case "str", "string":
+			return "Str"
+		}
+	case *ast.EnumType:
+		return "Str"
+	case *ast.SetType:
+		return "Set(" + apalacheType(t.Element) + ")"
+	case *ast.MapType:
+		return apalacheType(t.Key) + " -> " + apalacheType(t.Value)
+	case *ast.ListType:
+		return "Seq(" + apalacheType(t.Element) + ")"
 	}
 	return "Int"
 }
