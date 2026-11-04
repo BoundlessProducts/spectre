@@ -45,6 +45,8 @@ CONSTANTS MAX
 
 VARIABLES x
 
+vars == <<x>>
+
 TypeOK == x \in Int
 
 Init ==
@@ -61,7 +63,7 @@ non_negative ==
     x >= 0
 
 Spec ==
-    Init /\ [][Next]_<<x>> /\ WF_<<x>>(incr)
+    Init /\ [][Next]_vars /\ WF_vars(incr)
 
 =============================================================================
 ```

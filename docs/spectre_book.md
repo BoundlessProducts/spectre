@@ -1,30 +1,3 @@
-# The Spectre Book
-
-**Spectre** — formal verification for Rust programs.
-
----
-
-## Table of contents
-
-1. [Getting started](#chapter-1-getting-started)
-2. [Language overview](#chapter-2-language-overview)
-3. [Invariants and violations](#chapter-3-invariants-and-violations)
-4. [Temporal and fairness properties](#chapter-4-temporal-and-fairness-properties)
-5. [Fairness: WF and SF](#chapter-5-fairness-wf-and-sf)
-6. [Concurrent systems](#chapter-6-concurrent-systems)
-7. [Modules, parameters, and reuse](#chapter-7-modules-parameters-and-reuse)
-8. [Reading counterexamples and debugging](#chapter-8-reading-counterexamples-and-debugging)
-9. [Choosing a verification backend](#chapter-9-choosing-a-verification-backend)
-10. [Mining specs from Rust](#chapter-10-mining-specs-from-rust)
-11. [Drift detection and incremental re-verification](#chapter-11-drift-detection-and-incremental-re-verification)
-12. [Model-based testing](#chapter-12-model-based-testing)
-13. [Runtime monitoring](#chapter-13-runtime-monitoring)
-14. [Benchmarking and performance](#chapter-14-benchmarking-and-performance)
-15. [TLA+ and Apalache backend](#chapter-15-tla-and-apalache-backend)
-16. [Z3 bounded model checking](#chapter-16-z3-bounded-model-checking)
-
----
-
 # Chapter 1: Getting started
 
 ---
@@ -39,7 +12,7 @@ go build -o spectre ./cmd/spectre
 sudo mv spectre /usr/local/bin/
 
 spectre --version
-# spectre version 0.3.2
+# spectre version dev
 ```
 
 No runtime dependencies, no Docker, no JVM needed for the default BFS backend.
@@ -52,7 +25,7 @@ Save this as `counter.spec`:
 
 ```spectre
 var value: int
-param MAX: int = 5
+const MAX: int = 5
 
 init { value = 0 }
 
@@ -76,8 +49,8 @@ spectre verify counter.spec
 ```
 
 ```
-✓ safe — 6 states explored (exhaustive)
-  Invariants checked: non_negative, within_bounds
+Exhaustive verification: traversed 6 states (full reachable space)
+Found no violations.
 ```
 
 ---
@@ -87,7 +60,7 @@ spectre verify counter.spec
 ```
 counter.spec
   ├── var value: int              ← one piece of state
-  ├── param MAX: int = 5          ← a named constant
+  ├── const MAX: int = 5          ← a named constant
   ├── init { value = 0 }          ← where to start
   ├── action increment { … }      ← one possible transition
   ├── action reset { … }          ← another transition
@@ -125,18 +98,27 @@ spectre verify counter.spec
 ```
 
 ```
-✗ violation — invariant 'within_bounds' after action 'increment'
+Violations:
 
-Counterexample (6 steps):
-  step 0  init:       value = 0
-  step 1  increment:  value = 1
-  step 2  increment:  value = 2
-  step 3  increment:  value = 3
-  step 4  increment:  value = 4
-  step 5  increment:  value = 5
-  step 6  increment:  value = 6  ← VIOLATION
-                      within_bounds: value <= MAX → 6 <= 5  FAILS
+1.   Invariant violated: within_bounds
+  Action 'increment' would violate invariants: [invariant within_bounds violated]
+  Counterexample trace (5 step(s)):
+    [init]
+    [step 1] increment
+      value: 0 → 1
+    [step 2] increment
+      value: 1 → 2
+    [step 3] increment
+      value: 2 → 3
+    [step 4] increment
+      value: 3 → 4
+    [step 5] increment
+      value: 4 → 5
+    [VIOLATION] invariant "within_bounds" fails in this state
+      value = 5
 ```
+
+Spectre shows the state where the *next* `increment` would violate `within_bounds` (value 5 + 1 = 6 > MAX). Add back `require value < MAX` to fix it.
 
 Spectre found the shortest path to a bad state: six increments from zero.
 
@@ -271,31 +253,32 @@ enum TrafficLight { Red, Yellow, Green }
 
 var signal: TrafficLight
 
-init { signal = Red }
+init { signal = TrafficLight.Red }
 
-action go     { require signal = Red     signal' = Green  }
-action caution { require signal = Green  signal' = Yellow }
-action stop   { require signal = Yellow  signal' = Red    }
+action go     { require signal == TrafficLight.Red     signal' = TrafficLight.Green  }
+action caution { require signal == TrafficLight.Green  signal' = TrafficLight.Yellow }
+action stop   { require signal == TrafficLight.Yellow  signal' = TrafficLight.Red    }
 
 invariant only_valid_transitions {
-  signal = Red or signal = Yellow or signal = Green
+  signal == TrafficLight.Red || signal == TrafficLight.Yellow || signal == TrafficLight.Green
 }
 ```
 
 ```bash
 spectre verify traffic.spec
-# ✓ safe — 3 states explored (exhaustive)
+# Exhaustive verification: traversed 3 states (full reachable space)
+# Found no violations.
 ```
 
 ---
 
 ## Parameters
 
-Parameters are named constants. They don't change during a run:
+Constants are named values that don't change during a run:
 
 ```spectre
-param CAPACITY:  int = 10
-param THRESHOLD: int = 7
+const CAPACITY:  int = 10
+const THRESHOLD: int = 7
 ```
 
 - Override on the command line: `spectre verify queue.spec --param CAPACITY=20`
@@ -344,7 +327,7 @@ Key rules:
 
 ```spectre
 var value: int
-param MAX: int = 10
+const MAX: int = 10
 
 action increment {
   require value < MAX
@@ -361,7 +344,7 @@ action decrement {
 
 ```spectre
 var balance: int
-param LIMIT: int = 1000
+const LIMIT: int = 1000
 
 action deposit {
   require balance < LIMIT
@@ -378,14 +361,14 @@ var phase: Phase
 var started: bool
 
 action start {
-  require phase = Idle
-  phase'   = Running
+  require phase == Phase.Idle
+  phase'   = Phase.Running
   started' = true
 }
 
 action finish {
-  require phase = Running
-  phase' = Done
+  require phase == Phase.Running
+  phase' = Phase.Done
 }
 ```
 
@@ -417,27 +400,27 @@ enum Status { Active, Frozen }
 
 var balance: int
 var status:  Status
-param LIMIT: int = 1000
+const LIMIT: int = 1000
 
 init {
   balance = 0
-  status  = Active
+  status  = Status.Active
 }
 
 action deposit {
-  require status = Active
+  require status == Status.Active
   require balance + 100 <= LIMIT
   balance' = balance + 100
 }
 
 action withdraw {
-  require status = Active
+  require status == Status.Active
   require balance >= 100
   balance' = balance - 100
 }
 
-action freeze   { status' = Frozen }
-action unfreeze { status' = Active }
+action freeze   { status' = Status.Frozen }
+action unfreeze { status' = Status.Active }
 
 invariant solvent     { balance >= 0 }
 invariant within_cap  { balance <= LIMIT }
@@ -448,8 +431,8 @@ spectre verify bank.spec
 ```
 
 ```
-✓ safe — 12 states explored (exhaustive)
-  Invariants checked: solvent, within_cap
+Exhaustive verification: traversed 22 states (full reachable space)
+Found no violations.
 ```
 
 ---
@@ -461,7 +444,7 @@ Temporal properties let you express liveness — things that must *eventually* h
 ```spectre
 temporal always_solvent  { always(balance >= 0) }
 temporal progress        { eventually(balance > 0) }
-temporal freeze_recovers { always(status = Frozen → eventually(status = Active)) }
+temporal freeze_recovers { always(status == Status.Frozen → eventually(status == Status.Active)) }
 ```
 
 | Keyword | Meaning |
@@ -538,7 +521,7 @@ These appear in violation traces and generated code.
 
 ```spectre
 var items:  int
-param CAPACITY: int = 10
+const CAPACITY: int = 10
 
 invariant not_full    { items <= CAPACITY }
 invariant not_empty   { items >= 0 }
@@ -553,10 +536,10 @@ enum Phase { Idle, Running, Done }
 var phase:   Phase
 var started: bool
 
-invariant consistent { phase = Running → started }
+invariant consistent { !phase == Phase.Running || started }
 ```
 
-"If the machine is running, it must have been started." Use `→` (or write `not P or Q`) for implication.
+"If the machine is running, it must have been started." Use `!P || Q` for implication in invariants.
 
 ### 3. Mutual exclusion
 
@@ -564,7 +547,7 @@ invariant consistent { phase = Running → started }
 var lock_a: bool
 var lock_b: bool
 
-invariant mutual_exclusion { not (lock_a and lock_b) }
+invariant mutual_exclusion { !(lock_a && lock_b) }
 ```
 
 Use this for: locks, tokens, single-owner resources.
@@ -577,7 +560,7 @@ Use this for: locks, tokens, single-owner resources.
 // bank-buggy.spec
 
 var balance: int
-param LIMIT: int = 1000
+const LIMIT: int = 1000
 
 init { balance = 0 }
 
@@ -593,12 +576,14 @@ spectre verify bank-buggy.spec
 ```
 
 ```
-✗ violation — invariant 'solvent' after action 'withdraw'
+Violations:
 
-Counterexample (2 steps):
-  step 0  init:     balance = 0
-  step 1  withdraw: balance = -100  ← VIOLATION
-                    solvent: balance >= 0  →  -100 >= 0  FAILS
+1.   Invariant violated: solvent
+  Counterexample trace (1 step(s)):
+    [init]
+    [step 1] withdraw: balance: 0 → -100
+    [VIOLATION] invariant "solvent" fails in this state
+      balance = -100
 ```
 
 ---
@@ -606,22 +591,21 @@ Counterexample (2 steps):
 ## Reading a violation trace
 
 ```
-✗ violation — invariant 'solvent' after action 'withdraw'
-  ↑ which invariant failed    ↑ which action triggered it
+Violations:
 
-Counterexample (2 steps):              ← shortest path to the bad state
-  step 0  init:     balance = 0        ← initial state
-  step 1  withdraw: balance = -100     ← state after the action
-
-                    solvent: balance >= 0  →  -100 >= 0  FAILS
-                    ↑ invariant name      ↑ expression   ↑ why it fails
+1.   Invariant violated: solvent     ← which invariant failed
+  Counterexample trace (1 step(s)):
+    [init]                            ← initial state
+    [step 1] withdraw: balance: 0 → -100   ← which action fired + what changed
+    [VIOLATION] invariant "solvent" fails in this state
+      balance = -100                  ← concrete value that broke the invariant
 ```
 
 Every line in the trace shows:
 - The **step number**
 - The **action** that fired (or `init`)
-- The **full state** after the action (all variables)
-- On the violation line: the invariant expression and what value made it fail
+- The **changed variable** and its before/after values
+- The **violated invariant** name and the concrete state that broke it
 
 ---
 
@@ -635,24 +619,24 @@ Here's a more interesting bug — withdraw only fails after a freeze/unfreeze cy
 enum Status { Active, Frozen }
 var balance: int
 var status:  Status
-param LIMIT: int = 1000
+const LIMIT: int = 1000
 
-init { balance = 0  status = Active }
+init { balance = 0  status = Status.Active }
 
 action deposit  {
-  require status = Active
+  require status == Status.Active
   require balance + 100 <= LIMIT
   balance' = balance + 100
 }
 
 action withdraw {
-  require status = Active
+  require status == Status.Active
   // missing: require balance >= 100
   balance' = balance - 100
 }
 
-action freeze   { status' = Frozen  }
-action unfreeze { status' = Active  }
+action freeze   { status' = Status.Frozen  }
+action unfreeze { status' = Status.Active  }
 
 invariant solvent { balance >= 0 }
 ```
@@ -662,11 +646,14 @@ spectre verify bank-freeze-bug.spec
 ```
 
 ```
-✗ violation — invariant 'solvent' after action 'withdraw'
+Violations:
 
-Counterexample (2 steps):
-  step 0  init:     balance = 0, status = Active
-  step 1  withdraw: balance = -100, status = Active  ← VIOLATION
+1.   Invariant violated: solvent
+  Counterexample trace (1 step(s)):
+    [init]
+    [step 1] withdraw: balance: 0 → -100
+    [VIOLATION] invariant "solvent" fails in this state
+      balance = -100, status = Active
 ```
 
 Spectre still finds the shortest path (2 steps), ignoring the freeze/unfreeze actions since they're not needed to trigger the bug.
@@ -698,7 +685,7 @@ Applying repair [1]: add `require balance >= 100` to `withdraw`. Re-verify:
 
 ```bash
 spectre verify bank.spec
-# ✓ safe — 12 states explored (exhaustive)
+# Exhaustive verification: traversed 22 states (full reachable space)
 ```
 
 ---
@@ -708,7 +695,7 @@ spectre verify bank.spec
 ```spectre
 invariant solvent     { balance >= 0 }
 invariant within_cap  { balance <= LIMIT }
-invariant frozen_safe { status = Frozen → balance = 0 }
+invariant frozen_safe { !status == Status.Frozen || balance == 0 }
 ```
 
 Spectre checks all invariants independently. If multiple are violated, each is reported with its own trace.
@@ -719,35 +706,27 @@ Spectre checks all invariants independently. If multiple are violated, each is r
 
 ```spectre
 // producer-consumer.spec
-param BUFFER_SIZE: int = 5
+const BUFFER_SIZE: int = 5
 
-var produced: int
-var consumed: int
+var items: int
 
-init { produced = 0  consumed = 0 }
+init { items = 0 }
 
-action produce {
-  require produced - consumed < BUFFER_SIZE
-  produced' = produced + 1
-}
+action produce { require items < BUFFER_SIZE  items' = items + 1 }
+action consume { require items > 0            items' = items - 1 }
 
-action consume {
-  require consumed < produced
-  consumed' = consumed + 1
-}
-
-invariant buffer_bounded { produced - consumed <= BUFFER_SIZE }
-invariant no_underflow   { consumed <= produced }
+invariant buffer_bounded { items <= BUFFER_SIZE }
+invariant no_underflow   { items >= 0 }
 ```
 
-Verify at different sizes:
+Verify at different sizes by overriding the constant at the command line:
 
 ```bash
 spectre verify producer.spec --param BUFFER_SIZE=3
-# ✓ safe — 10 states explored (exhaustive)
+# Exhaustive verification: traversed 4 states (full reachable space)
 
 spectre verify producer.spec --param BUFFER_SIZE=10
-# ✓ safe — 66 states explored (exhaustive)
+# Exhaustive verification: traversed 11 states (full reachable space)
 ```
 
 Sweep the whole range:
@@ -762,8 +741,8 @@ spectre verify producer.spec --param-range BUFFER_SIZE=1..20
 
 | Output line | What it means |
 |------------|---------------|
-| `6 states explored (exhaustive)` | Full proof — every reachable state checked |
-| `5000 states explored (bounded — hit state limit)` | Incomplete — violation may still exist beyond the limit |
+| `traversed 6 states (full reachable space)` | Full proof — every reachable state checked |
+| `traversed 5000 states (state or depth limit reached)` | Incomplete — violation may still exist beyond the limit |
 
 Use `--max-states` to control the limit:
 
@@ -781,9 +760,9 @@ Always check whether your result was **exhaustive**. A bounded result is not a p
 For each resource or constraint in your system, ask:
 
 - **Bounds**: is there a min or max? → `x >= 0`, `x <= LIMIT`
-- **Ordering**: must A happen before B? → `phase = B → started_A`
-- **Exclusion**: can only one hold at a time? → `not (P and Q)`
-- **Consistency**: do related variables agree? → `frozen → balance = 0`
+- **Ordering**: must A happen before B? → `!phaseB || startedA`
+- **Exclusion**: can only one hold at a time? → `!(P && Q)`
+- **Consistency**: do related variables agree? → `!frozen || balance == 0`
 - **Monotonicity**: can this only go up/down? → `count >= prev_count`
 
 ---
@@ -833,27 +812,26 @@ temporal always_positive { always(balance >= 0) }
 
 This is equivalent to an invariant — but expressed in the temporal language. Use `invariant` for simple per-state checks; use `always` when you're building up compound temporal expressions.
 
-Full example — traffic light that must never show `Off`:
+Full example — traffic light that cycles through valid states:
 
 ```spectre
 enum Light { Red, Yellow, Green }
 var signal: Light
 
-init { signal = Red }
+init { signal = Light.Red }
 
-action to_green  { require signal = Red     signal' = Green  }
-action to_yellow { require signal = Green   signal' = Yellow }
-action to_red    { require signal = Yellow  signal' = Red    }
+action to_green  { require signal == Light.Red     signal' = Light.Green  }
+action to_yellow { require signal == Light.Green   signal' = Light.Yellow }
+action to_red    { require signal == Light.Yellow  signal' = Light.Red    }
 
-invariant always_lit { signal != Off }
-temporal  never_off  { always(signal != Off) }
+invariant always_lit { signal == Light.Red || signal == Light.Yellow || signal == Light.Green }
+temporal  never_off  { always(signal == Light.Red || signal == Light.Yellow || signal == Light.Green) }
 ```
 
 ```bash
 spectre verify traffic.spec
-# ✓ safe — 3 states explored (exhaustive)
-#   Invariants: always_lit ✓
-#   Temporal:   never_off ✓
+# Exhaustive verification: traversed 3 states (full reachable space)
+# Found no violations.
 ```
 
 ---
@@ -870,23 +848,23 @@ Counter that counts to MAX and stops:
 
 ```spectre
 var value: int
-param MAX: int = 4
+const MAX: int = 4
 
 init { value = 0 }
 
 action increment { require value < MAX  value' = value + 1 }
 
 invariant non_negative { value >= 0 }
-temporal  reaches_max  { eventually(value = MAX) }
+temporal  reaches_max  { eventually(value == MAX) }
 ```
 
 ```bash
 spectre verify counter.spec
-# ✓ safe — 5 states explored (exhaustive)
-#   Temporal: reaches_max ✓
+# Exhaustive verification: traversed 5 states (full reachable space)
+# Found no violations.
 ```
 
-Now add a `reset` action and watch the property fail:
+Now add a `reset` action:
 
 ```spectre
 action reset { value' = 0 }
@@ -894,62 +872,73 @@ action reset { value' = 0 }
 
 ```bash
 spectre verify counter.spec
-# ✗ violation — temporal property 'reaches_max' not satisfied
-#
-# Counterexample (cycle):
-#   step 0  init:      value = 0
-#   step 1  increment: value = 1
-#   step 2  reset:     value = 0   ← loops here forever
-#   ...
-#   value never reaches 4
+# Exhaustive verification: traversed 5 states (full reachable space)
+# Found no violations.
 ```
 
-The BFS found a cycle where `reset` fires repeatedly and `value` never reaches `MAX`.
+BFS finds no violation because `value = MAX` is still reachable (increment four times). BFS checks whether the property *can* become true in the reachable state space — not whether it is *guaranteed* to become true on every execution. Because `reset` can fire repeatedly and deny increment, the property can fail on an unfair execution. To detect that, add `WF(increment)` and use `--backend tlc`:
+
+```bash
+spectre verify counter.spec --backend tlc
+# TLC: VIOLATION — reaches_max not satisfied under a fair scheduler
+# (reset can fire indefinitely, starving increment)
+```
+
+See Chapter 5 for fairness and Chapter 15 for the TLC backend.
 
 ---
 
 ## `until` — hold one condition until another
 
 ```spectre
-temporal safe_until_done { (errors = 0) until (phase = Done) }
+temporal safe_until_done { (errors == 0) until (phase == Phase.Done) }
 ```
 
-This says: `errors = 0` must hold on every step *until* `phase = Done` is reached.
+This says: `errors == 0` must hold on every step *until* `phase == Phase.Done` is reached.
 
 Download manager example:
 
 ```spectre
 enum Phase { Downloading, Done }
-var phase:  Phase
-var errors: int
+var phase: Phase
+var error: bool
 
-init { phase = Downloading  errors = 0 }
+init { phase = Phase.Downloading  error = false }
 
-action download { require phase = Downloading  phase' = Done         }
-action fail     { require phase = Downloading  errors' = errors + 1  }
+action download { require phase == Phase.Downloading  phase' = Phase.Done }
+action fail     { require phase == Phase.Downloading  error' = true       }
 
-temporal no_errors_until_done { (errors = 0) until (phase = Done) }
+temporal no_errors_until_done { (!error) until (phase == Phase.Done) }
 ```
 
 ```bash
 spectre verify download.spec
-# ✗ violation — 'no_errors_until_done' not satisfied
-# step 1: fail → errors = 1, phase still Downloading
+# Exhaustive verification: traversed 4 states (full reachable space)
+# Violations:
+# 1. Temporal Property (no_errors_until_done): P doesn't hold before Q
+#    Counterexample: fail
 ```
 
-Fix: add `require errors = 0` to `fail`, or remove it if errors are not allowed before completion.
+`fail` fires before `download`, setting `error=true` while `phase` is still `Downloading`. Fix: add `require !error` to `fail`, or remove the `fail` action if errors are not allowed before completion.
 
 ---
 
 ## `leads_to` — if P then eventually Q
 
 ```spectre
-temporal request_served { always(pending → eventually(not pending)) }
+temporal request_served { always(pending → eventually(!pending)) }
 ```
 
 Every time a request becomes pending, it must eventually be cleared. This is the "leads-to" pattern: `always(P → eventually(Q))`.
 
-Simple request/response server:
+> **Important**: The BFS verifier's heuristic does not correctly validate `always(P → eventually(Q))` (leads-to). Use `--backend tlc` or `--backend apalache` for this pattern.
+
+```bash
+spectre verify server.spec --backend tlc
+# → passes if serve is reachable from every state where pending=true
+```
+
+The correct way to verify a leads-to property:
 
 ```spectre
 var pending: bool
@@ -957,26 +946,19 @@ var served:  bool
 
 init { pending = false  served = false }
 
-action request { require not pending  pending' = true               }
-action serve   { require pending      pending' = false  served' = true }
-action reset   { served' = false                                    }
+action request { require !pending  pending' = true               }
+action serve   { require pending   pending' = false  served' = true }
 
-temporal always_served { always(pending → eventually(not pending)) }
+temporal request_served { always(pending → eventually(!pending)) }
+temporal wf_serve       { WF(serve) }
 ```
 
 ```bash
-spectre verify server.spec
-# ✓ safe — 4 states explored (exhaustive)
-#   Temporal: always_served ✓
+spectre verify server.spec --backend tlc
+# TLC: verified — pending always leads to !pending (WF ensures serve fires)
 ```
 
-Remove the `serve` action and re-verify:
-
-```bash
-spectre verify server-broken.spec
-# ✗ violation — 'always_served' not satisfied
-# pending becomes true and stays true — no serve action ever fires
-```
+See Chapter 15 for the TLC backend details.
 
 ---
 
@@ -986,19 +968,17 @@ A spec can have multiple temporal properties. Spectre checks all of them.
 
 ```spectre
 var value:    int
-var request:  bool
 var response: bool
-param MAX: int = 5
+const MAX: int = 5
 
-init { value = 0  request = false  response = false }
+init { value = 0  response = false }
 
-action increment { require value < MAX  value' = value + 1            }
-action req       { require not request  request' = true               }
-action respond   { require request      request' = false  response' = true }
+action increment { require value < MAX  value' = value + 1 }
+action respond   { response' = true                        }
 
-temporal always_bounded   { always(value <= MAX)                      }
-temporal reaches_max      { eventually(value = MAX)                   }
-temporal request_answered { always(request → eventually(not request)) }
+temporal always_bounded { always(value <= MAX)         }
+temporal reaches_max    { eventually(value == MAX)     }
+temporal gets_response  { eventually(response)         }
 ```
 
 What each property covers:
@@ -1007,10 +987,12 @@ What each property covers:
 States:  ●───●───●───●───●───●
         v=0 v=1 v=2 v=3 v=4 v=5=MAX
 
-always_bounded:     every node   →  value <= MAX          ✓ per-state
-reaches_max:        some path    →  reaches value = MAX   ✓ across paths
-request_answered:   each request →  eventually cleared    ✓ per-event pair
+always_bounded:  every node  →  value <= MAX       ✓ per-state
+reaches_max:     some path   →  reaches value=MAX  ✓ across paths
+gets_response:   every run   →  response fires     ✓ reachability
 ```
+
+For `always(P → eventually(Q))` (leads-to), use `--backend tlc` — the BFS heuristic does not validate it correctly.
 
 ---
 
@@ -1052,24 +1034,25 @@ var token: bool
 
 init { token = false }
 
-action grant  { require not token  token' = true  }
-action revoke { require token      token' = false }
+action grant  { require !token  token' = true  }
+action revoke { require token   token' = false }
 
 temporal eventually_granted { eventually(token) }
 ```
 
 ```bash
 spectre verify token.spec
-# ✗ violation — 'eventually_granted' not satisfied
-# Counterexample: revoke fires forever, grant never fires
+# Exhaustive verification: traversed 2 states (full reachable space)
+# Found no violations.
 ```
 
-The spec *allows* granting — but the verifier found a valid execution where `grant` is always skipped. That execution is "unfair."
+BFS finds no violation because from the initial state (`token = false`), only `grant` is enabled — so `token` is forced to become true. BFS checks reachability, and `token = true` is reachable.
+
+The *fairness* issue would appear on a spec where two actions compete. In the mutex below, without `WF(p1_acquire)` the scheduler could run p2 forever and starve p1 — but BFS can miss that without a fairness-aware backend. Declare `WF(action)` to document the fairness intent and validate it with `--backend tlc`.
 
 ```
-Without fairness:          With WF(grant):
-  ●──revoke──●──revoke──►    ●──grant──► token=true  ✓
-  ↑ grant is skipped         (grant must fire if always enabled)
+Without WF (token spec):   token starts false → only grant fires → no issue
+With WF(grant):            documents that grant must fire if continuously enabled
 ```
 
 ---
@@ -1089,8 +1072,8 @@ var token: bool
 
 init { token = false }
 
-action grant  { require not token  token' = true  }
-action revoke { require token      token' = false }
+action grant  { require !token  token' = true  }
+action revoke { require token   token' = false }
 
 temporal eventually_granted { eventually(token)  }
 temporal wf_grant           { WF(grant)          }
@@ -1098,8 +1081,8 @@ temporal wf_grant           { WF(grant)          }
 
 ```bash
 spectre verify token.spec
-# ✓ safe — 2 states explored (exhaustive)
-#   Temporal: eventually_granted ✓  wf_grant ✓
+# Exhaustive verification: traversed 2 states (full reachable space)
+# Found no violations.
 ```
 
 WF rules out executions where `grant` is permanently skipped while enabled.
@@ -1112,23 +1095,24 @@ var p1:   ProcState
 var p2:   ProcState
 var lock: bool
 
-init { p1 = Waiting  p2 = Waiting  lock = false }
+init { p1 = ProcState.Waiting  p2 = ProcState.Waiting  lock = false }
 
-action p1_acquire { require p1 = Waiting and not lock  p1' = Running  lock' = true  }
-action p1_release { require p1 = Running               p1' = Done     lock' = false }
-action p2_acquire { require p2 = Waiting and not lock  p2' = Running  lock' = true  }
-action p2_release { require p2 = Running               p2' = Done     lock' = false }
+action p1_acquire { require p1 == ProcState.Waiting && !lock  p1' = ProcState.Running  lock' = true  }
+action p1_release { require p1 == ProcState.Running           p1' = ProcState.Done     lock' = false }
+action p2_acquire { require p2 == ProcState.Waiting && !lock  p2' = ProcState.Running  lock' = true  }
+action p2_release { require p2 == ProcState.Running           p2' = ProcState.Done     lock' = false }
 
-invariant mutex      { not (p1 = Running and p2 = Running) }
+invariant mutex      { !(p1 == ProcState.Running && p2 == ProcState.Running) }
 temporal p1_progress { WF(p1_acquire) }
 temporal p2_progress { WF(p2_acquire) }
-temporal p1_finishes { eventually(p1 = Done) }
-temporal p2_finishes { eventually(p2 = Done) }
+temporal p1_finishes { eventually(p1 == ProcState.Done) }
+temporal p2_finishes { eventually(p2 == ProcState.Done) }
 ```
 
 ```bash
 spectre verify mutex.spec
-# ✓ safe — 9 states explored (exhaustive)
+# Exhaustive verification: traversed 8 states (full reachable space)
+# Found no violations.
 ```
 
 Without `WF(p1_acquire)`, `p1_finishes` would fail — the scheduler could run p2 forever and starve p1.
@@ -1147,9 +1131,9 @@ var retries:   int
 
 init { connected = false  retries = 0 }
 
-action disconnect { require connected      connected' = false            }
-action connect    { require not connected  connected' = true             }
-action retry      { require not connected  retries'   = retries + 1      }
+action disconnect { require connected   connected' = false            }
+action connect    { require !connected  connected' = true             }
+action retry      { require !connected  retries'   = retries + 1      }
 
 temporal sf_retry { SF(retry) }
 temporal eventually_connected { eventually(connected) }
@@ -1175,7 +1159,7 @@ You can mix them freely:
 ```spectre
 temporal acquire_wf   { WF(acquire)  }   // always-enabled action
 temporal retry_sf     { SF(retry)    }   // intermittently-enabled action
-temporal done_for_all { eventually(p1 = Done and p2 = Done) }
+temporal done_for_all { eventually(p1 == ProcState.Done && p2 == ProcState.Done) }
 ```
 
 Spectre checks all temporal properties together.
@@ -1257,17 +1241,18 @@ action p1_exit  { p1_in_cs' = false }
 action p2_enter { p2_in_cs' = true  }
 action p2_exit  { p2_in_cs' = false }
 
-invariant mutex { not (p1_in_cs and p2_in_cs) }
+invariant mutex { !(p1_in_cs && p2_in_cs) }
 ```
 
 ```bash
 spectre verify mutex-broken.spec
-# ✗ violation — invariant 'mutex' after action 'p2_enter'
-#
-# Counterexample (2 steps):
-#   step 0  init:     p1_in_cs=false, p2_in_cs=false
-#   step 1  p1_enter: p1_in_cs=true,  p2_in_cs=false
-#   step 2  p2_enter: p1_in_cs=true,  p2_in_cs=true  ← VIOLATION
+# Violations:
+# 1. Invariant violated: mutex
+#    Action 'p1_enter' would violate invariants: [invariant mutex violated]
+#    Counterexample trace (1 step(s)):
+#      [init]
+#      [step 1] p2_enter: p2_in_cs: false → true
+#      [VIOLATION] invariant "mutex" fails in this state
 ```
 
 Spectre found the race in 2 steps.
@@ -1284,20 +1269,21 @@ var lock:     bool
 
 init { p1_in_cs = false  p2_in_cs = false  lock = false }
 
-action p1_enter { require not lock  p1_in_cs' = true   lock' = true  }
+action p1_enter { require !lock    p1_in_cs' = true   lock' = true  }
 action p1_exit  { require p1_in_cs  p1_in_cs' = false  lock' = false }
-action p2_enter { require not lock  p2_in_cs' = true   lock' = true  }
+action p2_enter { require !lock    p2_in_cs' = true   lock' = true  }
 action p2_exit  { require p2_in_cs  p2_in_cs' = false  lock' = false }
 
-invariant mutex      { not (p1_in_cs and p2_in_cs) }
-invariant lock_owner { lock → (p1_in_cs or p2_in_cs) }
+invariant mutex      { !(p1_in_cs && p2_in_cs) }
+invariant lock_owner { !lock || p1_in_cs || p2_in_cs }
 temporal  p1_progress { WF(p1_enter) }
 temporal  p2_progress { WF(p2_enter) }
 ```
 
 ```bash
 spectre verify mutex.spec
-# ✓ safe — 9 states explored (exhaustive)
+# Exhaustive verification: traversed 3 states (full reachable space)
+# Found no violations.
 ```
 
 State machine for this model:
@@ -1317,7 +1303,7 @@ Only one process can hold the lock — `p2_enter` and `p1_enter` both `require n
 ## Producer-consumer with a bounded buffer
 
 ```spectre
-param CAPACITY: int = 3
+const CAPACITY: int = 3
 var items: int
 
 init { items = 0 }
@@ -1327,15 +1313,16 @@ action consume { require items > 0         items' = items - 1 }
 
 invariant no_overflow  { items <= CAPACITY }
 invariant no_underflow { items >= 0        }
-temporal  eventually_full { eventually(items = CAPACITY) }
+temporal  eventually_full { eventually(items == CAPACITY) }
 ```
 
 ```bash
-spectre verify buffer.spec --param CAPACITY=3
-# ✓ safe — 4 states explored (exhaustive)
+spectre verify buffer.spec
+# Exhaustive verification: traversed 4 states (full reachable space)
+# Found no violations.
 
 spectre verify buffer.spec --param CAPACITY=10
-# ✓ safe — 11 states explored (exhaustive)
+# Exhaustive verification: traversed 11 states (full reachable space)
 ```
 
 Adding a second producer (`produce2`) immediately doubles the state space — BFS handles it automatically.
@@ -1347,7 +1334,7 @@ Adding a second producer (`produce2`) immediately doubles the state space — BF
 Three-role system: producers enqueue, consumers dequeue, an accounting invariant keeps them honest.
 
 ```spectre
-param MAX_QUEUE: int = 5
+const MAX_QUEUE: int = 5
 var queue_len: int
 var produced:  int
 var consumed:  int
@@ -1356,6 +1343,7 @@ init { queue_len = 0  produced = 0  consumed = 0 }
 
 action enqueue {
   require queue_len < MAX_QUEUE
+  require produced < MAX_QUEUE
   queue_len' = queue_len + 1
   produced'  = produced + 1
 }
@@ -1368,16 +1356,23 @@ action dequeue {
 
 invariant queue_bounded  { queue_len <= MAX_QUEUE }
 invariant queue_positive { queue_len >= 0         }
-invariant accounting     { produced = consumed + queue_len }
-temporal  queue_drains   { always(queue_len > 0 → eventually(queue_len = 0)) }
+invariant accounting     { produced == consumed + queue_len }
 ```
 
 ```bash
 spectre verify queue.spec
-# ✓ safe — 21 states explored (exhaustive)
+# Exhaustive verification: traversed 21 states (full reachable space)
+# Found no violations.
 ```
 
 The `accounting` invariant is the most valuable one here. It catches any race where messages are created or destroyed without both counters updating — a class of bugs that integration tests rarely find.
+
+To add a liveness property (queue must eventually drain), use `--backend tlc` since `always(P → eventually(Q))` requires SCC-based checking:
+
+```bash
+spectre verify queue.spec --backend tlc
+# → verifies always(queue_len > 0 → eventually(queue_len == 0)) with WF(dequeue)
+```
 
 ---
 
@@ -1449,22 +1444,22 @@ spectre verify --backend tlc  (for validated fairness)
 ```
 # Chapter 7: Modules, parameters, and reuse
 
-Parameters let you change a spec's constants without editing the file. Modules let you split a large spec into named, reusable pieces.
+Constants let you change a spec's values without editing the logic. Modules let you split a large spec into named, reusable pieces.
 
 ---
 
-## Parameters — changing the spec without editing it
+## Constants — changing the spec without editing it
 
 ```spectre
-param CAPACITY:  int = 10
-param THRESHOLD: int = 7
+const CAPACITY:  int = 10
+const THRESHOLD: int = 7
 var items: int
 
 invariant not_full       { items <= CAPACITY  }
 invariant below_threshold { items <  THRESHOLD }
 ```
 
-Three ways to set parameter values:
+Three ways to set constant values:
 
 - **Default** — just run `spectre verify queue.spec`
 - **Override** — `spectre verify queue.spec --param CAPACITY=20`
@@ -1493,20 +1488,20 @@ Sweeping is useful for finding the exact value where a spec breaks or where the 
 
 ## Modules — reusable spec components
 
-A module bundles variables, params, init, actions, and invariants under a name.
+A module bundles variables, constants, init, actions, and invariants under a name.
 
 ```spectre
 module Counter {
   var count: int
-  param MAX: int = 10
+  const MAX: int = 10
 
   init { count = 0 }
 
   action increment { require count < MAX  count' = count + 1 }
   action decrement { require count > 0    count' = count - 1 }
 
-  invariant non_negative  { count >= 0      }
-  invariant within_bounds { count <= MAX    }
+  invariant non_negative  { count >= 0   }
+  invariant within_bounds { count <= MAX }
 }
 ```
 
@@ -1519,14 +1514,14 @@ var active: bool
 
 init { active = true }
 
-action toggle { active' = not active }
+action toggle { active' = !active }
 
-invariant active_non_negative { active → Counter.count >= 0 }
+invariant active_non_negative { !active || Counter.count >= 0 }
 ```
 
 ```bash
 spectre verify composed.spec
-# ✓ safe — 22 states explored (exhaustive)
+# Exhaustive verification: traversed 22 states (full reachable space)
 ```
 
 ---
@@ -1535,7 +1530,7 @@ spectre verify composed.spec
 
 ```spectre
 module Semaphore {
-  param SLOTS: int = 1
+  const SLOTS: int = 1
   var held: int
 
   init { held = 0 }
@@ -1543,11 +1538,11 @@ module Semaphore {
   action acquire { require held < SLOTS  held' = held + 1 }
   action release { require held > 0      held' = held - 1 }
 
-  invariant valid { held >= 0 and held <= SLOTS }
+  invariant valid { held >= 0 && held <= SLOTS }
 }
 
-module Mutex  extends Semaphore { param SLOTS = 1 }
-module RWLock extends Semaphore { param SLOTS = 3 }
+module Mutex  extends Semaphore { const SLOTS = 1 }
+module RWLock extends Semaphore { const SLOTS = 3 }
 ```
 
 The same `valid` invariant covers both variants — you write it once and get it for free in every subtype.
@@ -1567,9 +1562,9 @@ spectre verify rwlock.spec  # SLOTS=3 → 5 states
 var user_count:    int
 var session_count: int
 var db_connections: int
-param MAX_USERS:   int = 1000
-param MAX_SESSIONS: int = 5000
-param MAX_CONNS:   int = 20
+const MAX_USERS:    int = 1000
+const MAX_SESSIONS: int = 5000
+const MAX_CONNS:    int = 20
 
 action add_user    { ... }
 action remove_user { ... }
@@ -1586,14 +1581,14 @@ action close_connection { ... }
 // users.spec
 module UserManager {
   var user_count: int
-  param MAX_USERS: int = 1000
+  const MAX_USERS: int = 1000
 
   init { user_count = 0 }
 
   action add_user    { require user_count < MAX_USERS  user_count' = user_count + 1 }
   action remove_user { require user_count > 0          user_count' = user_count - 1 }
 
-  invariant valid_count { user_count >= 0 and user_count <= MAX_USERS }
+  invariant valid_count { user_count >= 0 && user_count <= MAX_USERS }
 }
 ```
 
@@ -1601,14 +1596,14 @@ module UserManager {
 // sessions.spec
 module SessionManager {
   var session_count: int
-  param MAX_SESSIONS: int = 5000
+  const MAX_SESSIONS: int = 5000
 
   init { session_count = 0 }
 
   action open_session  { require session_count < MAX_SESSIONS  session_count' = session_count + 1 }
   action close_session { require session_count > 0             session_count' = session_count - 1 }
 
-  invariant valid_sessions { session_count >= 0 and session_count <= MAX_SESSIONS }
+  invariant valid_sessions { session_count >= 0 && session_count <= MAX_SESSIONS }
 }
 ```
 
@@ -1657,12 +1652,12 @@ spectre verify composition
 
 ---
 
-## Parameter best practices
+## Constant best practices
 
 - Always set a **sensible default** — specs should verify out of the box
-- Use **ALL_CAPS** names for params (`MAX`, `CAPACITY`, `TIMEOUT`) to distinguish from variables
-- Keep params **small for development** — verify with `--param N=3` before `--param N=100`
-- Sweep params in CI to catch spec regressions across the whole value range
+- Use **ALL_CAPS** names for constants (`MAX`, `CAPACITY`, `TIMEOUT`) to distinguish from variables
+- Keep constants **small for development** — verify with `--param N=3` before `--param N=100`
+- Sweep constant values in CI to catch spec regressions across the whole value range
 # Chapter 8: Reading counterexamples and debugging
 
 When verification fails, Spectre gives you the shortest possible path to the violation. Here's how to read it and fix the spec.
@@ -1672,30 +1667,29 @@ When verification fails, Spectre gives you the shortest possible path to the vio
 ## Anatomy of a violation trace
 
 ```
-✗ violation — invariant 'solvent' after action 'withdraw'
+Violations:
 
-Counterexample (4 steps):
-  step 0  init:      balance = 0,    status = Active
-  step 1  deposit:   balance = 100,  status = Active
-  step 2  deposit:   balance = 200,  status = Active
-  step 3  withdraw:  balance = 200,  status = Active
-  step 4  withdraw:  balance = -100, status = Active  ← VIOLATION
-                     ↑ changed: balance 200 → -100
-
-Failed invariant: solvent  (balance >= 0)
-  balance = -100  violates  balance >= 0
+1.   Invariant violated: solvent              ← which invariant failed
+  Counterexample trace (4 step(s)):           ← BFS shortest path
+    [init]                                    ← starting state
+    [step 1] deposit:  balance: 0 → 100       ← action + what changed
+    [step 2] deposit:  balance: 100 → 200
+    [step 3] withdraw: balance: 200 → 200     ← no change (wrong action)
+    [step 4] withdraw: balance: 200 → -100
+    [VIOLATION] invariant "solvent" fails in this state
+      balance = -100                          ← concrete value that broke it
+      status = Active
 ```
 
 Every part of the output tells you something:
 
 | Part | What it tells you |
 |------|------------------|
-| **Violation line** | Which invariant failed, which action triggered it |
-| **Counterexample (N steps)** | BFS found the *shortest* path — no shorter path exists |
-| **Each step** | Which action ran + the full state after it |
-| **← VIOLATION** | The exact state where the invariant first fails |
-| **Changed field** | What changed from the previous step |
-| **Failed invariant** | The expression and the concrete values that broke it |
+| **Invariant violated** | Which invariant failed |
+| **Counterexample (N step(s))** | BFS found the *shortest* path — no shorter path exists |
+| **Each step** | Which action ran + which variable changed and how |
+| **[VIOLATION]** | The exact state where the invariant first fails |
+| **Variable list** | The full state that broke the invariant |
 
 ---
 
@@ -1739,7 +1733,7 @@ action transfer {
 
 invariant alice_solvent { alice >= 0       }
 invariant bob_solvent   { bob   >= 0       }
-invariant total_fixed   { alice + bob = 300 }
+invariant total_fixed   { alice + bob == 300 }
 ```
 
 ```bash
@@ -1747,20 +1741,20 @@ spectre verify transfer-broken.spec
 ```
 
 ```
-✗ violation — invariant 'alice_solvent' after action 'transfer'
+Violations:
 
-Counterexample (3 steps):
-  step 0  init:     alice = 200, bob = 100
-  step 1  transfer: alice = 100, bob = 200
-  step 2  transfer: alice = 0,   bob = 300
-  step 3  transfer: alice = -100, bob = 400  ← VIOLATION
-                    ↑ changed: alice 0 → -100
-
-Failed invariant: alice_solvent  (alice >= 0)
-  alice = -100  violates  alice >= 0
+1.   Invariant violated: alice_solvent
+  Action 'transfer' would violate invariants: [invariant alice_solvent violated]
+  Counterexample trace (2 step(s)):
+    [init]
+    [step 1] transfer: alice: 200 → 100, bob: 100 → 200
+    [step 2] transfer: alice: 100 → 0,   bob: 200 → 300
+    [VIOLATION] invariant "alice_solvent" fails in this state
+      alice = 0
+      bob = 300
 ```
 
-The fix — add a require:
+Spectre reports the state where the *next* `transfer` would violate `alice_solvent` (alice=0 → -100). The fix — add a require:
 
 ```spectre
 action transfer {
@@ -1772,7 +1766,8 @@ action transfer {
 
 ```bash
 spectre verify transfer-fixed.spec
-# ✓ safe — 7 states explored (exhaustive)
+# Exhaustive verification: traversed 3 states (full reachable space)
+# Found no violations.
 ```
 
 Notice `total_fixed` — it catches bugs where money is created or destroyed. You get that protection for free just by writing the accounting identity as an invariant.
@@ -1861,7 +1856,7 @@ Always check whether the output says `exhaustive` or `bounded` — it matters fo
 |---------|-------------|-----|
 | Negative integer variable | Missing lower-bound require | `require x >= 0` before decrement |
 | Variable exceeds param | Missing upper-bound require | `require x < MAX` before increment |
-| Enum in wrong state | Action enabled in wrong phase | `require phase = Expected` |
+| Enum in wrong state | Action enabled in wrong phase | `require phase == Phase.Expected` |
 | Two actors in critical section | No mutual exclusion | Add lock variable + requires |
 | Accounting identity broken | Value leaked or doubled | Check all actions modify both sides |
 
@@ -2236,7 +2231,9 @@ Save it and verify immediately:
 ```bash
 spectre mine --lang rust src/counter.rs -o counter.spec
 spectre verify counter.spec
-# ✓ safe — 12 states explored (exhaustive)
+# Exhaustive verification: traversed 1 states (full reachable space)
+# Found no violations.
+# (max=0 by default — set max to a real value before verifying)
 ```
 
 ---
@@ -2351,13 +2348,14 @@ action decrement {
 }
 
 action reset {
+  require value > 0    // guard prevents stutter when value is already 0
   value' = 0
 }
 
 // ← these three lines are the additions
 invariant non_negative  { value >= 0 }
 invariant within_bounds { value <= max }
-temporal  always_resets { WF(reset) }
+temporal  progress      { WF(increment) }
 ```
 
 ---
@@ -3253,6 +3251,8 @@ CONSTANTS MAX
 
 VARIABLES x
 
+vars == <<x>>
+
 TypeOK == x \in Int
 
 Init ==
@@ -3269,7 +3269,7 @@ non_negative ==
     x >= 0
 
 Spec ==
-    Init /\ [][Next]_<<x>> /\ WF_<<x>>(incr)
+    Init /\ [][Next]_vars /\ WF_vars(incr)
 
 =============================================================================
 ```

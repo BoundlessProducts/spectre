@@ -86,7 +86,9 @@ Save it and verify immediately:
 ```bash
 spectre mine --lang rust src/counter.rs -o counter.spec
 spectre verify counter.spec
-# ✓ safe — 12 states explored (exhaustive)
+# Exhaustive verification: traversed 1 states (full reachable space)
+# Found no violations.
+# (max=0 by default — set max to a real value before verifying)
 ```
 
 ---
@@ -201,13 +203,14 @@ action decrement {
 }
 
 action reset {
+  require value > 0    // guard prevents stutter when value is already 0
   value' = 0
 }
 
 // ← these three lines are the additions
 invariant non_negative  { value >= 0 }
 invariant within_bounds { value <= max }
-temporal  always_resets { WF(reset) }
+temporal  progress      { WF(increment) }
 ```
 
 ---
