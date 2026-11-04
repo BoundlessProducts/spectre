@@ -388,16 +388,16 @@ func rustTypeToSpectre(rt string, enumNames map[string]bool) (string, string) {
 	case strings.HasPrefix(rt, "Vec<"):
 		inner := innerGeneric(rt)
 		st, _ := rustTypeToSpectre(inner, enumNames)
-		return "List[" + st + "]", "{}"
+		return "List<" + st + ">", "[]"
 	case strings.HasPrefix(rt, "HashSet<") || strings.HasPrefix(rt, "BTreeSet<"):
 		inner := innerGeneric(rt)
 		st, _ := rustTypeToSpectre(inner, enumNames)
-		return "Set[" + st + "]", "{}"
+		return "Set<" + st + ">", "{}"
 	case strings.HasPrefix(rt, "HashMap<") || strings.HasPrefix(rt, "BTreeMap<"):
 		k, v := splitMapGeneric(rt)
 		sk, _ := rustTypeToSpectre(k, enumNames)
 		sv, _ := rustTypeToSpectre(v, enumNames)
-		return "Map[" + sk + ", " + sv + "]", "{}"
+		return "Map<" + sk + ", " + sv + ">", "{}"
 	case strings.HasPrefix(rt, "Option<"):
 		inner := innerGeneric(rt)
 		st, def := rustTypeToSpectre(inner, enumNames)

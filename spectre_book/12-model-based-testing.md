@@ -1,6 +1,6 @@
 # Model-based testing
 
-### The idea
+## The idea
 
 ```
 account.spec
@@ -25,7 +25,7 @@ The spec is the oracle. The driver replays spec-generated execution traces again
 
 ---
 
-### Generate a trace
+## Generate a trace
 
 ```bash
 spectre verify account.spec \
@@ -47,7 +47,7 @@ Coverage modes — pick based on what you want to exercise:
 
 ---
 
-### Generate the driver
+## Generate the driver
 
 ```bash
 spectre generate-driver --lang rust account.spec -o src/driver.rs
@@ -78,7 +78,7 @@ Wire these to your `BankAccount` struct and you're done.
 
 ---
 
-### CI-ready driver with `--ci`
+## CI-ready driver with `--ci`
 
 ```bash
 spectre generate-driver --lang rust account.spec --ci -o src/driver.rs
@@ -117,7 +117,7 @@ No extra configuration — the workflow picks up `trace.itf.json` from the repo.
 
 ---
 
-### Run the replay
+## Run the replay
 
 ```bash
 cargo run -- trace.itf.json
@@ -148,7 +148,7 @@ Failing run:
 
 ---
 
-### Violation traces as regression tests
+## Violation traces as regression tests
 
 When `spectre verify` finds a violation, `--emit-traces` captures the exact counterexample path:
 
@@ -172,7 +172,7 @@ This turns every spec violation into a permanent, reproducible regression test.
 
 ---
 
-### Repair suggestions before fixing
+## Repair suggestions before fixing
 
 When verification fails, get candidate patches before editing anything:
 
@@ -201,7 +201,7 @@ Apply the chosen patch to the spec, re-verify, then propagate the change to the 
 
 ---
 
-### Checking refinement
+## Checking refinement
 
 When you have traces from an external source (a different tool, a recorded production run), check whether they conform to your spec:
 
@@ -213,7 +213,7 @@ This reads `driver.json` (the refinement mapping) and validates that each extern
 
 ---
 
-### Complete MBT workflow
+## Complete MBT workflow
 
 ```
 1.  spectre mine --lang rust src/account.rs -o account.spec

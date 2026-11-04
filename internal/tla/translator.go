@@ -586,9 +586,54 @@ func (t *translator) callExpr(c *ast.CallExpr) string {
 	case *ast.Ident:
 		return t.builtinOrUser(fun.Name, fun.Position, argStr, c.Args)
 	case *ast.SelectorExpr:
-		// Module-qualified: ModuleName.FuncName → ModuleName_FuncName.
-		base := t.expr(fun.X)
-		return fmt.Sprintf("%s_%s(%s)", base, sanitize(fun.Sel), argStr)
+		obj := t.expr(fun.X)
+		method := fun.Sel
+		// Collection method calls: obj.method(args) → TLA+ equivalent.
+		switch method {
+		case "union":
+			if len(c.Args) == 1 {
+				return fmt.Sprintf("(%s \\union %s)", obj, argStr)
+			}
+		case "intersection", "intersect":
+			if len(c.Args) == 1 {
+				return fmt.Sprintf("(%s \\intersect %s)", obj, argStr)
+			}
+		case "difference", "diff":
+			if len(c.Args) == 1 {
+				return fmt.Sprintf("(%s \\ %s)", obj, argStr)
+			}
+		case "contains":
+			if len(c.Args) == 1 {
+				return fmt.Sprintf("%s \\in %s", argStr, obj)
+			}
+		case "size", "card":
+			return fmt.Sprintf("Cardinality(%s)", obj)
+		case "put":
+			if len(c.Args) == 2 {
+				return fmt.Sprintf("[%s EXCEPT ![%s] = %s]", obj, t.expr(c.Args[0]), t.expr(c.Args[1]))
+			}
+		case "get":
+			if len(c.Args) == 1 {
+				return fmt.Sprintf("%s[%s]", obj, argStr)
+			}
+		case "append":
+			if len(c.Args) == 1 {
+				return fmt.Sprintf("Append(%s, %s)", obj, argStr)
+			}
+		case "head":
+			return fmt.Sprintf("Head(%s)", obj)
+		case "tail":
+			return fmt.Sprintf("Tail(%s)", obj)
+		case "toSet":
+			return fmt.Sprintf("Range(%s)", obj)
+		case "toList":
+			return obj
+		}
+		// Not a known collection method — treat as module-qualified: ModuleName_FuncName.
+		if argStr == "" {
+			return fmt.Sprintf("%s_%s", obj, sanitize(method))
+		}
+		return fmt.Sprintf("%s_%s(%s)", obj, sanitize(method), argStr)
 	default:
 		t.diag(LimitUnsupported, c.Pos(), "complex call expression not supported")
 		return fmt.Sprintf("\\* UNSUPPORTED_CALL(%s)", argStr)
@@ -769,6 +814,8 @@ func binaryOp(op ast.BinaryOp) string {
 		return "/\\"
 	case ast.Or:
 		return "\\/"
+	case ast.In:
+		return "\\in"
 	default:
 		return "\\* UNKNOWN_OP"
 	}

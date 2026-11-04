@@ -239,14 +239,14 @@ bank-fixed.spec: safe
 
 | | BFS | TLC | Apalache | Z3 |
 |-|-----|-----|----------|----|
-| Role | learning / explore | production | production | production |
-| Exhaustive | small specs | yes | yes (symbolic) | no (bounded) |
-| Fairness (WF/SF) | exploratory | validated (SCC) | limited | none |
-| Temporal / liveness | exploratory | validated | limited | none |
-| Safety invariants | exhaustive (small) | exhaustive | exhaustive (symbolic) | bounded |
-| Dependencies | none | TLA+ tools | Apalache | z3 |
-| Speed | fast | moderate | fast (large) | very fast |
-| Setup time | 0 | 5 min | 10 min | 2 min |
+| Role | learning | production | production | production |
+| Exhaustive | small specs | yes | yes | no (bounded) |
+| Fairness (WF/SF) | exploratory | validated | limited | none |
+| Liveness | exploratory | validated | limited | none |
+| Safety | exhaustive | exhaustive | exhaustive | bounded |
+| Dependencies | none | TLA+ tools | Apalache bin | z3 binary |
+| Speed | fast | moderate | fast | very fast |
+| Setup | 0 min | 5 min | 10 min | 2 min |
 
 ---
 

@@ -193,6 +193,25 @@ nodes' = nodes.union({new_node})
 | `Map<K,V>` | `.put(k,v)`, `.get(k)`, `.contains(k)`, `.size()` |
 | `List<T>` | `.append(x)`, `.head()`, `.tail()`, `.filter(f)`, `.map(f)`, `.size()`, `.toSet()` |
 
+### Collection error semantics
+
+Two methods can fail at runtime if called on an ill-formed value:
+
+- `M.get(k)` — **disables the action** if key `k` is not present in map `M`. The action is treated as if `require false` were its first statement — it cannot fire from any state where the key is missing. This is the same behavior as a failed `require`.
+- `L.head()` — **disables the action** if list `L` is empty. Same semantics as `require !L.isEmpty()`.
+
+The rationale: a Spectre action either succeeds atomically or is never attempted. There is no concept of a "partial action" or a "runtime panic." If a method call would fail, the action is simply not enabled in that state.
+
+This matters for verification: if your spec has an action that calls `M.get(k)` on a key that may be absent, BFS/TLC will silently skip that action in states where the key is missing. Add a defensive `require k in M` guard before `M.get(k)` if you want to make the guard explicit and visible in traces.
+
+```spectre
+action apply_vote {
+  require node_id in votes          // explicit guard — action disabled if missing
+  let decision = votes.get(node_id) // safe: key guaranteed present
+  ...
+}
+```
+
 ---
 
 ## B.8 Priming summary

@@ -1,6 +1,6 @@
 # Drift detection and incremental re-verification
 
-### The drift problem
+## The drift problem
 
 ```
 Day 1:   mine spec --> check in account.spec + account.rs
@@ -17,7 +17,7 @@ Day 30:  refactor withdraw() in Rust
 
 ---
 
-### Running sync
+## Running sync
 
 ```bash
 spectre sync src/account.rs --spec account.spec
@@ -51,7 +51,7 @@ The SMT-equivalence check prevents false alarms on equivalent rewrites — commu
 
 ---
 
-### CI integration
+## CI integration
 
 ```yaml
 # .github/workflows/spectre.yml
@@ -64,7 +64,7 @@ The SMT-equivalence check prevents false alarms on equivalent rewrites — commu
 
 ---
 
-### Incremental re-verification
+## Incremental re-verification
 
 After a semantic change, you don't need to re-run full BFS. Re-verify only the changed action:
 
@@ -98,7 +98,7 @@ Incremental re-verification: action 'withdraw'
 
 ---
 
-### Impact analysis
+## Impact analysis
 
 Before re-verifying, check which invariants are actually affected by the change:
 
@@ -122,7 +122,7 @@ Use `impact` in CI to skip re-verification when a changed action doesn't touch a
 
 ---
 
-### Full sync workflow
+## Full sync workflow
 
 ```
 Code changes committed
@@ -157,7 +157,7 @@ spectre sync src/ --spec spec.spec
 
 ---
 
-### Sync evaluation: what it checks
+## Sync evaluation: what it checks
 
 `sync` compares:
 - Struct field names and types
@@ -168,7 +168,7 @@ It detected **30/35 injected semantic mutations** (85.7%) in evaluation, with 1 
 
 ---
 
-### Tips for keeping sync useful
+## Tips for keeping sync useful
 
 - **Check in the spec file alongside the Rust source** — keep them in the same directory or a `spec/` subdirectory
 - **Run sync in pre-commit** as well as CI — catch drift before it even reaches the repo

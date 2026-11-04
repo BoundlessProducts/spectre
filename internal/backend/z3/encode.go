@@ -142,6 +142,18 @@ func Encode(file *ast.File, params map[string]string, depth int) (string, error)
 				sb.WriteString(fmt.Sprintf("  (and %s)\n", strings.Join(parts, " ")))
 			}
 		}
+		// Stutter clause: when no action is enabled the system stays in place.
+		// Without this, a deadlocked state produces (assert (or false ... false))
+		// which is UNSAT — the solver would vacuously report "safe".
+		stutterParts := make([]string, len(vars))
+		for i, v := range vars {
+			stutterParts[i] = fmt.Sprintf("(= %s_%d %s_%d)", v.Name, step+1, v.Name, step)
+		}
+		if len(stutterParts) == 1 {
+			sb.WriteString(fmt.Sprintf("  ; stutter (no action fires)\n  %s\n", stutterParts[0]))
+		} else if len(stutterParts) > 1 {
+			sb.WriteString(fmt.Sprintf("  ; stutter (no action fires)\n  (and %s)\n", strings.Join(stutterParts, " ")))
+		}
 		sb.WriteString("))\n\n")
 	}
 
@@ -229,6 +241,8 @@ func exprToSMT(expr ast.Expr, step int, params map[string]string) string {
 			return fmt.Sprintf("(and %s %s)", l, r)
 		case ast.Or:
 			return fmt.Sprintf("(or %s %s)", l, r)
+		case ast.In:
+			return fmt.Sprintf("(member %s %s)", l, r)
 		}
 
 	case *ast.UnaryExpr:
@@ -239,6 +253,81 @@ func exprToSMT(expr ast.Expr, step int, params map[string]string) string {
 
 	case *ast.ParenExpr:
 		return exprToSMT(e.X, step, params)
+
+	case *ast.SetLiteral:
+		if len(e.Elements) == 0 {
+			return "(as emptyset (Set Int))"
+		}
+		result := fmt.Sprintf("(singleton %s)", exprToSMT(e.Elements[0], step, params))
+		for _, el := range e.Elements[1:] {
+			result = fmt.Sprintf("(union %s (singleton %s))", result, exprToSMT(el, step, params))
+		}
+		return result
+
+	case *ast.ListLiteral:
+		if len(e.Elements) == 0 {
+			return "(as seq.empty (Seq Int))"
+		}
+		result := fmt.Sprintf("(seq.unit %s)", exprToSMT(e.Elements[0], step, params))
+		for _, el := range e.Elements[1:] {
+			result = fmt.Sprintf("(seq.++ %s (seq.unit %s))", result, exprToSMT(el, step, params))
+		}
+		return result
+
+	case *ast.CallExpr:
+		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
+			obj := exprToSMT(sel.X, step, params)
+			args := make([]string, len(e.Args))
+			for i, a := range e.Args {
+				args[i] = exprToSMT(a, step, params)
+			}
+			switch sel.Sel {
+			case "union":
+				if len(args) == 1 {
+					return fmt.Sprintf("(union %s %s)", obj, args[0])
+				}
+			case "intersection":
+				if len(args) == 1 {
+					return fmt.Sprintf("(intersection %s %s)", obj, args[0])
+				}
+			case "difference":
+				if len(args) == 1 {
+					return fmt.Sprintf("(setdiff %s %s)", obj, args[0])
+				}
+			case "contains":
+				if len(args) == 1 {
+					return fmt.Sprintf("(member %s %s)", args[0], obj)
+				}
+			case "size":
+				return fmt.Sprintf("(card %s)", obj)
+			case "put":
+				if len(args) == 2 {
+					return fmt.Sprintf("(store %s %s %s)", obj, args[0], args[1])
+				}
+			case "get":
+				if len(args) == 1 {
+					return fmt.Sprintf("(select %s %s)", obj, args[0])
+				}
+			case "append":
+				if len(args) == 1 {
+					return fmt.Sprintf("(seq.++ %s (seq.unit %s))", obj, args[0])
+				}
+			case "head":
+				return fmt.Sprintf("(seq.nth %s 0)", obj)
+			case "tail":
+				return fmt.Sprintf("(seq.extract %s 1 (- (seq.len %s) 1))", obj, obj)
+			}
+		}
+		// Generic call — best effort
+		fun := exprToSMT(e.Fun, step, params)
+		args := make([]string, len(e.Args))
+		for i, a := range e.Args {
+			args[i] = exprToSMT(a, step, params)
+		}
+		if len(args) == 0 {
+			return fun
+		}
+		return fmt.Sprintf("(%s %s)", fun, strings.Join(args, " "))
 	}
 	return "true"
 }
@@ -266,6 +355,12 @@ func smtSort(t ast.Type, enums []*ast.EnumDecl) string {
 			}
 		}
 		return "Int"
+	case *ast.SetType:
+		return fmt.Sprintf("(Set %s)", smtSort(ty.Element, enums))
+	case *ast.MapType:
+		return fmt.Sprintf("(Array %s %s)", smtSort(ty.Key, enums), smtSort(ty.Value, enums))
+	case *ast.ListType:
+		return fmt.Sprintf("(Seq %s)", smtSort(ty.Element, enums))
 	}
 	return "Int"
 }
@@ -294,6 +389,12 @@ func defaultSMTVal(t ast.Type, enums []*ast.EnumDecl) string {
 				return e.Values[0]
 			}
 		}
+	case *ast.SetType:
+		return fmt.Sprintf("(as emptyset (Set %s))", smtSort(ty.Element, enums))
+	case *ast.MapType:
+		return fmt.Sprintf("((as const (Array %s %s)) %s)", smtSort(ty.Key, enums), smtSort(ty.Value, enums), defaultSMTVal(ty.Value, enums))
+	case *ast.ListType:
+		return fmt.Sprintf("(as seq.empty (Seq %s))", smtSort(ty.Element, enums))
 	}
 	return "0"
 }

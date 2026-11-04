@@ -13,6 +13,8 @@ Invariants catch bad states. Temporal properties catch bad *trajectories* — th
 
 You need both. A spec where nothing ever happens is trivially safe but useless.
 
+> **BFS and liveness: exploratory only.** The default BFS backend (`spectre verify`) checks reachability and reports `safe` for temporal properties, but this is *not* a valid liveness proof. BFS cannot distinguish "eventually holds on all fair executions" from "reachable but not guaranteed." If your spec contains `eventually`, `until`, `P -> Q` (leads-to), `WF`, or `SF`, use `--backend tlc` for a sound result. Running BFS on a spec with liveness properties gives you a quick sanity check — not a guarantee. If you want an explicit error rather than a silent exploratory result, run `spectre verify --backend tlc`.
+
 ---
 
 ## `always` — a condition that holds forever

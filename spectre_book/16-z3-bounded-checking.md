@@ -81,16 +81,18 @@ Spectre generates (simplified):
 ; Initial state
 (assert (= x_0 0))
 
-; Step 0 -> 1: one action fires
+; Step 0 -> 1: one action fires, or stutter (no action enabled)
 (assert (or
-  (and (< x_0 5) (= x_1 (+ x_0 1)))   ; incr
-  (and (> x_0 0) (= x_1 (- x_0 1)))   ; decr
+  (and (< x_0 5) (= x_1 (+ x_0 1)))  ; incr fires
+  (and (> x_0 0) (= x_1 (- x_0 1)))  ; decr fires
+  (= x_1 x_0)                          ; stutter: no action enabled
 ))
 
 ; Step 1 -> 2
 (assert (or
   (and (< x_1 5) (= x_2 (+ x_1 1)))
   (and (> x_1 0) (= x_2 (- x_1 1)))
+  (= x_2 x_1)                          ; stutter
 ))
 
 ; Invariant negation: find ANY step that violates non_negative
@@ -103,6 +105,8 @@ Spectre generates (simplified):
 (check-sat)
 (get-model)
 ```
+
+The stutter clause `(= x_{k+1} x_k)` is essential. Without it, a deadlocked state — one where all action guards are false — would produce `(assert (or false false))` = `(assert false)`, making the entire formula unsatisfiable. Z3 would then report "safe" even if the invariant is violated in the deadlocked state. The stutter ensures the system can always stay put, matching TLA+'s standard semantics.
 
 Z3 answers `unsat` (no violation in 2 steps) or `sat` (violation found, model gives the path).
 
@@ -139,6 +143,9 @@ account.spec: violation found (z3)
 - You need an exhaustive proof of safety (Z3 BMC can only say "no bug in N steps")
 - You have liveness or fairness properties (Z3 BMC checks only reachability)
 - Violations require very long paths (rare in practice — most bugs appear early)
+- Your spec uses `Set<T>` or `Map<K,V>` with `.size()` comparisons — Z3 set cardinality over integer domains is unreliable; use TLC for those specs
+
+**`init oneOf` with Z3:** When your spec uses `init oneOf { ... }` to declare multiple starting states, Z3 encodes each option as an `(assert (or ...))` disjunction at step 0. This is sound — Z3 explores violations starting from any of the listed initial states. BFS and TLC handle `oneOf` natively as separate starting points.
 
 ---
 

@@ -164,8 +164,17 @@ ParamList  ::= Param { "," Param }
 Param      ::= Ident ":" TypeExpr
 ```
 
+The optional `when Expr` clause is a **declaration-level guard** — it is equivalent to placing `require Expr` as the first statement of the action body. The tutorial chapters use `require` exclusively; `when` is offered as a compact alternative for a single top-level precondition, most useful with parameterized actions.
+
 ```spectre
+// These two forms are equivalent:
 action deposit(amount: int) when amount > 0 {
+  require balance + amount <= LIMIT
+  balance' = balance + amount
+}
+
+action deposit(amount: int) {
+  require amount > 0
   require balance + amount <= LIMIT
   balance' = balance + amount
 }
@@ -257,7 +266,8 @@ BinOp    ::= "+" | "-" | "*" | "/" | "%"
            | "&&" | "||"
            | "in"
 
-UnaryOp  ::= "!" | "-"
+UnaryOp  ::= "!"          (* logical NOT *)
+           | "-"          (* arithmetic negation *)
 
 ArgList  ::= Expr { "," Expr }
 ```
@@ -303,10 +313,13 @@ RecordLiteral ::= "{" FieldInit { "," FieldInit } [ "," "..." Ident ] "}"
 FieldInit     ::= Ident ":" Expr
 ```
 
+There is no `MapLiteral` syntax. Maps are always initialized to `{}` (empty set literal) or built up via `.put(k, v)` calls. The parser disambiguates `{}` by the declared type of the variable being assigned: when the target type is `Map<K,V>`, the empty brace literal `{}` is interpreted as an empty map; when the target type is `Set<T>`, it is an empty set. Non-empty set literals `{e1, e2, ...}` are unambiguously sets — there is no key-value literal syntax for maps.
+
 ```spectre
-var nodes:   Set<int>  = {1, 2, 3}
-var history: List<str> = ["start", "ready"]
-var empty:   Set<int>  = {}
+var nodes:   Set<int>       = {1, 2, 3}  // SetLiteral (non-empty)
+var history: List<str>      = ["start"]   // ListLiteral
+var empty_s: Set<int>       = {}          // empty set (type drives interpretation)
+var empty_m: Map<int, bool> = {}          // empty map (same syntax, type-driven)
 ```
 
 ---
@@ -379,15 +392,15 @@ From lowest (loosest) to highest (tightest):
 
 | Level | Operators | Associates |
 |-------|-----------|------------|
-| 1 | `\|\|` | left |
-| 2 | `&&` | left |
-| 3 | `==` `!=` `in` | left |
-| 4 | `<` `<=` `>` `>=` | left |
-| 5 | `+` `-` | left |
-| 6 | `*` `/` `%` | left |
-| 7 | `!` `-` (unary) | prefix |
-| 8 | `.` (member), `(` (call) | left |
-| 9 | `[` (index) | left |
+| 1 (loosest) | `\|\|` (or) | left |
+| 2 | `&&` (and) | left |
+| 3 | `==`  `!=`  `in` | left |
+| 4 | `<`  `<=`  `>`  `>=` | left |
+| 5 | `+`  `-` | left |
+| 6 | `*`  `/`  `%` | left |
+| 7 | `!`  `-` (unary) | prefix |
+| 8 | `.` (member)  `(` (call) | left |
+| 9 (tightest) | `[` (index) | left |
 
 When in doubt, add parentheses — the parser accepts them freely.
 

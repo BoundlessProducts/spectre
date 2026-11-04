@@ -307,6 +307,8 @@ func exprToTLA(e ast.Expr) string {
 			return fmt.Sprintf("(%s /\\ %s)", l, r)
 		case ast.Or:
 			return fmt.Sprintf("(%s \\/ %s)", l, r)
+		case ast.In:
+			return fmt.Sprintf("%s \\in %s", l, r)
 		}
 	case *ast.UnaryExpr:
 		if v.Op == ast.Not {
@@ -326,7 +328,74 @@ func exprToTLA(e ast.Expr) string {
 		return fmt.Sprintf("(%s ~> %s)", exprToTLA(v.Left), exprToTLA(v.Right))
 	case *ast.ParenExpr:
 		return fmt.Sprintf("(%s)", exprToTLA(v.X))
+	case *ast.SetLiteral:
+		if len(v.Elements) == 0 {
+			return "{}"
+		}
+		elems := make([]string, len(v.Elements))
+		for i, el := range v.Elements {
+			elems[i] = exprToTLA(el)
+		}
+		return "{" + strings.Join(elems, ", ") + "}"
+	case *ast.ListLiteral:
+		if len(v.Elements) == 0 {
+			return "<<>>"
+		}
+		elems := make([]string, len(v.Elements))
+		for i, el := range v.Elements {
+			elems[i] = exprToTLA(el)
+		}
+		return "<<" + strings.Join(elems, ", ") + ">>"
 	case *ast.CallExpr:
+		// Detect method calls on collections: obj.method(args...)
+		if sel, ok := v.Fun.(*ast.SelectorExpr); ok {
+			obj := exprToTLA(sel.X)
+			args := make([]string, len(v.Args))
+			for i, a := range v.Args {
+				args[i] = exprToTLA(a)
+			}
+			switch sel.Sel {
+			case "union":
+				if len(args) == 1 {
+					return fmt.Sprintf("(%s \\union %s)", obj, args[0])
+				}
+			case "intersection":
+				if len(args) == 1 {
+					return fmt.Sprintf("(%s \\intersect %s)", obj, args[0])
+				}
+			case "difference":
+				if len(args) == 1 {
+					return fmt.Sprintf("(%s \\ %s)", obj, args[0])
+				}
+			case "contains":
+				if len(args) == 1 {
+					return fmt.Sprintf("%s \\in %s", args[0], obj)
+				}
+			case "size":
+				return fmt.Sprintf("Cardinality(%s)", obj)
+			case "put":
+				if len(args) == 2 {
+					return fmt.Sprintf("[%s EXCEPT ![%s] = %s]", obj, args[0], args[1])
+				}
+			case "get":
+				if len(args) == 1 {
+					return fmt.Sprintf("%s[%s]", obj, args[0])
+				}
+			case "append":
+				if len(args) == 1 {
+					return fmt.Sprintf("Append(%s, %s)", obj, args[0])
+				}
+			case "head":
+				return fmt.Sprintf("Head(%s)", obj)
+			case "tail":
+				return fmt.Sprintf("Tail(%s)", obj)
+			case "toList":
+				return obj // best-effort
+			case "toSet":
+				return fmt.Sprintf("Range(%s)", obj)
+			}
+		}
+		// Generic function call fallback
 		fun := exprToTLA(v.Fun)
 		args := make([]string, len(v.Args))
 		for i, a := range v.Args {
@@ -375,6 +444,12 @@ func typeSet(typ ast.Type) string {
 		}
 	case *ast.EnumType:
 		return t.Name
+	case *ast.SetType:
+		return "SUBSET " + typeSet(t.Element)
+	case *ast.MapType:
+		return "[" + typeSet(t.Key) + " -> " + typeSet(t.Value) + "]"
+	case *ast.ListType:
+		return "Seq(" + typeSet(t.Element) + ")"
 	}
 	return "Int"
 }

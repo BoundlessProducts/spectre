@@ -2,7 +2,7 @@
 
 > **Important limitations before you start:** The miner cannot extract enum payload data (`InsufficientFunds(u64)` becomes `InsufficientFunds` with no data), error propagation paths (`Result<T,E>` error branches are dropped), and arithmetic safety operations (`checked_add`, `saturating_sub` are approximated as unbounded arithmetic). These are precisely the locations where real Rust bugs occur. After mining, run `--show-omissions` and add invariants or guards for every dropped case that matters for safety.
 
-### What mining does
+## What mining does
 
 ```
 src/account.rs ──► spectre mine ──► account.spec skeleton
@@ -24,7 +24,7 @@ What it extracts:
 
 ---
 
-### Your first mine
+## Your first mine
 
 ```rust
 // src/counter.rs
@@ -95,7 +95,7 @@ spectre verify counter.spec
 
 ---
 
-### What gets extracted vs. what gets skipped
+## What gets extracted vs. what gets skipped
 
 | Extracted ✓ | Skipped / approximated ✗ |
 |-------------|--------------------------|
@@ -108,7 +108,7 @@ spectre verify counter.spec
 
 ---
 
-### Seeing what was skipped: `--show-omissions`
+## Seeing what was skipped: `--show-omissions`
 
 ```bash
 spectre mine --lang rust src/account.rs --show-omissions
@@ -139,7 +139,7 @@ Mined: 3 fields, 1 enum, 4 actions, 4 omissions (run --show-omissions for detail
 
 ---
 
-### Evaluate a whole directory
+## Evaluate a whole directory
 
 ```bash
 spectre eval-rust --dir src/
@@ -174,7 +174,7 @@ Use this output to prioritise enrichment effort — start with files nearest 100
 
 ---
 
-### Enrich the mined spec
+## Enrich the mined spec
 
 Three things to always add after mining:
 
@@ -217,7 +217,7 @@ temporal  progress      { WF(increment) }
 
 ---
 
-### LLM-enhanced mining
+## LLM-enhanced mining
 
 ```bash
 ANTHROPIC_API_KEY=sk-... spectre mine --lang rust src/account.rs --ai
@@ -238,7 +238,7 @@ Always review LLM suggestions against your actual requirements before uncommenti
 
 ---
 
-### The full mining workflow
+## The full mining workflow
 
 ```
 1. spectre eval-rust --dir src/

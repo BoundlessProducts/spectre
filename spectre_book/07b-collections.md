@@ -235,10 +235,12 @@ For larger protocols (Raft, Paxos, 5+ nodes), state spaces quickly exceed BFS ca
 
 ```
 Small protocol (2-3 nodes)   -->  --backend bfs        (learning, exhaustive)
-Medium protocol (4-5 nodes)  -->  --backend z3         (fast shallow bugs)
+Medium protocol (4-5 nodes)  -->  --backend tlc        (exhaustive, validated)
 Large protocol (6+ nodes)    -->  --backend apalache   (symbolic, exhaustive)
 Liveness / leader election   -->  --backend tlc        (validated fairness)
 ```
+
+**A note on Z3 and collections**: The Z3 backend (bounded model checking) translates `Set<T>` to SMT-LIB2 sets and can catch shallow set bugs. However, `Cardinality` checks over `Set<int>` are unreliable in Z3 because integer sets are infinite — Z3 may report spurious violations. Use Z3 for set membership and boolean checks; use TLC or Apalache for specs with `.size()` comparisons on integer sets.
 
 ---
 
@@ -267,6 +269,6 @@ M' = M.put(key, value)
 
 // List update
 L' = L.append(x)
-head = L.head()
-rest = L.tail()
+let head = L.head()   // read first element (use in expressions/requires)
+let rest = L.tail()   // read tail (use in expressions/requires)
 ```

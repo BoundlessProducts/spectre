@@ -19,6 +19,7 @@ type StateMachine struct {
 	executor          *ActionExecutor
 	validator         *StateValidator
 	params            map[string]int64 // spec params bound via --param flags
+	paramDefaults     map[string]int64 // default values from `param N: int = 5` in spec
 }
 
 // NewStateMachine creates a new state machine from a parsed file
@@ -33,9 +34,17 @@ func NewStateMachine(file *ast.File, additionalFiles ...*ast.File) (*StateMachin
 	am := state.NewActionModel(file)
 	cm := state.NewConstraintModel(file, am)
 
+	// Collect param defaults declared in the spec (param N: int = 5).
+	defaults := make(map[string]int64)
+	for _, d := range file.Decls {
+		if pd, ok := d.(*ast.ParamDecl); ok && pd.Default != nil {
+			defaults[pd.Name] = *pd.Default
+		}
+	}
+
 	// Pass all files (including imported modules) to components for constant/enum registration
 	allFiles := append([]*ast.File{file}, additionalFiles...)
-	
+
 	return &StateMachine{
 		variableModel:     vm,
 		initialStateModel: ism,
@@ -44,6 +53,7 @@ func NewStateMachine(file *ast.File, additionalFiles ...*ast.File) (*StateMachin
 		initializer:       NewStateInitializer(vm, ism, file, allFiles...),
 		executor:          NewActionExecutor(vm, am, cm, file, allFiles...),
 		validator:         NewStateValidator(cm, file, allFiles...),
+		paramDefaults:     defaults,
 	}, nil
 }
 
@@ -285,8 +295,14 @@ func (sm *StateMachine) SetParam(name string, value int64) {
 }
 
 // injectParams adds bound spec parameters into a state's variable map.
-// It is called by GetInitialStates so that params are available throughout exploration.
+// Explicit --param values take precedence; defaults from `param N: int = D` fill the rest.
 func (sm *StateMachine) injectParams(s *state.State) {
+	for k, v := range sm.paramDefaults {
+		if _, explicit := sm.params[k]; !explicit {
+			n := v
+			s.Variables[k] = &state.PrimitiveValue{TypeName: "int", IntValue: &n}
+		}
+	}
 	for k, v := range sm.params {
 		n := v
 		s.Variables[k] = &state.PrimitiveValue{TypeName: "int", IntValue: &n}

@@ -1,9 +1,16 @@
 package parser
 
 import (
+	"strconv"
+
 	"github.com/BoundlessProducts/spectre/internal/lexer"
 	"github.com/BoundlessProducts/spectre/pkg/ast"
 )
+
+func parseInt64(s string) int64 {
+	n, _ := strconv.ParseInt(s, 10, 64)
+	return n
+}
 
 // parseVariableDecl parses a variable declaration
 // Format: description "text" var name: Type
@@ -112,8 +119,9 @@ func (p *Parser) parseConstantDecl() ast.Decl {
 }
 
 // parseParamDecl parses a specification parameter declaration.
-// Format: param <name>: <type>
+// Format: param <name>: <type> [= <integer>]
 // Parameters are read-only integer variables bound via --param Name=Value at run time.
+// An optional default `= N` is used when no --param flag is provided.
 func (p *Parser) parseParamDecl() ast.Decl {
 	pos := tokenPos(p.curToken)
 
@@ -141,10 +149,23 @@ func (p *Parser) parseParamDecl() ast.Decl {
 		return nil
 	}
 
+	var defaultVal *int64
+	if p.curTokenIs(lexer.ASSIGN) {
+		p.nextToken() // consume "="
+		if !p.curTokenIs(lexer.INT) {
+			p.addErrorf("expected integer literal after = in param default, got %s", p.curToken.Type)
+			return nil
+		}
+		n := parseInt64(p.curToken.Literal)
+		defaultVal = &n
+		p.nextToken() // consume integer
+	}
+
 	return &ast.ParamDecl{
 		Position: pos,
 		Name:     name,
 		Type:     paramType,
+		Default:  defaultVal,
 	}
 }
 

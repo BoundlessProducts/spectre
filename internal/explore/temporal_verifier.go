@@ -614,9 +614,9 @@ func (tv *TemporalVerifier) verifyLeadsToWithInitial(prop *state.TemporalPropert
 
 func (tv *TemporalVerifier) evaluateProperty(expr ast.Expr, s *state.State) (bool, error) {
 	env := eval.NewEnvironment()
-	// Register enum types
 	eval.RegisterEnumTypes(env, tv.file)
-	
+	eval.RegisterConstants(env, tv.file)
+
 	for varName, varValue := range s.Variables {
 		env.SetVariable(varName, varValue)
 	}
@@ -770,9 +770,9 @@ func (tv *TemporalVerifier) hasBlockingCycle(from *state.State, propExpr ast.Exp
 		fromTransHash := tv.hasher.HashState(trans.FromState)
 		toTransHash := tv.hasher.HashState(trans.ToState)
 		if fromTransHash == toTransHash {
-			// Self-loop found - check if property never holds
-			holds, err := tv.evaluateProperty(propExpr, trans.FromState)
-			if err == nil && !holds {
+			// Self-loop found - check if property can ever be reached.
+			// Use canEventuallyReachP so temporal exprs (EventuallyExpr) are handled correctly.
+			if !tv.canEventuallyReachP(trans.FromState, propExpr, graph, make(map[string]bool)) {
 				// Property doesn't hold in the self-loop state
 				// Check if this state is reachable from 'from'
 				visited := make(map[string]bool)
@@ -839,11 +839,12 @@ func (tv *TemporalVerifier) hasBlockingCycle(from *state.State, propExpr ast.Exp
 	// 2. Cycle is reachable from 'from'
 	// If such a cycle exists, there's a path where property never holds (violation)
 	for _, cycle := range cycles {
-		// Check if property holds in any state in the cycle
+		// Check if property holds in any state in the cycle.
+		// For temporal expressions (e.g. eventually(!pending)), use canEventuallyReachP
+		// so the inner expression is unwrapped correctly.
 		propertyHoldsInCycle := false
 		for _, cycleState := range cycle.States {
-			holds, err := tv.evaluateProperty(propExpr, cycleState)
-			if err == nil && holds {
+			if tv.canEventuallyReachP(cycleState, propExpr, graph, make(map[string]bool)) {
 				propertyHoldsInCycle = true
 				break
 			}

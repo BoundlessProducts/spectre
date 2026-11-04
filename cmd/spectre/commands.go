@@ -402,6 +402,11 @@ func runTypecheck(args []string) error {
 			if err == nil {
 				typeEnv.DeclareConstant(decl.Name, typ)
 			}
+		case *ast.ParamDecl:
+			typ, err := resolveType(decl.Type)
+			if err == nil {
+				typeEnv.DeclareConstant(decl.Name, typ)
+			}
 		case *ast.FunctionDecl:
 			params := make([]types.Type, len(decl.Parameters))
 			for i, param := range decl.Parameters {
@@ -1174,6 +1179,11 @@ func runVerify(args []string) error {
 				typeEnv.DeclareVariable(decl.Name, typ)
 			}
 		case *ast.ConstantDecl:
+			typ, err := resolveType(decl.Type)
+			if err == nil {
+				typeEnv.DeclareConstant(decl.Name, typ)
+			}
+		case *ast.ParamDecl:
 			typ, err := resolveType(decl.Type)
 			if err == nil {
 				typeEnv.DeclareConstant(decl.Name, typ)

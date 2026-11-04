@@ -552,12 +552,10 @@ The generated monitor checks all invariants in O(k) time (k = number of invarian
 
 | Document | Description |
 |----------|-------------|
+| [docs/spectre-book.pdf](./docs/spectre-book.pdf) | **The Spectre Language Book (PDF)** — 19 chapters: language tutorial, collections, backends, mining, MBT, monitoring, formal grammar |
 | [docs/spec.md](./docs/spec.md) | Full language specification and API reference |
 | [docs/language_definition.md](./docs/language_definition.md) | Formal grammar (EBNF) and operational semantics |
-| [docs/spectre_book.md](./docs/spectre_book.md) | The Spectre Language Book — tutorials and worked examples |
-| [spectre_book/09-spec-mining-from-rust.md](./spectre_book/09-spec-mining-from-rust.md) | Spec mining from Rust and drift detection |
-| [spectre_book/10-model-based-testing.md](./spectre_book/10-model-based-testing.md) | Model-based testing and ITF trace replay |
-| [spectre_book/11-runtime-monitoring.md](./spectre_book/11-runtime-monitoring.md) | Embedded runtime monitoring |
+| [spectre_book/](./spectre_book/) | Book source (Markdown) — 17 chapters + 2 appendices |
 
 ---
 
