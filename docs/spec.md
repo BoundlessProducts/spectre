@@ -169,74 +169,124 @@ type Point = (int, int)
 Sets represent unordered collections of unique elements:
 
 ```spectre
-type UserSet = Set<User>
-type IntSet = Set<int>
+type IntSet  = Set<int>
+type StrSet  = Set<str>
 ```
 
-**Set Literals:**
-
-You can create sets using literal syntax with curly braces:
+**Set literals** use curly braces. The parser distinguishes them from record literals by the absence of `field: value` pairs:
 
 ```spectre
-// Empty set
-const emptySet: Set<int> = {}
+var active: Set<int>
 
-// Set with elements
-const numbers: Set<int> = { 1, 2, 3, 4, 5 }
-const names: Set<str> = { "alice", "bob", "charlie" }
-
-// Set of records
-type User = { id: int, name: str }
-const users: Set<User> = { 
-  { id: 1, name: "alice" }, 
-  { id: 2, name: "bob" } 
+init {
+  active = {}           // empty set
 }
 
-// Sets can also be created using static methods (see Set Operations)
-const altEmpty: Set<int> = Set.empty()
-const singleton: Set<int> = Set.of(42)
+action addTwo {
+  active' = active.union({1, 2})   // set literal with elements
+}
 ```
 
-**Note**: Set literals use curly braces `{ }`. To distinguish them from record literals (which use `{ field: value }`), the parser checks if the content contains colons. If it does, it's a record literal; otherwise, it's a set literal.
-
-#### Maps (Dictionaries)
-```spectre
-type UserMap = Map<int, User>  // Maps int keys to User values
-```
-
-#### Arrays/Lists
-
-Lists represent ordered sequences of elements:
+**Membership** — use the `in` operator or `.contains()`:
 
 ```spectre
-type UserList = List<User>
-type IntArray = List<int>
+invariant check { 3 in active }         // in operator
+invariant check2 { active.contains(3) } // equivalent
 ```
 
-**List Literals:**
+**Implemented set operations:**
 
-You can create lists using literal syntax with square brackets:
+| Operation | Syntax | Returns |
+|-----------|--------|---------|
+| Union | `S.union(T)` | `Set<T>` |
+| Intersection | `S.intersection(T)` | `Set<T>` |
+| Difference | `S.difference(T)` | `Set<T>` |
+| Membership | `x in S` or `S.contains(x)` | `bool` |
+| Size | `S.size()` | `int` |
+
+**Note on `{}` disambiguation:** When the type is known from context (variable declaration or assignment), `{}` is an empty set. Without type context the parser falls back to treating `{}` as an empty map — assign to a typed variable to avoid ambiguity.
+
+**Backend note:** `S.size()` comparisons are unreliable under Z3's `ALL` logic. If your spec compares set sizes, use `--backend tlc`.
+
+#### Maps
+
+Maps are finite partial functions from keys to values:
 
 ```spectre
-// Empty list
-const emptyList: List<int> = []
-
-// List with elements
-const numbers: List<int> = [ 1, 2, 3, 4, 5 ]
-const names: List<str> = [ "alice", "bob", "charlie" ]
-
-// List of records
-type User = { id: int, name: str }
-const users: List<User> = [ 
-  { id: 1, name: "alice" }, 
-  { id: 2, name: "bob" } 
-]
-
-// Lists can also be created using static methods (see List Operations)
-const altEmpty: List<int> = List.empty()
+type Balances = Map<int, int>   // account ID → balance
 ```
 
-**Note**: List literals use square brackets `[ ]` to distinguish them from sets (which use curly braces `{ }`).
+There is no map literal syntax. Use `{}` as the empty map (type-driven) and `.put()` to build up entries:
+
+```spectre
+var accounts: Map<int, int>
+
+init {
+  accounts = {}   // empty map (type-driven from var declaration)
+}
+
+action open(id: int) {
+  accounts' = accounts.put(id, 0)
+}
+```
+
+**Implemented map operations:**
+
+| Operation | Syntax | Returns |
+|-----------|--------|---------|
+| Insert / update | `M.put(k, v)` | `Map<K,V>` |
+| Lookup | `M.get(k)` | `V` |
+
+**Error semantics:** `M.get(k)` on a missing key **disables the enclosing action** (equivalent to `require false`). It does not panic or return a default. Use a `require`-guarded action to protect lookups:
+
+```spectre
+action withdraw(id: int, amt: int) {
+  require amt > 0
+  let bal = accounts.get(id)   // disables action if id not present
+  require bal >= amt
+  accounts' = accounts.put(id, bal - amt)
+}
+```
+
+#### Lists
+
+Lists represent ordered sequences (zero-indexed head/tail access):
+
+```spectre
+type Queue = List<int>
+```
+
+**List literals** use square brackets:
+
+```spectre
+var queue: List<int>
+
+init {
+  queue = []          // empty list
+}
+
+action enqueue(x: int) {
+  queue' = queue.append(x)
+}
+
+action dequeue {
+  require queue.size() > 0
+  let h    = queue.head()   // first element
+  let rest = queue.tail()   // remaining elements
+  queue' = rest
+}
+```
+
+**Implemented list operations:**
+
+| Operation | Syntax | Returns |
+|-----------|--------|---------|
+| Append | `L.append(x)` | `List<T>` |
+| Head | `L.head()` | `T` |
+| Tail | `L.tail()` | `List<T>` |
+| Size | `L.size()` | `int` |
+
+**Error semantics:** `L.head()` and `L.tail()` on an empty list **disable the enclosing action**. Guard list-access actions with `require L.size() > 0`.
 
 #### Enums
 ```spectre
@@ -1486,103 +1536,108 @@ temporal eventuallyTransaction {
 - `WF`: Weak fairness operator
 - `SF`: Strong fairness operator
 
+### Collection Operators
+
+- `x in S`: Set membership — `true` if `x` is an element of `S`. Equivalent to `S.contains(x)`.
+
 ### Temporal Operators
 
 - `always P`: P holds in all states
 - `eventually P`: P holds in at least one future state
 - `P until Q`: P holds until Q becomes true
-- `P → Q`: P leads to Q (if P becomes true, Q will eventually become true). This is syntactic sugar for `always (P → eventually Q)` and can only be used within temporal properties.
+- `P → Q`: P leads to Q (syntactic sugar for `always (P → eventually Q)`; only valid inside `temporal`)
 - `next P`: P holds in the next state
-- `WF(action)`: Weak fairness - action executes if continuously enabled
-- `SF(action)`: Strong fairness - action executes if enabled infinitely often
+- `WF(action)`: Weak fairness — action executes if continuously enabled
+- `SF(action)`: Strong fairness — action executes if enabled infinitely often
 - `WF(variable)`: Weak fairness on all actions modifying the variable
 - `SF(variable)`: Strong fairness on all actions modifying the variable
 
 ### Set Operations
 
-**Set Literals:**
-- `{ value1, value2, ... }`: Create a set with elements
-- `{}`: Empty set literal
+**Literals:**
+- `{ e1, e2, ... }` — set with elements
+- `{}` — empty set (requires type context from variable declaration)
 
-**Static Constructors:**
-- `Set.empty()`: Empty set (alternative to `{}`)
-- `Set.of(x)`: Singleton set containing one element (alternative to `{ x }`)
+**Membership:**
+- `x in S` — membership operator (preferred)
+- `S.contains(x)` — equivalent method form
 
-**Set Methods:**
-- `s.union(t)`: Union of sets
-- `s.intersection(t)`: Intersection of sets
-- `s.contains(x)`: Membership test
-- `s.size()`: Set size
-- `s.forall(predicate)`: Universal quantification
-- `s.exists(predicate)`: Existential quantification
-- `s.filter(predicate)`: Filter elements
-- `s.map(fn)`: Map function over elements
-- `s.toList()`: Convert set to list
+**Methods (implemented):**
+- `S.union(T)` — set union
+- `S.intersection(T)` — set intersection
+- `S.difference(T)` — set difference (elements in S but not T)
+- `S.contains(x)` — membership test, returns `bool`
+- `S.size()` — number of elements, returns `int`
 
-**Examples:**
+**Not currently implemented:** `forall`, `exists`, `filter`, `map`, `toList`, `Set.empty()`, `Set.of()`.
+
+**Backend note:** `S.size()` comparisons are unreliable under the Z3 backend. Use `--backend tlc` for specs that compare set sizes.
+
 ```spectre
-// Using literals
-const names = { "alice", "bob", "charlie" }
-const empty = {}
+var members: Set<int>
 
-// Using static methods (equivalent to literals, but verbose)
-// Note: Literal syntax { "alice", "bob", "charlie" } is preferred
-const namesAlt = { "alice", "bob", "charlie" }  // Literal syntax is cleaner
-const emptyAlt = {}  // Or Set.empty() - both are equivalent
+init { members = {} }
 
-// Set operations
-const all = names.union({ "dave", "eve" })
-const filtered = names.filter(name => name.length() > 4)
+action add(x: int) {
+  members' = members.union({x})
+}
+
+invariant bounded { members.size() <= 10 }
+invariant hasThree { 3 in members }
 ```
 
 ### List Operations
 
-**List Literals:**
-- `[ value1, value2, ... ]`: Create a list with elements
-- `[]`: Empty list literal
+**Literals:**
+- `[ e1, e2, ... ]` — list with elements
+- `[]` — empty list
 
-**Static Constructors:**
-- `List.empty()`: Empty list (alternative to `[]`)
-- `List.of(x)`: Singleton list containing one element (alternative to `[ x ]`)
+**Methods (implemented):**
+- `L.append(x)` — append element to end, returns new `List<T>`
+- `L.head()` — first element; **disables action if list is empty**
+- `L.tail()` — list without first element; **disables action if list is empty**
+- `L.size()` — number of elements, returns `int`
 
-**List Methods:**
-- `l.append(x)`: Append element (returns new list)
-- `l.head()`: First element
-- `l.tail()`: List without first element (returns new list)
-- `l.size()`: List size
-- `l.filter(predicate)`: Filter elements
-- `l.map(fn)`: Map function over elements
-- `l.reduce(initial, fn)`: Reduce to single value
-- `l.forall(predicate)`: Universal quantification
-- `l.exists(predicate)`: Existential quantification
-- `l.toSet()`: Convert list to set
+**Not currently implemented:** `forall`, `exists`, `filter`, `map`, `reduce`, `toSet`, `List.empty()`, `List.of()`.
 
-**Examples:**
 ```spectre
-// Using literals
-const numbers = [ 1, 2, 3, 4, 5 ]
-const empty = []
+var queue: List<int>
 
-// Using static methods (equivalent to literals, but verbose)
-// Note: Literal syntax [ 1, 2 ] is preferred
-const numbersAlt = [ 1, 2 ]  // Literal syntax is cleaner
-const emptyAlt = []  // Or List.empty() - both are equivalent
+init { queue = [] }
 
-// List operations
-const doubled = numbers.map(x => x * 2)
-const sum = numbers.reduce(0, (acc, x) => acc + x)
-const first = numbers.head()
-const rest = numbers.tail()
+action enqueue(x: int) { queue' = queue.append(x) }
+
+action dequeue {
+  require queue.size() > 0
+  let h = queue.head()
+  queue' = queue.tail()
+}
 ```
 
 ### Map Operations
 
-- `Map.empty()`: Empty map
-- `m.put(k, v)`: Add/update key-value pair
-- `m.get(k)`: Get value for key
-- `m.contains(k)`: Check if key exists
-- `m.keys()`: Set of keys
-- `m.values()`: List of values
+There is no map literal syntax. Use `{}` for the empty map (requires type context) and `.put()` to build entries.
+
+**Methods (implemented):**
+- `M.put(k, v)` — insert or update key `k` with value `v`, returns new `Map<K,V>`
+- `M.get(k)` — look up key `k`, returns `V`; **disables action if key is absent**
+
+**Not currently implemented:** `M.contains(k)`, `M.keys()`, `M.values()`, `Map.empty()`.
+
+```spectre
+var scores: Map<int, int>
+
+init { scores = {} }
+
+action setScore(id: int, s: int) {
+  scores' = scores.put(id, s)
+}
+
+action addBonus(id: int, bonus: int) {
+  let cur = scores.get(id)   // disables if id not present
+  scores' = scores.put(id, cur + bonus)
+}
+```
 
 ---
 
