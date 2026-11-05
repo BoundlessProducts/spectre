@@ -36,48 +36,53 @@ invariant non_negative { x >= 0 }
 temporal wf_progress { WF(incr) }
 ```
 
-**Generated `counter.tla`**
+**Generated `SpectreSpec.tla`**
 ```tla
---------------------------- MODULE counter ---------------------------
-EXTENDS Naturals, Sequences, TLC
+---- MODULE SpectreSpec ----
+EXTENDS Integers, Sequences, FiniteSets, TLC
 
 CONSTANTS MAX
 
-VARIABLES x
+VARIABLES
+  \* @type: Int;
+  x
 
+\* @type: <<Int>>;
 vars == <<x>>
 
-TypeOK == x \in Int
+TypeOK ==
+  /\ x \in Int
 
 Init ==
-    x = 0
+  /\ x = 0
 
-incr ==
-    /\ x < MAX
-    /\ x' = x + 1
+Incr ==
+  /\ x < MAX
+  /\ x' = (x + 1)
 
-Next ==
-    \/ incr
+Next == Incr
 
-non_negative ==
-    x >= 0
+non_negative == (x >= 0)
 
-Spec ==
-    Init /\ [][Next]_vars /\ WF_vars(incr)
+Spec == Init /\ [][Next]_vars
+  /\ WF_vars(Incr)
 
-=============================================================================
+====
 ```
 
-**Generated `counter.cfg`**
+**Generated `SpectreSpec.cfg`**
 ```
 INIT Init
 NEXT Next
 INVARIANT non_negative
-PROPERTY Spec
-MAX = 100
+PROPERTY wf_progress
+CONSTANTS
+  MAX = 0
 ```
 
-Then Spectre runs `tlc counter.tla -config counter.cfg` and parses the output.
+Spectre runs `tlc -config SpectreSpec.cfg SpectreSpec.tla` and parses the output.
+
+The `\* @type:` comment annotations are for Apalache's Snowcat type checker — TLC ignores them. The module name is always `SpectreSpec` (not the spec filename) because SANY, the TLA+ parser used by both TLC and Apalache, requires the filename to match the `MODULE` name.
 
 ---
 
@@ -200,10 +205,30 @@ Spectre tries `tlc` on `$PATH` first, then falls back to `java -jar <tlc-jar>`.
 
 ## Apalache installation
 
-```bash
-# macOS
-brew install apalache
+Apalache is not in Homebrew. Download from GitHub releases and install manually:
 
-# Or set the binary path:
-spectre verify --backend apalache --apalache-bin ~/tools/apalache/bin/apalache-mc account.spec
+```bash
+# 1. Download from https://github.com/informalsystems/apalache/releases
+#    (choose the .zip for your platform)
+unzip apalache-*.zip
+sudo ln -sf "$PWD/apalache/bin/apalache-mc" /usr/local/bin/apalache-mc
+
+# 2. Requires Java 21+ (Apalache v0.62+ uses class file version 65)
+brew install openjdk          # macOS — installs Java 25; Java 21+ works
+
+# 3. Verify
+apalache-mc version           # should print e.g. 0.62.4
+```
+
+**Java setup:** Spectre auto-detects the Homebrew OpenJDK at `/opt/homebrew/opt/openjdk` and sets `JAVA_HOME` for the Apalache subprocess — you do not need to set `JAVA_HOME` manually on macOS if you installed via `brew install openjdk`.
+
+**Bounded check:** Apalache performs bounded symbolic model checking — it checks up to N steps (default 10). Unlike BFS, it is not a full state-space enumeration.
+
+```bash
+# Default (depth 10)
+spectre verify --backend apalache account.spec
+
+# Custom binary path
+spectre verify --backend apalache \
+    --apalache-bin ~/tools/apalache/bin/apalache-mc account.spec
 ```

@@ -883,6 +883,8 @@ Invariants catch bad states. Temporal properties catch bad *trajectories* — th
 
 You need both. A spec where nothing ever happens is trivially safe but useless.
 
+> **BFS and liveness: exploratory only.** The default BFS backend (`spectre verify`) checks reachability and reports `safe` for temporal properties, but this is *not* a valid liveness proof. BFS cannot distinguish "eventually holds on all fair executions" from "reachable but not guaranteed." If your spec contains `eventually`, `until`, `P -> Q` (leads-to), `WF`, or `SF`, use `--backend tlc` for a sound result. Running BFS on a spec with liveness properties gives you a quick sanity check — not a guarantee. If you want an explicit error rather than a silent exploratory result, run `spectre verify --backend tlc`.
+
 ---
 
 ## `always` — a condition that holds forever
@@ -1781,8 +1783,13 @@ The full method set:
 | `S.contains(x)` | `bool` | True if x is in S |
 | `x in S` | `bool` | Same — infix form, reads naturally in guards |
 | `S.size()` | `int` | Number of elements |
-| `S.filter(fn)` | `Set<T>` | Elements matching predicate |
-| `S.toList()` | `List<T>` | Convert to list (order unspecified) |
+| `S.filter(fn)` | `Set<T>` | Elements matching predicate *(BFS only)* |
+| `S.forall(fn)` | `bool` | True if all elements satisfy predicate *(BFS only)* |
+| `S.exists(fn)` | `bool` | True if any element satisfies predicate *(BFS only)* |
+| `S.map(fn)` | `Set<U>` | Apply fn to each element *(BFS only)* |
+| `S.toList()` | `List<T>` | Convert to list, order unspecified *(BFS only)* |
+
+> **Backend note:** Methods marked *(BFS only)* are supported by the built-in BFS evaluator but are not translated by the Z3 or TLC backends. Using them with `--backend z3` or `--backend tlc` will produce an error or silently incorrect output. Stick to `union`, `intersection`, `difference`, `contains`, `size`, and the `in` operator when targeting those backends.
 
 The `in` operator is the most natural way to write membership guards:
 
@@ -1829,8 +1836,12 @@ action enqueue { queue' = queue.append(42) }
 | `L.head()` | `T` | First element (error if empty) |
 | `L.tail()` | `List<T>` | List without first element |
 | `L.size()` | `int` | Number of elements |
-| `L.filter(fn)` | `List<T>` | Elements matching predicate |
-| `L.toSet()` | `Set<T>` | Convert to set (drops order/duplicates) |
+| `L.filter(fn)` | `List<T>` | Elements matching predicate *(BFS only)* |
+| `L.map(fn)` | `List<U>` | Apply fn to each element *(BFS only)* |
+| `L.forall(fn)` | `bool` | True if all elements satisfy predicate *(BFS only)* |
+| `L.exists(fn)` | `bool` | True if any element satisfies predicate *(BFS only)* |
+| `L.reduce(init, fn)` | `U` | Fold over list *(BFS only)* |
+| `L.toSet()` | `Set<T>` | Convert to set, drops duplicates *(BFS only)* |
 
 ---
 
@@ -1972,10 +1983,12 @@ For larger protocols (Raft, Paxos, 5+ nodes), state spaces quickly exceed BFS ca
 
 ```
 Small protocol (2-3 nodes)   -->  --backend bfs        (learning, exhaustive)
-Medium protocol (4-5 nodes)  -->  --backend z3         (fast shallow bugs)
+Medium protocol (4-5 nodes)  -->  --backend tlc        (exhaustive, validated)
 Large protocol (6+ nodes)    -->  --backend apalache   (symbolic, exhaustive)
 Liveness / leader election   -->  --backend tlc        (validated fairness)
 ```
+
+**A note on Z3 and collections**: The Z3 backend (bounded model checking) translates `Set<T>` to SMT-LIB2 sets and can catch shallow set bugs. However, `Cardinality` checks over `Set<int>` are unreliable in Z3 because integer sets are infinite — Z3 may report spurious violations. Use Z3 for set membership and boolean checks; use TLC or Apalache for specs with `.size()` comparisons on integer sets.
 
 ---
 
@@ -2004,8 +2017,8 @@ M' = M.put(key, value)
 
 // List update
 L' = L.append(x)
-head = L.head()
-rest = L.tail()
+let head = L.head()   // read first element (use in expressions/requires)
+let rest = L.tail()   // read tail (use in expressions/requires)
 ```
 # Reading counterexamples and debugging
 
@@ -2376,14 +2389,19 @@ INVARIANT solvent
 
 ## Apalache backend
 
-Apalache is a symbolic model checker for TLA+. Instead of enumerating states, it uses Z3 internally to reason about sets of states at once.
+Apalache is a symbolic model checker for TLA+. Instead of enumerating states, it uses Z3 internally to reason about sets of states at once — a bounded symbolic check (default 10 steps).
 
 ```bash
-# Install Apalache
-brew install apalache
-# or download from https://github.com/informalsystems/apalache/releases
+# Install Apalache — download from GitHub releases (not in Homebrew)
+# https://github.com/informalsystems/apalache/releases
+# Download the .zip, unpack, symlink the binary:
+unzip apalache-*.zip
+sudo ln -sf "$PWD/apalache/bin/apalache-mc" /usr/local/bin/apalache-mc
 
-# Run with Apalache
+# Requires Java 21+
+brew install openjdk  # macOS (installs Java 25; Java 21 also works)
+
+# Run with Apalache (Spectre auto-detects Homebrew JDK)
 spectre verify large-spec.spec --backend apalache
 spectre verify large-spec.spec --backend apalache \
     --apalache-bin /opt/apalache/bin/apalache-mc
@@ -2392,12 +2410,13 @@ spectre verify large-spec.spec --backend apalache \
 **Best for:**
 - Large state spaces that exhaust BFS memory
 - Specs with many integer variables (Apalache reasons symbolically over integers)
-- Production-grade safety verification
+- Production-grade safety verification up to a bounded depth
 
 **Limitations:**
-- Fairness (WF/SF): limited — Apalache has partial temporal support but does not perform full SCC-based liveness checking. Use TLC for validated fairness.
+- Bounded: checks up to 10 steps by default — not exhaustive. BFS is exhaustive for small specs.
+- Fairness (WF/SF): limited — does not perform full SCC-based liveness checking. Use TLC for validated fairness.
 - Slowest to start (JVM startup + type checking)
-- Requires Apalache installed (Java 17+)
+- Requires Apalache v0.62+ and Java 21+
 
 ### BFS vs Apalache on a large spec
 
@@ -2406,8 +2425,8 @@ spectre verify raft.spec --max-states 100000
 # bounded -- hit state limit (100000 states)
 
 spectre verify raft.spec --backend apalache
-# safe (exhaustive)
-# Note: Apalache checked all reachable states symbolically
+# safe
+# Note: bounded model checking to depth 10 -- not exhaustive
 ```
 
 ---
@@ -2459,14 +2478,14 @@ bank-fixed.spec: safe
 
 | | BFS | TLC | Apalache | Z3 |
 |-|-----|-----|----------|----|
-| Role | learning / explore | production | production | production |
-| Exhaustive | small specs | yes | yes (symbolic) | no (bounded) |
-| Fairness (WF/SF) | exploratory | validated (SCC) | limited | none |
-| Temporal / liveness | exploratory | validated | limited | none |
-| Safety invariants | exhaustive (small) | exhaustive | exhaustive (symbolic) | bounded |
-| Dependencies | none | TLA+ tools | Apalache | z3 |
-| Speed | fast | moderate | fast (large) | very fast |
-| Setup time | 0 | 5 min | 10 min | 2 min |
+| Role | learning | production | production | production |
+| Exhaustive | small specs | yes | bounded (10 steps) | no (bounded) |
+| Fairness (WF/SF) | exploratory | validated | limited | none |
+| Liveness | exploratory | validated | limited | none |
+| Safety | exhaustive | exhaustive | bounded symbolic | bounded |
+| Dependencies | none | TLA+ tools | Apalache v0.62+ + Java 21+ | z3 binary |
+| Speed | fast | moderate | moderate | very fast |
+| Setup | 0 min | 5 min | 10 min | 2 min |
 
 ---
 
@@ -2509,19 +2528,19 @@ spectre verify myspec.spec --backend tlc
 
 ## Installing the backends
 
-| Backend | Install command | Verify install |
-|---------|----------------|----------------|
+| Backend | Install | Verify install |
+|---------|---------|----------------|
 | BFS | built in | `spectre --version` |
-| TLC | `brew install tla-tools` | `tlc -help` |
-| Apalache | `brew install apalache` | `apalache-mc version` |
-| Z3 | `brew install z3` | `z3 --version` |
+| TLC | `brew install tla-tools` (macOS) | `tlc -help` |
+| Apalache | download from [GitHub releases](https://github.com/informalsystems/apalache/releases) + Java 21+ | `apalache-mc version` |
+| Z3 | `brew install z3` (macOS) | `z3 --version` |
 
-On Linux, download JARs/binaries from the respective GitHub releases pages and pass `--tlc-jar`, `--apalache-bin`, or `--z3-bin` flags.
+On Linux, download JARs/binaries from the respective GitHub releases pages and pass `--tlc-jar` or `--apalache-bin` flags. Spectre auto-detects Homebrew's OpenJDK on macOS for the Apalache subprocess.
 # Mining specs from Rust
 
 > **Important limitations before you start:** The miner cannot extract enum payload data (`InsufficientFunds(u64)` becomes `InsufficientFunds` with no data), error propagation paths (`Result<T,E>` error branches are dropped), and arithmetic safety operations (`checked_add`, `saturating_sub` are approximated as unbounded arithmetic). These are precisely the locations where real Rust bugs occur. After mining, run `--show-omissions` and add invariants or guards for every dropped case that matters for safety.
 
-### What mining does
+## What mining does
 
 ```
 src/account.rs ──► spectre mine ──► account.spec skeleton
@@ -2543,7 +2562,7 @@ What it extracts:
 
 ---
 
-### Your first mine
+## Your first mine
 
 ```rust
 // src/counter.rs
@@ -2614,7 +2633,7 @@ spectre verify counter.spec
 
 ---
 
-### What gets extracted vs. what gets skipped
+## What gets extracted vs. what gets skipped
 
 | Extracted ✓ | Skipped / approximated ✗ |
 |-------------|--------------------------|
@@ -2627,7 +2646,7 @@ spectre verify counter.spec
 
 ---
 
-### Seeing what was skipped: `--show-omissions`
+## Seeing what was skipped: `--show-omissions`
 
 ```bash
 spectre mine --lang rust src/account.rs --show-omissions
@@ -2658,7 +2677,7 @@ Mined: 3 fields, 1 enum, 4 actions, 4 omissions (run --show-omissions for detail
 
 ---
 
-### Evaluate a whole directory
+## Evaluate a whole directory
 
 ```bash
 spectre eval-rust --dir src/
@@ -2693,7 +2712,7 @@ Use this output to prioritise enrichment effort — start with files nearest 100
 
 ---
 
-### Enrich the mined spec
+## Enrich the mined spec
 
 Three things to always add after mining:
 
@@ -2736,7 +2755,7 @@ temporal  progress      { WF(increment) }
 
 ---
 
-### LLM-enhanced mining
+## LLM-enhanced mining
 
 ```bash
 ANTHROPIC_API_KEY=sk-... spectre mine --lang rust src/account.rs --ai
@@ -2757,7 +2776,7 @@ Always review LLM suggestions against your actual requirements before uncommenti
 
 ---
 
-### The full mining workflow
+## The full mining workflow
 
 ```
 1. spectre eval-rust --dir src/
@@ -2781,7 +2800,7 @@ Always review LLM suggestions against your actual requirements before uncommenti
 ```
 # Drift detection and incremental re-verification
 
-### The drift problem
+## The drift problem
 
 ```
 Day 1:   mine spec --> check in account.spec + account.rs
@@ -2798,7 +2817,7 @@ Day 30:  refactor withdraw() in Rust
 
 ---
 
-### Running sync
+## Running sync
 
 ```bash
 spectre sync src/account.rs --spec account.spec
@@ -2832,7 +2851,7 @@ The SMT-equivalence check prevents false alarms on equivalent rewrites — commu
 
 ---
 
-### CI integration
+## CI integration
 
 ```yaml
 # .github/workflows/spectre.yml
@@ -2845,7 +2864,7 @@ The SMT-equivalence check prevents false alarms on equivalent rewrites — commu
 
 ---
 
-### Incremental re-verification
+## Incremental re-verification
 
 After a semantic change, you don't need to re-run full BFS. Re-verify only the changed action:
 
@@ -2879,7 +2898,7 @@ Incremental re-verification: action 'withdraw'
 
 ---
 
-### Impact analysis
+## Impact analysis
 
 Before re-verifying, check which invariants are actually affected by the change:
 
@@ -2903,7 +2922,7 @@ Use `impact` in CI to skip re-verification when a changed action doesn't touch a
 
 ---
 
-### Full sync workflow
+## Full sync workflow
 
 ```
 Code changes committed
@@ -2938,7 +2957,7 @@ spectre sync src/ --spec spec.spec
 
 ---
 
-### Sync evaluation: what it checks
+## Sync evaluation: what it checks
 
 `sync` compares:
 - Struct field names and types
@@ -2949,7 +2968,7 @@ It detected **30/35 injected semantic mutations** (85.7%) in evaluation, with 1 
 
 ---
 
-### Tips for keeping sync useful
+## Tips for keeping sync useful
 
 - **Check in the spec file alongside the Rust source** — keep them in the same directory or a `spec/` subdirectory
 - **Run sync in pre-commit** as well as CI — catch drift before it even reaches the repo
@@ -2957,7 +2976,7 @@ It detected **30/35 injected semantic mutations** (85.7%) in evaluation, with 1 
 - **After an SMT-equivalent rewrite**: no action required — but it's worth reading the rewrite to confirm it's intentional
 # Model-based testing
 
-### The idea
+## The idea
 
 ```
 account.spec
@@ -2982,7 +3001,7 @@ The spec is the oracle. The driver replays spec-generated execution traces again
 
 ---
 
-### Generate a trace
+## Generate a trace
 
 ```bash
 spectre verify account.spec \
@@ -3004,7 +3023,7 @@ Coverage modes — pick based on what you want to exercise:
 
 ---
 
-### Generate the driver
+## Generate the driver
 
 ```bash
 spectre generate-driver --lang rust account.spec -o src/driver.rs
@@ -3035,7 +3054,7 @@ Wire these to your `BankAccount` struct and you're done.
 
 ---
 
-### CI-ready driver with `--ci`
+## CI-ready driver with `--ci`
 
 ```bash
 spectre generate-driver --lang rust account.spec --ci -o src/driver.rs
@@ -3074,7 +3093,7 @@ No extra configuration — the workflow picks up `trace.itf.json` from the repo.
 
 ---
 
-### Run the replay
+## Run the replay
 
 ```bash
 cargo run -- trace.itf.json
@@ -3105,7 +3124,7 @@ Failing run:
 
 ---
 
-### Violation traces as regression tests
+## Violation traces as regression tests
 
 When `spectre verify` finds a violation, `--emit-traces` captures the exact counterexample path:
 
@@ -3129,7 +3148,7 @@ This turns every spec violation into a permanent, reproducible regression test.
 
 ---
 
-### Repair suggestions before fixing
+## Repair suggestions before fixing
 
 When verification fails, get candidate patches before editing anything:
 
@@ -3158,7 +3177,7 @@ Apply the chosen patch to the spec, re-verify, then propagate the change to the 
 
 ---
 
-### Checking refinement
+## Checking refinement
 
 When you have traces from an external source (a different tool, a recorded production run), check whether they conform to your spec:
 
@@ -3170,7 +3189,7 @@ This reads `driver.json` (the refinement mapping) and validates that each extern
 
 ---
 
-### Complete MBT workflow
+## Complete MBT workflow
 
 ```
 1.  spectre mine --lang rust src/account.rs -o account.spec
@@ -3609,48 +3628,53 @@ invariant non_negative { x >= 0 }
 temporal wf_progress { WF(incr) }
 ```
 
-**Generated `counter.tla`**
+**Generated `SpectreSpec.tla`**
 ```tla
---------------------------- MODULE counter ---------------------------
-EXTENDS Naturals, Sequences, TLC
+---- MODULE SpectreSpec ----
+EXTENDS Integers, Sequences, FiniteSets, TLC
 
 CONSTANTS MAX
 
-VARIABLES x
+VARIABLES
+  \* @type: Int;
+  x
 
+\* @type: <<Int>>;
 vars == <<x>>
 
-TypeOK == x \in Int
+TypeOK ==
+  /\ x \in Int
 
 Init ==
-    x = 0
+  /\ x = 0
 
-incr ==
-    /\ x < MAX
-    /\ x' = x + 1
+Incr ==
+  /\ x < MAX
+  /\ x' = (x + 1)
 
-Next ==
-    \/ incr
+Next == Incr
 
-non_negative ==
-    x >= 0
+non_negative == (x >= 0)
 
-Spec ==
-    Init /\ [][Next]_vars /\ WF_vars(incr)
+Spec == Init /\ [][Next]_vars
+  /\ WF_vars(Incr)
 
-=============================================================================
+====
 ```
 
-**Generated `counter.cfg`**
+**Generated `SpectreSpec.cfg`**
 ```
 INIT Init
 NEXT Next
 INVARIANT non_negative
-PROPERTY Spec
-MAX = 100
+PROPERTY wf_progress
+CONSTANTS
+  MAX = 0
 ```
 
-Then Spectre runs `tlc counter.tla -config counter.cfg` and parses the output.
+Spectre runs `tlc -config SpectreSpec.cfg SpectreSpec.tla` and parses the output.
+
+The `\* @type:` comment annotations are for Apalache's Snowcat type checker — TLC ignores them. The module name is always `SpectreSpec` (not the spec filename) because SANY, the TLA+ parser used by both TLC and Apalache, requires the filename to match the `MODULE` name.
 
 ---
 
@@ -3773,12 +3797,32 @@ Spectre tries `tlc` on `$PATH` first, then falls back to `java -jar <tlc-jar>`.
 
 ## Apalache installation
 
-```bash
-# macOS
-brew install apalache
+Apalache is not in Homebrew. Download from GitHub releases and install manually:
 
-# Or set the binary path:
-spectre verify --backend apalache --apalache-bin ~/tools/apalache/bin/apalache-mc account.spec
+```bash
+# 1. Download from https://github.com/informalsystems/apalache/releases
+#    (choose the .zip for your platform)
+unzip apalache-*.zip
+sudo ln -sf "$PWD/apalache/bin/apalache-mc" /usr/local/bin/apalache-mc
+
+# 2. Requires Java 21+ (Apalache v0.62+ uses class file version 65)
+brew install openjdk          # macOS — installs Java 25; Java 21+ works
+
+# 3. Verify
+apalache-mc version           # should print e.g. 0.62.4
+```
+
+**Java setup:** Spectre auto-detects the Homebrew OpenJDK at `/opt/homebrew/opt/openjdk` and sets `JAVA_HOME` for the Apalache subprocess — you do not need to set `JAVA_HOME` manually on macOS if you installed via `brew install openjdk`.
+
+**Bounded check:** Apalache performs bounded symbolic model checking — it checks up to N steps (default 10). Unlike BFS, it is not a full state-space enumeration.
+
+```bash
+# Default (depth 10)
+spectre verify --backend apalache account.spec
+
+# Custom binary path
+spectre verify --backend apalache \
+    --apalache-bin ~/tools/apalache/bin/apalache-mc account.spec
 ```
 # Z3 bounded model checking
 
@@ -3863,16 +3907,18 @@ Spectre generates (simplified):
 ; Initial state
 (assert (= x_0 0))
 
-; Step 0 -> 1: one action fires
+; Step 0 -> 1: one action fires, or stutter (no action enabled)
 (assert (or
-  (and (< x_0 5) (= x_1 (+ x_0 1)))   ; incr
-  (and (> x_0 0) (= x_1 (- x_0 1)))   ; decr
+  (and (< x_0 5) (= x_1 (+ x_0 1)))  ; incr fires
+  (and (> x_0 0) (= x_1 (- x_0 1)))  ; decr fires
+  (= x_1 x_0)                          ; stutter: no action enabled
 ))
 
 ; Step 1 -> 2
 (assert (or
   (and (< x_1 5) (= x_2 (+ x_1 1)))
   (and (> x_1 0) (= x_2 (- x_1 1)))
+  (= x_2 x_1)                          ; stutter
 ))
 
 ; Invariant negation: find ANY step that violates non_negative
@@ -3885,6 +3931,8 @@ Spectre generates (simplified):
 (check-sat)
 (get-model)
 ```
+
+The stutter clause `(= x_{k+1} x_k)` is essential. Without it, a deadlocked state — one where all action guards are false — would produce `(assert (or false false))` = `(assert false)`, making the entire formula unsatisfiable. Z3 would then report "safe" even if the invariant is violated in the deadlocked state. The stutter ensures the system can always stay put, matching TLA+'s standard semantics.
 
 Z3 answers `unsat` (no violation in 2 steps) or `sat` (violation found, model gives the path).
 
@@ -3921,6 +3969,9 @@ account.spec: violation found (z3)
 - You need an exhaustive proof of safety (Z3 BMC can only say "no bug in N steps")
 - You have liveness or fairness properties (Z3 BMC checks only reachability)
 - Violations require very long paths (rare in practice — most bugs appear early)
+- Your spec uses `Set<T>` or `Map<K,V>` with `.size()` comparisons — Z3 set cardinality over integer domains is unreliable; use TLC for those specs
+
+**`init oneOf` with Z3:** When your spec uses `init oneOf { ... }` to declare multiple starting states, Z3 encodes each option as an `(assert (or ...))` disjunction at step 0. This is sound — Z3 explores violations starting from any of the listed initial states. BFS and TLC handle `oneOf` natively as separate starting points.
 
 ---
 
@@ -4160,8 +4211,17 @@ ParamList  ::= Param { "," Param }
 Param      ::= Ident ":" TypeExpr
 ```
 
+The optional `when Expr` clause is a **declaration-level guard** — it is equivalent to placing `require Expr` as the first statement of the action body. The tutorial chapters use `require` exclusively; `when` is offered as a compact alternative for a single top-level precondition, most useful with parameterized actions.
+
 ```spectre
+// These two forms are equivalent:
 action deposit(amount: int) when amount > 0 {
+  require balance + amount <= LIMIT
+  balance' = balance + amount
+}
+
+action deposit(amount: int) {
+  require amount > 0
   require balance + amount <= LIMIT
   balance' = balance + amount
 }
@@ -4253,7 +4313,8 @@ BinOp    ::= "+" | "-" | "*" | "/" | "%"
            | "&&" | "||"
            | "in"
 
-UnaryOp  ::= "!" | "-"
+UnaryOp  ::= "!"          (* logical NOT *)
+           | "-"          (* arithmetic negation *)
 
 ArgList  ::= Expr { "," Expr }
 ```
@@ -4299,10 +4360,13 @@ RecordLiteral ::= "{" FieldInit { "," FieldInit } [ "," "..." Ident ] "}"
 FieldInit     ::= Ident ":" Expr
 ```
 
+There is no `MapLiteral` syntax. Maps are always initialized to `{}` (empty set literal) or built up via `.put(k, v)` calls. The parser disambiguates `{}` by the declared type of the variable being assigned: when the target type is `Map<K,V>`, the empty brace literal `{}` is interpreted as an empty map; when the target type is `Set<T>`, it is an empty set. Non-empty set literals `{e1, e2, ...}` are unambiguously sets — there is no key-value literal syntax for maps.
+
 ```spectre
-var nodes:   Set<int>  = {1, 2, 3}
-var history: List<str> = ["start", "ready"]
-var empty:   Set<int>  = {}
+var nodes:   Set<int>       = {1, 2, 3}  // SetLiteral (non-empty)
+var history: List<str>      = ["start"]   // ListLiteral
+var empty_s: Set<int>       = {}          // empty set (type drives interpretation)
+var empty_m: Map<int, bool> = {}          // empty map (same syntax, type-driven)
 ```
 
 ---
@@ -4375,15 +4439,15 @@ From lowest (loosest) to highest (tightest):
 
 | Level | Operators | Associates |
 |-------|-----------|------------|
-| 1 | `\|\|` | left |
-| 2 | `&&` | left |
-| 3 | `==` `!=` `in` | left |
-| 4 | `<` `<=` `>` `>=` | left |
-| 5 | `+` `-` | left |
-| 6 | `*` `/` `%` | left |
-| 7 | `!` `-` (unary) | prefix |
-| 8 | `.` (member), `(` (call) | left |
-| 9 | `[` (index) | left |
+| 1 (loosest) | `\|\|` (or) | left |
+| 2 | `&&` (and) | left |
+| 3 | `==`  `!=`  `in` | left |
+| 4 | `<`  `<=`  `>`  `>=` | left |
+| 5 | `+`  `-` | left |
+| 6 | `*`  `/`  `%` | left |
+| 7 | `!`  `-` (unary) | prefix |
+| 8 | `.` (member)  `(` (call) | left |
+| 9 (tightest) | `[` (index) | left |
 
 When in doubt, add parentheses — the parser accepts them freely.
 
@@ -4586,11 +4650,40 @@ nodes' = nodes.union({new_node})
 
 ### Collection method quick reference
 
+**All backends** (`--backend bfs`, `--backend z3`, `--backend tlc`):
+
 | Collection | Methods |
 |------------|---------|
-| `Set<T>` | `.union(S)`, `.intersection(S)`, `.difference(S)`, `.contains(x)`, `.filter(f)`, `.size()`, `.toList()` |
-| `Map<K,V>` | `.put(k,v)`, `.get(k)`, `.contains(k)`, `.size()` |
-| `List<T>` | `.append(x)`, `.head()`, `.tail()`, `.filter(f)`, `.map(f)`, `.size()`, `.toSet()` |
+| `Set<T>` | `.union(S)`, `.intersection(S)`, `.difference(S)`, `.contains(x)`, `.size()` and `x in S` |
+| `Map<K,V>` | `.put(k,v)`, `.get(k)`, `.contains(k)` and `k in M` |
+| `List<T>` | `.append(x)`, `.head()`, `.tail()`, `.size()` |
+
+**BFS backend only** (not supported by `--backend z3` or `--backend tlc`):
+
+| Collection | Methods |
+|------------|---------|
+| `Set<T>` | `.filter(f)`, `.forall(f)`, `.exists(f)`, `.map(f)`, `.toList()`, `Set.empty()`, `Set.of(x)` |
+| `Map<K,V>` | `.keys()`, `.values()`, `Map.empty()` |
+| `List<T>` | `.filter(f)`, `.map(f)`, `.forall(f)`, `.exists(f)`, `.reduce(init, f)`, `.toSet()`, `List.empty()`, `List.of(x)` |
+
+### Collection error semantics
+
+Two methods can fail at runtime if called on an ill-formed value:
+
+- `M.get(k)` — **disables the action** if key `k` is not present in map `M`. The action is treated as if `require false` were its first statement — it cannot fire from any state where the key is missing. This is the same behavior as a failed `require`.
+- `L.head()` — **disables the action** if list `L` is empty. Same semantics as `require !L.isEmpty()`.
+
+The rationale: a Spectre action either succeeds atomically or is never attempted. There is no concept of a "partial action" or a "runtime panic." If a method call would fail, the action is simply not enabled in that state.
+
+This matters for verification: if your spec has an action that calls `M.get(k)` on a key that may be absent, BFS/TLC will silently skip that action in states where the key is missing. Add a defensive `require k in M` guard before `M.get(k)` if you want to make the guard explicit and visible in traces.
+
+```spectre
+action apply_vote {
+  require node_id in votes          // explicit guard — action disabled if missing
+  let decision = votes.get(node_id) // safe: key guaranteed present
+  ...
+}
+```
 
 ---
 

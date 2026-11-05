@@ -156,14 +156,19 @@ INVARIANT solvent
 
 ## Apalache backend
 
-Apalache is a symbolic model checker for TLA+. Instead of enumerating states, it uses Z3 internally to reason about sets of states at once.
+Apalache is a symbolic model checker for TLA+. Instead of enumerating states, it uses Z3 internally to reason about sets of states at once — a bounded symbolic check (default 10 steps).
 
 ```bash
-# Install Apalache
-brew install apalache
-# or download from https://github.com/informalsystems/apalache/releases
+# Install Apalache — download from GitHub releases (not in Homebrew)
+# https://github.com/informalsystems/apalache/releases
+# Download the .zip, unpack, symlink the binary:
+unzip apalache-*.zip
+sudo ln -sf "$PWD/apalache/bin/apalache-mc" /usr/local/bin/apalache-mc
 
-# Run with Apalache
+# Requires Java 21+
+brew install openjdk  # macOS (installs Java 25; Java 21 also works)
+
+# Run with Apalache (Spectre auto-detects Homebrew JDK)
 spectre verify large-spec.spec --backend apalache
 spectre verify large-spec.spec --backend apalache \
     --apalache-bin /opt/apalache/bin/apalache-mc
@@ -172,12 +177,13 @@ spectre verify large-spec.spec --backend apalache \
 **Best for:**
 - Large state spaces that exhaust BFS memory
 - Specs with many integer variables (Apalache reasons symbolically over integers)
-- Production-grade safety verification
+- Production-grade safety verification up to a bounded depth
 
 **Limitations:**
-- Fairness (WF/SF): limited — Apalache has partial temporal support but does not perform full SCC-based liveness checking. Use TLC for validated fairness.
+- Bounded: checks up to 10 steps by default — not exhaustive. BFS is exhaustive for small specs.
+- Fairness (WF/SF): limited — does not perform full SCC-based liveness checking. Use TLC for validated fairness.
 - Slowest to start (JVM startup + type checking)
-- Requires Apalache installed (Java 17+)
+- Requires Apalache v0.62+ and Java 21+
 
 ### BFS vs Apalache on a large spec
 
@@ -186,8 +192,8 @@ spectre verify raft.spec --max-states 100000
 # bounded -- hit state limit (100000 states)
 
 spectre verify raft.spec --backend apalache
-# safe (exhaustive)
-# Note: Apalache checked all reachable states symbolically
+# safe
+# Note: bounded model checking to depth 10 -- not exhaustive
 ```
 
 ---
@@ -240,12 +246,12 @@ bank-fixed.spec: safe
 | | BFS | TLC | Apalache | Z3 |
 |-|-----|-----|----------|----|
 | Role | learning | production | production | production |
-| Exhaustive | small specs | yes | yes | no (bounded) |
+| Exhaustive | small specs | yes | bounded (10 steps) | no (bounded) |
 | Fairness (WF/SF) | exploratory | validated | limited | none |
 | Liveness | exploratory | validated | limited | none |
-| Safety | exhaustive | exhaustive | exhaustive | bounded |
-| Dependencies | none | TLA+ tools | Apalache bin | z3 binary |
-| Speed | fast | moderate | fast | very fast |
+| Safety | exhaustive | exhaustive | bounded symbolic | bounded |
+| Dependencies | none | TLA+ tools | Apalache v0.62+ + Java 21+ | z3 binary |
+| Speed | fast | moderate | moderate | very fast |
 | Setup | 0 min | 5 min | 10 min | 2 min |
 
 ---
@@ -289,11 +295,11 @@ spectre verify myspec.spec --backend tlc
 
 ## Installing the backends
 
-| Backend | Install command | Verify install |
-|---------|----------------|----------------|
+| Backend | Install | Verify install |
+|---------|---------|----------------|
 | BFS | built in | `spectre --version` |
-| TLC | `brew install tla-tools` | `tlc -help` |
-| Apalache | `brew install apalache` | `apalache-mc version` |
-| Z3 | `brew install z3` | `z3 --version` |
+| TLC | `brew install tla-tools` (macOS) | `tlc -help` |
+| Apalache | download from [GitHub releases](https://github.com/informalsystems/apalache/releases) + Java 21+ | `apalache-mc version` |
+| Z3 | `brew install z3` (macOS) | `z3 --version` |
 
-On Linux, download JARs/binaries from the respective GitHub releases pages and pass `--tlc-jar`, `--apalache-bin`, or `--z3-bin` flags.
+On Linux, download JARs/binaries from the respective GitHub releases pages and pass `--tlc-jar` or `--apalache-bin` flags. Spectre auto-detects Homebrew's OpenJDK on macOS for the Apalache subprocess.

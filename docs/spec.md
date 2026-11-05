@@ -1655,9 +1655,15 @@ The Spectre verifier checks:
 
 ### Verification Modes
 
-- **Bounded Model Checking**: Check properties up to a certain depth
-- **Unbounded Model Checking**: Check properties for all possible executions
+| Backend | Mode | Exhaustive | Liveness |
+|---------|------|------------|----------|
+| `--backend bfs` (default) | Explicit BFS state enumeration | Yes, for small state spaces | Exploratory only |
+| `--backend tlc` | TLA+ model checker (TLC) | Yes | Validated (SCC-based) |
+| `--backend apalache` | Symbolic (SMT via Apalache v0.62+) | Bounded (default 10 steps) | Limited |
+| `--backend z3` | Bounded model checking | No (up to `--bmc-depth`) | None |
+
 - **Liveness Checking**: Requires `--backend tlc`. The BFS backend explores reachability only and does not soundly validate `eventually`, `WF`, or `SF` properties.
+- **Apalache**: Performs bounded symbolic model checking. Requires Apalache v0.62+ and Java 21+. Spectre auto-detects Homebrew's OpenJDK on macOS. Install from [GitHub releases](https://github.com/informalsystems/apalache/releases).
 - **Initial State Exploration**: When `oneOf` is used, verify properties starting from each initial state
 
 ### Stuttering Detection

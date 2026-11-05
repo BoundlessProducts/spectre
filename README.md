@@ -82,8 +82,10 @@ Spectre is a formal specification language for modelling systems as state machin
 | **Go ≥ 1.24** | Core CLI (`spectre verify`, `sync`, etc.) | `brew install go` or [go.dev/dl](https://go.dev/dl/) |
 | **Z3 ≥ 4.8** | `spectre sync` (SMT equivalence checking) | `brew install z3` |
 | **Rust stable** | `spectre mine --lang rust` (spec mining) | [rustup.rs](https://rustup.rs) |
+| **Apalache v0.62+** | `--backend apalache` | [GitHub releases](https://github.com/informalsystems/apalache/releases) + `brew install openjdk` |
+| **TLA+ tools** | `--backend tlc` | `brew install tla-tools` |
 
-Z3 and Rust are optional if you only use `verify`, `simulate`, `generate-monitor`, and `generate-driver`.
+Z3, Rust, Apalache, and TLA+ tools are optional — only needed for the specific features listed above.
 
 ### Step 1 — Install Go
 
@@ -151,6 +153,8 @@ go test ./...
 | **Go ≥ 1.24** | Core CLI | see below |
 | **Z3 ≥ 4.8** | `spectre sync` | `sudo apt install z3` / `sudo dnf install z3` |
 | **Rust stable** | `spectre mine --lang rust` | [rustup.rs](https://rustup.rs) |
+| **Apalache v0.62+** | `--backend apalache` | [GitHub releases](https://github.com/informalsystems/apalache/releases) + Java 21+ |
+| **TLA+ tools** | `--backend tlc` | download `tla2tools.jar` from [GitHub](https://github.com/tlaplus/tlaplus/releases) |
 
 ### Step 1 — Install Go
 
